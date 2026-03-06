@@ -1,7 +1,8 @@
 # Changelog
 
-## v2026.03.05
-### Added
+## version 2026.03.06
+
+### First release
 - Dashboard Widget for real-time log monitoring directly from the Unraid dashboard.
 - Dedicated Tools page for full screen log viewing.
 - Support for System logs: Syslog, Dmesg, GraphQL API, Nginx Errors, Libvirt.
