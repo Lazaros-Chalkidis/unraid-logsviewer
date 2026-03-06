@@ -4,7 +4,7 @@
  <!ENTITY author "Lazaros Chalkidis">
  <!ENTITY version "2026.03.06">
  <!ENTITY branch "main">
- <!ENTITY gitURL "https://github.com/Lazaros Chalkidis/unraid-logsviewer-plugin">
+ <!ENTITY gitURL "https://github.com/Lazaros-Chalkidis/unraid-logsviewer">
  <!ENTITY pluginURL "&gitURL;/releases/download/&version;/&name;-&version;.txz">
  <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
  <!ENTITY launch "Settings/LogsviewerSettings">
