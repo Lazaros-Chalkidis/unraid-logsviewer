@@ -1,30 +1,30 @@
 # Logs Viewer for Unraid
 
-A modern, fast and feature-rich log viewer plugin for Unraid. View System, Docker and VM logs directly from your dashboard or a dedicated Tools page — no terminal required.
+A modern, fast and feature rich log viewer plugin for Unraid. View System, Docker and VM logs directly from your dashboard or a dedicated Tools page. No terminal required.
 
 ---
 
 ## 📸 Screenshots
 
-### Dashboard Widget — PC
+### Dashboard Widget PC Screen
 ![Dashboard with Syntax Highlighting](screenshots/pc/pc-dashboard-full-settings-syntax-on.png)
 ![Dashboard with Docker Logs](screenshots/pc/pc-dashboard-full-settings-syntax-on-docker.png)
 ![Dashboard with Dropdown](screenshots/pc/pc-dashboard-full-settings-syntax-on-dropdown.png)
 
-### Tool Page — PC
+### Tool Page PC Screen
 ![Tool Page](screenshots/pc/pc-tool-page-full-settings-syntax-on.png)
 
-### Settings Page — PC
+### Settings Page PC Screen
 ![Settings Page](screenshots/pc/pc-settings-page.png)
 
-### Dashboard Widget — Mobile
+### Dashboard Widget Mobile Screen
 ![Mobile Dashboard with Syntax Highlighting](screenshots/mobile/mobile-dashboard-full-settings-syntax-on.png)
 ![Mobile Dashboard](screenshots/mobile/mobile-dashboard-full-settings.png)
 
-### Tool Page — Mobile
+### Tool Page Mobile Screen
 ![Mobile Tool Page](screenshots/mobile/mobile-full-settings-tool-page.png)
 
-### Settings Page — Mobile
+### Settings Page Mobile Screen
 ![Mobile Settings Page](screenshots/mobile/mobile-settings-page.png)
 ![Mobile Settings Page Open Tab](screenshots/mobile/mobile-settings-page-open-tab.png)
 
@@ -77,10 +77,10 @@ After installation, go to **Settings → Logs Viewer** to configure:
 | Tail Lines | Limit the number of lines displayed |
 | Font Size & Family | Customize the log display font |
 | Syntax Highlighting | Choose engine (Highlight.js / Prism.js) |
-| Search | Enable in-log search |
+| Search | Enable in log search |
 | Export Format | Choose default export format (.log / .txt / .json) |
 | Log Sources | Choose which System logs, Docker containers and VMs to show |
-
+- And more...
 ---
 
 ## 🔄 Log Sources
@@ -115,7 +115,7 @@ Automatically discovers all Virtual Machines. Select which ones to monitor.
 
 - CSRF token protection on all API requests
 - Rate limiting (60 requests/minute per IP)
-- Origin validation — blocks cross-origin requests
+- Origin validation — blocks cross origin requests
 - Input validation with length limits on all parameters
 - Security headers on all API responses
 
@@ -124,7 +124,7 @@ Automatically discovers all Virtual Machines. Select which ones to monitor.
 ## 🛠️ Development
 
 ### Requirements
-- Unraid 6.9.0 or later
+- Unraid 7.2.0 or later
 - Bash (for build script)
 
 ### Build
