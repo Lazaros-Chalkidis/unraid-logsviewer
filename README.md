@@ -32,19 +32,19 @@ A modern, fast and feature rich log viewer plugin for Unraid. View System, Docke
 
 ## ✨ Features
 
-- **Dashboard Widget** — Monitor logs in real-time directly from the Unraid dashboard
-- **Tools Page** — Full-screen log viewer for a more focused experience
-- **System Logs** — Syslog, Dmesg, GraphQL API, Nginx Errors, Libvirt and more
-- **Docker Logs** — View logs from any Docker container
-- **VM Logs** — View logs from any Virtual Machine
-- **Search** — Real-time search with match highlighting and navigation (next/prev)
-- **Filtering** — Filter by log level: Errors, Warnings, Info
-- **Syntax Highlighting** — Two engines supported: Highlight.js and Prism.js
-- **Autoscroll** — Automatically follow new log entries as they arrive
-- **Export** — Export logs as `.log`, `.txt` or structured `.json`
-- **Status Badges** — At-a-glance counters for Errors, Warnings and Info entries
-- **Mobile Responsive** — Works on all screen sizes
-- **Performance Friendly** — Smart limits for large logs, debounced search, DOM caching
+- **Dashboard Widget**: Monitor logs in real-time directly from the Unraid dashboard
+- **Tools Page**: Full-screen log viewer for a more focused experience
+- **System Logs**: Syslog, Dmesg, GraphQL API, Nginx Errors, Libvirt and more
+- **Docker Logs**: View logs from any Docker container
+- **VM Logs**: View logs from any Virtual Machine
+- **Search**: Real-time search with match highlighting and navigation (next/prev)
+- **Filtering**: Filter by log level: Errors, Warnings, Info
+- **Syntax Highlighting**: Two engines supported: Highlight.js and Prism.js
+- **Autoscroll**: Automatically follow new log entries as they arrive
+- **Export**: Export logs as `.log`, `.txt` or structured `.json`
+- **Status Badges**: At-a-glance counters for Errors, Warnings and Info entries
+- **Mobile Responsive**: Works on all screen sizes
+- **Performance Friendly**: Smart limits for large logs, debounced search, DOM caching
 
 ---
 
