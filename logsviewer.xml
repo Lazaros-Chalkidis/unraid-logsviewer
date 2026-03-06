@@ -1,0 +1,16 @@
+<?xml version="1.2" encoding="utf-8"?>
+<Container>
+  <Plugin>True</Plugin>
+  <PluginURL>https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/unraid-logsviewer-plugin/main/logsviewer.plg</PluginURL>
+  <PluginAuthor>Lazaros Chalkidis</PluginAuthor>
+  <Beta>false</Beta>
+  <Category>Tools:Utilities</Category>
+  <Name>Logs Viewer</Name>
+  <Description><![CDATA[Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
+View System, Docker, and VM logs in one place with search, filtering, optional syntax highlighting (two modes), autoscroll, export, and helpful status counters.
+Fully configurable, lightweight, and safe for large logs, with sensible defaults and performance-friendly limits.]]></Description>
+  <Project>https://github.com/YOUR_GITHUB_USERNAME/unraid-logsviewer-plugin</Project>
+  <Support>https://forums.unraid.net/topic/192397-plugin-scriptlogs/</Support>
+  <Icon>https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/unraid-logsviewer-plugin/main/source/images/logsviewer.png</Icon>
+  <License>GPL v3</License>
+</Container>

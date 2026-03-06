@@ -1,0 +1,110 @@
+/* ==========================================================================
+   LOGSVIEWER — Tool Page Overrides
+   Layers on top of widget.css. Scoped to .logsviewer-tool-wrapper.
+   ========================================================================== */
+
+/* ── 1. FOUC PREVENTION ───────────────────────────────────────────────────── */
+.logsviewer-tool-wrapper{ visibility:visible !important; }
+
+/* ── 2. WRAPPER LAYOUT & RESPONSIVE WIDTHS ───────────────────────────────── */
+.logsviewer-tool-wrapper{
+  max-width:1400px; width:60%;
+  margin:2rem auto; padding:0 1rem;
+  box-sizing:border-box; overflow-x:hidden;
+}
+@media (max-width:1400px){ .logsviewer-tool-wrapper{ width:75%; } }
+@media (max-width:1024px){ .logsviewer-tool-wrapper{ width:90%; } }
+@media (max-width:768px) { .logsviewer-tool-wrapper{ width:95%; } }
+
+/* ── 3. PANEL CARD ────────────────────────────────────────────────────────── */
+.logsviewer-tool-panel{
+  background:rgba(0,0,0,0.2);
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:8px; overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* ── 4. HEADER ────────────────────────────────────────────────────────────── */
+
+/* Tool page needs explicit flex (no Unraid tile framework) */
+.logsviewer-tool-wrapper .logsviewer-header{
+  display:flex !important; justify-content:space-between;
+  padding:0.5rem 1rem; min-height:6rem;
+}
+.logsviewer-tool-wrapper .logsviewer-header__left{ display:flex !important; }
+.logsviewer-tool-wrapper .logsviewer-header__right{ display:flex !important; }
+
+.logsviewer-header__icon{ font-size:3.6rem !important; flex-shrink:0; }
+
+/* ── 5. CONTROL ICONS ─────────────────────────────────────────────────────── */
+
+/* Normalize icon size (prevent Unraid framework interference) */
+.logsviewer-tool-wrapper #logsviewer-settings-icon .fa,
+.logsviewer-tool-wrapper #logsviewer-export-icon .fa{ font-size:1rem; line-height:1; }
+
+/* If Unraid wraps controls with tile-header-right-controls, normalize it */
+.logsviewer-tool-wrapper .tile-header-right-controls{
+  display:inline-flex !important; align-items:center !important; gap:6px !important;
+}
+
+.logsviewer-tool-wrapper .logsviewer-header__controls{
+  width:100%; display:flex !important; justify-content:flex-end !important;
+  align-items:center !important; gap:6px !important;
+}
+
+/* Anchor geometry (defeats Dynamix header anchor styles) */
+.logsviewer-tool-wrapper .logsviewer-header__controls a,
+.logsviewer-tool-wrapper .tile-header-right-controls a{
+  display:inline-flex !important; align-items:center !important; justify-content:center !important;
+  width:24px !important; height:24px !important; padding:0 !important; margin:0 !important;
+  border-radius:4px !important;
+  background:rgba(255,255,255,0.08) !important; border:1px solid rgba(255,255,255,0.10) !important;
+  text-decoration:none !important;
+  color:var(--logsviewer-text-secondary,rgba(255,255,255,0.7)) !important;
+  transition:color 0.15s ease, background 0.15s ease !important;
+}
+.logsviewer-tool-wrapper .logsviewer-header__controls a:hover,
+.logsviewer-tool-wrapper .tile-header-right-controls a:hover{
+  color:var(--logsviewer-text-primary,#fff) !important;
+  background:rgba(255,255,255,0.14) !important;
+}
+
+/* Icon inside anchor */
+.logsviewer-tool-wrapper .logsviewer-header__controls a .fa,
+.logsviewer-tool-wrapper .tile-header-right-controls a .fa{ font-size:13px !important; line-height:1 !important; width:auto !important; }
+
+/* Neutralize inner .control wrapper if present */
+.logsviewer-tool-wrapper .logsviewer-header__controls .control,
+.logsviewer-tool-wrapper .tile-header-right-controls .control{
+  display:inline-flex !important; align-items:center !important; justify-content:center !important;
+  background:transparent !important; border:0 !important; width:auto !important; height:auto !important;
+  border-radius:0 !important; font-size:inherit !important;
+}
+
+/* ── 6. LOG PANEL ─────────────────────────────────────────────────────────── */
+
+/* Match dashboard tile padding */
+.logsviewer-tool-wrapper .logsviewer-body{
+  padding:0 0.5rem 0.5rem 0.5rem !important;
+  box-sizing:border-box !important; overflow-x:hidden !important; max-width:100% !important;
+}
+
+.logsviewer-tool-wrapper .logsviewer-log{ height:400px; min-height:200px; }
+.logsviewer-tool-wrapper #logsviewer-logs{ padding:0 !important; margin:0 !important; }
+
+@media (max-width:768px){
+  .logsviewer-tool-wrapper .logsviewer-log{ height:200px; min-height:100px; }
+}
+
+/* ── 7. TABS ROW ──────────────────────────────────────────────────────────── */
+
+/* Flush tabs row (no negative margin needed on tool page) */
+.logsviewer-tabs-row{ margin-bottom:0 !important; }
+
+/* Align tabs-row with log panel body padding */
+.logsviewer-tool-wrapper .logsviewer-tabs-row{
+  padding-left:0.5rem !important; padding-right:0.5rem !important; box-sizing:border-box !important;
+}
+
+/* ── 8. FOOTER ────────────────────────────────────────────────────────────── */
+.logsviewer-footer{ margin-top:1rem !important; margin-bottom:1rem !important; }

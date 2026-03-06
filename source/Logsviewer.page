@@ -1,0 +1,445 @@
+Menu="Dashboard:0"
+Icon="logsviewerplugin.png"
+---
+<?php
+require_once '/usr/local/emhttp/plugins/logsviewer/logsviewer_api.php';
+require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
+
+$cfg = parse_plugin_cfg('logsviewer', true);
+
+// Dashboard (Widget) Sources — use ONLY DASH_* keys.
+// Migration (B) happens automatically: legacy/global -> DASH_* one time.
+$cfg_file = '/boot/config/plugins/logsviewer/logsviewer.cfg';
+if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
+    $legacySystemRaw = (string)($cfg['ENABLED_SYSTEM_LOGS'] ?? ($cfg['ENABLED_SCRIPTS'] ?? ''));
+    $legacyDockerRaw = (string)($cfg['ENABLED_DOCKER_CONTAINERS'] ?? '');
+    $legacyVmRaw     = (string)($cfg['ENABLED_VMS'] ?? '');
+    if ($legacySystemRaw !== '' || $legacyDockerRaw !== '' || $legacyVmRaw !== '') {
+        $cfg['DASH_ENABLED_SYSTEM_LOGS']       = $legacySystemRaw;
+        $cfg['DASH_ENABLED_DOCKER_CONTAINERS'] = $legacyDockerRaw;
+        $cfg['DASH_ENABLED_VMS']               = $legacyVmRaw;
+        $cfg['MIGRATED_DASH_SOURCES']          = '1';
+
+        // Persist migration so the rest of the plugin becomes "clean" (no legacy reads).
+        $ini = "";
+        foreach ($cfg as $k => $v) {
+            $v = str_replace('"', '\"', (string)$v);
+            $ini .= "{$k}=\"{$v}\"
+";
+        }
+        @file_put_contents($cfg_file, $ini);
+    }
+}
+
+$dashSystemRaw = (string)($cfg['DASH_ENABLED_SYSTEM_LOGS'] ?? '');
+$enabledScripts = array_values(array_filter(array_map('trim', explode(',', $dashSystemRaw)), fn($v) => $v !== ''));
+
+// Defaults only when nothing configured at all.
+if (!$enabledScripts && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
+    $enabledScripts = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];
+}
+
+$dashDockerRaw = (string)($cfg['DASH_ENABLED_DOCKER_CONTAINERS'] ?? '');
+$enabledDockerContainers = array_values(array_filter(array_map('trim', explode(',', $dashDockerRaw)), fn($v) => $v !== ''));
+
+$dashVmRaw = (string)($cfg['DASH_ENABLED_VMS'] ?? '');
+$enabledVms = array_values(array_filter(array_map('trim', explode(',', $dashVmRaw)), fn($v) => $v !== ''));
+
+// Keep for backward compatibility with JS/config naming.
+$enabledSystemLogs = $enabledScripts;
+
+// System log display names
+$systemLogNames = [
+    'syslog' => 'Syslog', 'dmesg' => 'Dmesg', 'graphql-api.log' => 'GraphQL API',
+    'nginx-error' => 'Nginx Errors', 'phplog' => 'PHP Log', 'libvirt' => 'Libvirt',
+];
+
+$version_override = $cfg['VERSION_OVERRIDE'] ?? 'auto';
+if ($version_override === 'legacy') {
+    $isResponsiveWebgui = false;
+} elseif ($version_override === 'responsive') {
+    $isResponsiveWebgui = true;
+} else {
+    $version_data   = @parse_ini_file('/etc/unraid-version');
+    $webgui_version = $version_data['version'] ?? '0.0.0';
+    $isResponsiveWebgui = version_compare($webgui_version, '7.2.0-beta', '>=');
+}
+
+$tile_config = [
+    'apiContext'      => 'dash',
+    'lvToken'         => LogsViewerEndpoint::generateNonce(),
+    'enabledScripts'  => $enabledScripts,
+    'refreshEnabled'  => ($cfg['REFRESH_ENABLED'] ?? '0') === '1',
+    'refreshInterval' => intval($cfg['REFRESH_INTERVAL'] ?? 0) * 1000,
+    'refreshOnlyWhenRunning' => ($cfg['REFRESH_ONLY_WHEN_RUNNING'] ?? '0') === '1',
+
+    'fontSize'        => $cfg['LOG_FONT_SIZE'] ?? '1rem',
+    'fontFamily'      => $cfg['LOG_FONT_FAMILY'] ?? 'system',
+    'wrapLines'       => true, // forced: wrap lines always (no UI toggle)
+
+    'bgColor'         => $cfg['LOG_BG_COLOR'] ?? '',
+    'themePreset'     => $cfg['THEME_PRESET'] ?? 'default',
+
+    'highlightEnabled'=> ($cfg['HIGHLIGHT_ENABLED'] ?? '1') === '1',
+    'highlightMode'   => $cfg['HIGHLIGHT_MODE'] ?? 'full',
+
+    'tailLines'       => intval($cfg['TAIL_LINES'] ?? 0),
+
+    'searchEnabled'   => ($cfg['SEARCH_ENABLED'] ?? '0') === '1',
+    'searchHighlight' => ($cfg['SEARCH_HIGHLIGHT'] ?? '0') === '1',
+
+    'syntaxEnabled'   => ($cfg['SYNTAX_HIGHLIGHTING'] ?? '0') === '1',
+
+    'syntaxEngine'    => $cfg['SYNTAX_ENGINE'] ?? 'hljs',
+
+    'autoscrollDefault' => ($cfg['AUTO_SCROLL_DEFAULT'] ?? '1') === '1',
+    'pauseOnHover'      => ($cfg['PAUSE_ON_HOVER'] ?? '0') === '1',
+
+    'showBadges'      => ($cfg['SHOW_BADGES'] ?? '1') === '1',
+    'showTotalLines'  => ($cfg['SHOW_TOTAL_LINES'] ?? '1') === '1',
+    'showTimestamp'   => ($cfg['SHOW_TIMESTAMP'] ?? '1') === '1',
+    'showFilter'      => ($cfg['SHOW_FILTER_DROPDOWN'] ?? '1') === '1',
+    'showToast'       => ($cfg['SHOW_TOAST'] ?? '1') === '1',
+
+    'exportFormat'    => $cfg['EXPORT_FORMAT'] ?? 'log',
+    'exportIncludeTimestamp' => ($cfg['EXPORT_INCLUDE_TIMESTAMP'] ?? '1') === '1',
+
+    'enabledSystemLogs'      => $enabledSystemLogs,
+    'enabledDockerContainers'=> $enabledDockerContainers,
+    'enabledVms'             => $enabledVms,
+    'systemLogNames'         => $systemLogNames,
+
+    'isResponsive'    => $isResponsiveWebgui,
+];
+
+$toast_hidden_class = ($tile_config['showToast'] ?? true) ? '' : ' lv-toast-hidden';
+
+$tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES);
+
+$tile_title        = htmlspecialchars(_('Logs Viewer'), ENT_QUOTES, 'UTF-8');
+$tabs_aria_label   = htmlspecialchars(_('Logs Viewer tabs'), ENT_QUOTES, 'UTF-8');
+$log_placeholder   = htmlspecialchars(_('Select a script to see its log.'), ENT_QUOTES, 'UTF-8');
+$last_update_label = htmlspecialchars(_('Last Refresh:'), ENT_QUOTES, 'UTF-8');
+
+$render_compact = static function(): string {
+    return <<<HTML
+<div class="logsviewer-compact" id="logsviewer-compact-wrapper">
+    <div id="logsviewer-compact-indicators" class="logsviewer-compact-indicators"></div>
+</div>
+HTML;
+};
+
+$render_autoscroll = static function(): string {
+    return <<<HTML
+<div class="logsviewer-autoscroll-container">
+    <label class="logsviewer-switch" aria-label="Auto-scroll">
+        <input type="checkbox" id="logsviewer-autoscroll" class="logsviewer-autoscroll-checkbox">
+        <span class="logsviewer-switch-slider" aria-hidden="true"></span>
+    </label>
+    <span class="logsviewer-autoscroll-title">Auto-scroll</span>
+</div>
+HTML;
+};
+
+$render_controls = static function(bool $responsive): string {
+    $wrapOpen  = $responsive ? '<span class="tile-header-right-controls">' : '';
+    $wrapClose = $responsive ? '</span>' : '';
+
+    return $wrapOpen . <<<HTML
+<a id="logsviewer-manual-refresh" href="#" title="Refresh logs manually" aria-label="Refresh logs manually">
+    <i class="fa fa-fw fa-refresh control" aria-hidden="true"></i>
+</a>
+<a id="logsviewer-export-icon" href="#" title="Export current log" aria-label="Export current log" data-action="export-log">
+    <i class="fa fa-fw fa-arrow-down control" aria-hidden="true"></i>
+</a>
+<a id="logsviewer-toolpage-icon" href="/Tools/LogsviewerTool" title="Open Logs Viewer Tool" aria-label="Open Logs Viewer Tool">
+    <i class="fa fa-fw fa-share-square-o control" aria-hidden="true"></i>
+</a>
+<a id="logsviewer-settings-icon" href="/Settings/LogsviewerSettings#dashboard" title="Logsviewer Settings" aria-label="Logsviewer Settings">
+    <i class="fa fa-fw fa-cog control" aria-hidden="true"></i>
+</a>
+HTML . $wrapClose;
+};
+
+$render_tabs = static function(string $tabs_aria_label, array $enabledScripts, array $systemLogNames, array $enabledDockerContainers, array $enabledVms, bool $syntaxEnabled, bool $showFilter): string {
+    // Build system options (ul/li for desktop, native select for mobile)
+    $sysOpts = ''; $sysNative = '';
+    foreach ($enabledScripts as $key) {
+        $name = htmlspecialchars($systemLogNames[$key] ?? $key, ENT_QUOTES, 'UTF-8');
+        $val  = htmlspecialchars($key, ENT_QUOTES, 'UTF-8');
+        $sysOpts   .= "<li data-value=\"{$val}\">{$name}</li>\n";
+        $sysNative .= "<option value=\"{$val}\">{$name}</option>\n";
+    }
+
+    $dockerHidden = empty($enabledDockerContainers) ? ' logsviewer-cat-btn--hidden' : '';
+    $dockerOpts = ''; $dockerNative = '';
+    foreach ($enabledDockerContainers as $c) {
+        $safe = htmlspecialchars($c, ENT_QUOTES, 'UTF-8');
+        $dockerOpts   .= "<li data-value=\"{$safe}\">{$safe}</li>\n";
+        $dockerNative .= "<option value=\"{$safe}\">{$safe}</option>\n";
+    }
+
+    $vmHidden = empty($enabledVms) ? ' logsviewer-cat-btn--hidden' : '';
+    $vmOpts = ''; $vmNative = '';
+    foreach ($enabledVms as $vm) {
+        $safe = htmlspecialchars($vm, ENT_QUOTES, 'UTF-8');
+        $vmOpts   .= "<li data-value=\"{$safe}\">{$safe}</li>\n";
+        $vmNative .= "<option value=\"{$safe}\">{$safe}</option>\n";
+    }
+
+    // Syntax control in tabs-row
+    $syntaxHtml = '';
+    if ($syntaxEnabled) {
+        $syntaxHtml = <<<HTML
+            <div class="logsviewer-tabrow-ctrl" aria-label="Syntax highlighting">
+                <span class="logsviewer-tabrow-ctrl__label">Syntax</span>
+                <i class="fa fa-caret-down logsviewer-tabrow-ctrl__caret" aria-hidden="true"></i>
+                <select id="logsviewer-syntax-select" class="logsviewer-syntax-select">
+                    <option value="plaintext" selected>Plain Text</option>
+                    <option value="bash">Bash/Shell</option>                    <option value="json">JSON</option>
+                    <option value="yaml">YAML</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="php">PHP</option>
+                </select>
+            </div>
+HTML;
+    }
+
+    // Filter control in tabs-row
+    $filterHtml = '';
+    if ($showFilter) {
+        $filterHtml = <<<HTML
+            <div class="logsviewer-tabrow-ctrl" aria-label="Log filter">
+                <span class="logsviewer-tabrow-ctrl__label">Filter</span>
+                <i class="fa fa-caret-down logsviewer-tabrow-ctrl__caret" aria-hidden="true"></i>
+                <select id="logsviewer-filter-select" class="logsviewer-filter-select">
+                    <option value="none" selected>No Filter</option>
+                    <option value="info">Info</option>
+                    <option value="errors">Errors</option>
+                    <option value="warnings">Warnings</option>
+                    <option value="critical">Critical</option>
+                    <option value="auth">Login</option>
+                </select>
+            </div>
+HTML;
+    }
+
+    // Right-side controls (Syntax + Filter)
+    $rightControls = '';
+    if ($syntaxHtml || $filterHtml) {
+        $rightControls = '<div class="logsviewer-tabs-row__controls">' . $syntaxHtml . $filterHtml . '</div>';
+    }
+
+    return <<<HTML
+<div class="logsviewer-body">
+    <div class="logsviewer-tabs-row">
+        <div class="logsviewer-category-tabs" role="tablist" aria-label="{$tabs_aria_label}">
+            <div class="logsviewer-cat-btn logsviewer-cat-btn--active" data-category="system" data-selected="">
+                <span class="logsviewer-cat-btn__label">System</span>
+                <i class="fa fa-caret-down logsviewer-cat-btn__caret" aria-hidden="true"></i>
+                <ul class="logsviewer-cat-dropdown" id="logsviewer-cat-system" role="listbox" aria-label="System logs">
+                    {$sysOpts}
+                </ul>
+                <select class="logsviewer-cat-native" aria-label="System logs"><option value="" hidden></option>{$sysNative}</select>
+            </div>
+            <div class="logsviewer-cat-btn{$dockerHidden}" data-category="docker" data-selected="">
+                <span class="logsviewer-cat-btn__label">Dockers</span>
+                <i class="fa fa-caret-down logsviewer-cat-btn__caret" aria-hidden="true"></i>
+                <ul class="logsviewer-cat-dropdown" id="logsviewer-cat-docker" role="listbox" aria-label="Docker logs">
+                    {$dockerOpts}
+                </ul>
+                <select class="logsviewer-cat-native" aria-label="Docker logs"><option value="" hidden></option>{$dockerNative}</select>
+            </div>
+            <div class="logsviewer-cat-btn{$vmHidden}" data-category="vm" data-selected="">
+                <span class="logsviewer-cat-btn__label">VMs</span>
+                <i class="fa fa-caret-down logsviewer-cat-btn__caret" aria-hidden="true"></i>
+                <ul class="logsviewer-cat-dropdown" id="logsviewer-cat-vm" role="listbox" aria-label="VM logs">
+                    {$vmOpts}
+                </ul>
+                <select class="logsviewer-cat-native" aria-label="VM logs"><option value="" hidden></option>{$vmNative}</select>
+            </div>
+        </div>
+        <div class="logsviewer-tabs-row__spacer"></div>
+        {$rightControls}
+    </div>
+</div>
+HTML;
+};
+
+// Filter + Syntax are now rendered inside render_tabs (tabs-row)
+
+$render_log_panel = static function(string $log_placeholder, string $last_update_label, bool $showToast = true): string {
+    $toastHtml = $showToast
+        ? '<div class="logsviewer-toast-panel" aria-label="Notifications"><div id="logsviewer-toast-line" class="logsviewer-toast-line"></div></div>'
+        : '';
+    return <<<HTML
+<div class="logsviewer-body logsviewer-collapsible">
+    <div id="logsviewer-container" class="logsviewer-log" role="log" aria-live="polite">
+        <pre id="logsviewer-logs">{$log_placeholder}</pre>
+    </div>
+
+    <div class="logsviewer-footer">
+{$toastHtml}
+
+        <div class="logsviewer-title-meta" aria-label="Log summary">
+            <span class="logsviewer-title-meta__label">Total lines:</span>
+            <span id="logsviewer-total-lines" class="logsviewer-title-meta__value">0</span>
+            <span class="logsviewer-pulse" aria-hidden="true"></span>
+        </div>
+
+        <div class="logsviewer-badges" aria-label="Log counters">
+            <span class="logsviewer-badge logsviewer-badge--info"     id="logsviewer-badge-info">0</span>
+            <span class="logsviewer-badge logsviewer-badge--warning"  id="logsviewer-badge-warnings">0</span>
+            <span class="logsviewer-badge logsviewer-badge--error"    id="logsviewer-badge-errors">0</span>
+            <span class="logsviewer-badge logsviewer-badge--critical" id="logsviewer-badge-critical">0</span>
+        </div>
+
+        <div class="logsviewer-timestamp-container">
+            <span class="logsviewer-timestamp-label">{$last_update_label}</span>
+            <span id="logsviewer-timestamp"></span>
+        </div>
+    </div>
+</div>
+HTML;
+};
+
+$render_config = static function(string $tile_config_json): string {
+    return <<<HTML
+<script>
+    window.logsviewerConfig = {$tile_config_json};
+</script>
+HTML;
+};
+
+$render_header = static function(
+    bool $responsive,
+    string $tile_title,
+    string $compact_html,
+    string $autoscroll_html,
+    string $controls_html
+): string {
+    // Inputs row: JS injects search UI here when enabled
+    $inputs_row = '<div class="logsviewer-header__inputs"></div>';
+    
+    if ($responsive) {
+        return <<<HTML
+<span class="tile-header logsviewer-header">
+    <span class="tile-header-left logsviewer-header__left">
+        <div class="logsviewer-header__top">
+            <img src="/plugins/logsviewer/logsviewermain.png" class="logsviewer-header__icon" alt="Logs Viewer" style="width:32px;height:32px;object-fit:contain;">
+            <h3 class="tile-header-main logsviewer-header__title">{$tile_title}</h3>
+        </div>
+        {$autoscroll_html}
+        {$compact_html}
+    </span>
+
+    <span class="tile-header-right logsviewer-header__right">
+        <div class="logsviewer-header__controls">{$controls_html}</div>
+        {$inputs_row}
+    </span>
+</span>
+HTML;
+    }
+
+    return <<<HTML
+<div class="logsviewer-legacy-header">
+    <div class="logsviewer-legacy-header__left">
+        <div class="logsviewer-legacy-header__top">
+            <i class="fa fa-terminal f32 logsviewer-legacy-header__icon" aria-hidden="true"></i>
+            <span class="logsviewer-legacy-title">{$tile_title}</span>
+        </div>
+        {$autoscroll_html}
+        {$compact_html}
+    </div>
+
+    <span class="logsviewer-legacy-controls">
+        <div class="logsviewer-legacy-controls__controls">{$controls_html}</div>
+        {$inputs_row}
+    </span>
+</div>
+HTML;
+};
+
+$render_fallback_tbody = static function(
+    bool $responsive,
+    string $tile_title,
+    string $header_html,
+    string $tabs_html,
+    string $panel_html,
+    string $config_html
+): string {
+    $dash_row_class = 'dash_logsviewer_toggle logsviewer-content';
+
+    return <<<HTML
+<link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/widget.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap">
+<tbody id="db-logsviewer" title="{$tile_title}">
+    <tr>
+        <td class="next" colspan="3">
+            {$header_html}
+        </td>
+    </tr>
+    <tr>
+        <td colspan="3">
+            {$tabs_html}
+        </td>
+    </tr>
+    <tr class="{$dash_row_class}">
+        <td colspan="3">
+            {$panel_html}
+        </td>
+    </tr>
+</tbody>
+{$config_html}
+<script defer src="/plugins/logsviewer/js/logsviewer.js"></script>
+HTML;
+};
+
+$compact_html   = $render_compact();
+$autoscroll_html= $render_autoscroll();
+$tabs_html      = $render_tabs($tabs_aria_label, $enabledScripts, $systemLogNames, $enabledDockerContainers, $enabledVms, $tile_config['syntaxEnabled'], $tile_config['showFilter']);
+$panel_html     = $render_log_panel($log_placeholder, $last_update_label, $tile_config['showToast'] ?? true);
+$config_html    = $render_config($tile_config_json);
+
+$controls_responsive = $render_controls(true);
+$controls_legacy     = $render_controls(false);
+
+$header_responsive = $render_header(true,  $tile_title, $compact_html, $autoscroll_html, $controls_responsive);
+$header_legacy     = $render_header(false, $tile_title, $compact_html, $autoscroll_html, $controls_legacy);
+
+$tile = [
+    'name'    => 'logsviewer',
+    'title'   => 'Logs Viewer',
+    'icon'    => 'fa-terminal',
+    'content' => '',
+    'small'   => 1,
+    'medium'  => 1,
+    'large'   => 2,
+    'script'  => '/plugins/logsviewer/js/logsviewer.js',
+    'style'   => '/plugins/logsviewer/css/widget.css',
+];
+
+$tile['content'] = $isResponsiveWebgui
+    ? ($header_responsive . $tabs_html . $panel_html . $config_html)
+    : ($header_legacy     . $tabs_html . $panel_html . $config_html);
+
+$fallback_tile_markup = $isResponsiveWebgui
+    ? $render_fallback_tbody(true,  $tile_title, $header_responsive, $tabs_html, $panel_html, $config_html)
+    : $render_fallback_tbody(false, $tile_title, $header_legacy,     $tabs_html, $panel_html, $config_html);
+
+if (function_exists('register_dashboard_tile')) {
+    $registration_result = @register_dashboard_tile($tile);
+
+    if (is_string($registration_result) && trim($registration_result) !== '') {
+        echo $registration_result;
+        return;
+    }
+
+    if ($registration_result) {
+        return;
+    }
+}
+
+$mytiles['logsviewer']['column1'] = $fallback_tile_markup;
+return;
+?>

@@ -1,0 +1,272 @@
+/* ==========================================================================
+   LOGSVIEWER — Settings Page Styles
+   Loaded via <link> in LogsviewerSettings.page.
+   ========================================================================== */
+
+/* ── 1. FOUC PREVENTION ───────────────────────────────────────────────────── */
+.logsviewer-settings,
+.lv-credits-top{ visibility:visible !important; }
+
+/* ── 2. WRAPPER & RESPONSIVE WIDTHS ──────────────────────────────────────── */
+.logsviewer-settings{
+  width:min(52vw,980px); min-width:720px;
+  margin:0 auto; padding:0;
+  box-sizing:border-box; display:block;
+}
+@media (max-width:1400px){ .logsviewer-settings{ width:75%; } }
+@media (max-width:1024px){ .logsviewer-settings{ width:90%; } }
+@media (max-width:900px) { .logsviewer-settings{ width:92vw; min-width:0; } }
+@media (max-width:768px) { .logsviewer-settings{ width:100%; min-width:0; margin:0 auto; } }
+
+/* Inner bordered panel */
+.logsviewer-settings .lv-settings-panel{
+  padding:1rem; box-sizing:border-box;
+  display:grid; gap:0;
+  background:rgba(0,0,0,0.2);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:1px;
+}
+@media (max-width:768px){ .logsviewer-settings .lv-settings-panel{ padding:.75rem; } }
+
+/* ── 3. TOP TABS ──────────────────────────────────────────────────────────── */
+
+.logsviewer-settings .lv-tabs{
+  display:flex !important; align-items:flex-end !important; gap:.4rem !important;
+  position:relative !important; margin:0 !important;
+}
+
+/* Sources tab pushed to far right */
+.logsviewer-settings .lv-tab.lv-tab-sources{ margin-left:auto !important; }
+
+.lv-tab{
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.55rem .9rem;
+  border:1px solid rgba(255,255,255,.12); border-bottom:0;
+  border-radius:.55rem .55rem 0 0;
+  background:rgba(255,255,255,.04); color:rgba(255,255,255,.75);
+  cursor:pointer; font-weight:700; user-select:none;
+  transition:background .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease !important;
+}
+.lv-tab .lv-tabicon{ opacity:.9; font-size:1.05em; transform:translateY(1px); }
+.lv-tab:hover{ background:rgba(255,255,255,.06) !important; color:rgba(255,255,255,.9) !important; }
+.lv-tab.active{ background:rgba(0,0,0,.35) !important; color:#fff !important; border-color:rgba(255,128,0,.55) !important; }
+.lv-tab.active:hover{ background:rgba(0,0,0,.35) !important; color:#fff !important; }
+
+/* Flush first card under tabs (no gap) */
+#lvDashboardPanel > .lv-card:first-child,
+#lvToolPanel > .lv-card:first-child,
+#lvSourcesPanel > .lv-card:first-child{ border-top-left-radius:10px; border-top-right-radius:10px; margin-top:0; }
+
+/* ── 4. CREDITS LINK ──────────────────────────────────────────────────────── */
+
+.lv-credits-top{ display:block !important; width:100% !important; margin:0 0 .35rem 0 !important; }
+.lv-credits-top .lv-credits{ float:right !important; cursor:pointer !important; }
+.lv-credits-top:after{ content:""; display:block; clear:both; }
+
+.lv-credits{
+  font-size:.82em !important; text-decoration:none !important;
+  color:rgba(255,255,255,.55) !important; cursor:pointer !important;
+  white-space:nowrap !important;
+  display:inline-flex !important; align-items:center !important;
+  margin:0 !important; padding:0 .1rem !important; border:0 !important; background:transparent !important;
+  transition:color .25s ease !important;
+}
+.lv-credits:hover{ color:#4a90e2 !important; }
+
+/* ── 5. CARDS ─────────────────────────────────────────────────────────────── */
+
+.lv-card{
+  border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.02);
+  border-radius:10px; overflow:hidden; margin-bottom:1rem;
+}
+.lv-card-hd{
+  padding:.85rem 1rem; border-bottom:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03); font-weight:800;
+  display:flex; justify-content:space-between; align-items:center; gap:.75rem;
+  /* Accordion: clickable header */
+  cursor:pointer; user-select:none; position:relative; padding-right:2.5rem;
+  transition:background .25s ease;
+}
+.lv-card-hd:hover{ background:rgba(255,255,255,.05); }
+.lv-card-hd::after{ content:'\25B2'; position:absolute; right:1rem; top:50%; transform:translateY(-50%); font-size:.65rem; opacity:.5; }
+.lv-card.lv-collapsed .lv-card-hd::after{ transform:translateY(-50%) rotate(180deg); }
+.lv-card.lv-collapsed .lv-card-bd{ display:none; }
+.lv-card-bd{ padding:1rem; font-size:1rem; }
+
+/* ── 6. SETTING ROWS ──────────────────────────────────────────────────────── */
+
+.lv-row{
+  display:grid; grid-template-columns:minmax(260px,1fr) minmax(300px,1fr);
+  gap:.75rem 1rem; align-items:center;
+  padding:.65rem 0; border-bottom:1px solid rgba(255,255,255,.06);
+}
+.lv-row:last-child{ border-bottom:0; padding-bottom:0; }
+.lv-label{ font-weight:800; }
+.lv-desc{ opacity:.75; font-size:.92em; margin-top:.2rem; line-height:1.35; }
+.lv-field .form-control{ width:100%; }
+.lv-hint{ opacity:.7; font-size:.9em; margin:0; line-height:1.2; }
+.lv-pill{ padding:.18rem .44rem; border-radius:0.4rem !important; border:1px solid #ff8c00; background:rgba(255,140,0,.08); font-size:.72em; opacity:.95; transition:background .25s ease, border-color .25s ease; }
+.lv-offby{ opacity:.65; font-size:0.9em; margin-left:10px; white-space:nowrap; }
+
+/* ── 7. FORM CONTROLS ─────────────────────────────────────────────────────── */
+
+.lv-color{ display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
+.lv-color input[type="color"]{ width:44px; height:34px; padding:0; border:0; background:transparent; }
+.lv-toggle{ display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+.lv-toggle input[type="checkbox"]{ margin:0; flex-shrink:0; }
+.lv-toggle label{ display:flex; align-items:center; gap:.5rem; margin:0; line-height:1.2; }
+.lv-toggle .lv-hint{ line-height:1.2; margin:0; display:inline-block; align-self:center; }
+
+/* ── 8. BUTTONS ───────────────────────────────────────────────────────────── */
+
+.lv-btn{ padding:.35rem .6rem; border-radius:7px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.03); cursor:pointer; user-select:none; font-size:.95em; transition:background .25s ease, color .25s ease, border-color .25s ease; }
+.lv-btn:hover{ background:rgba(255,255,255,.06); }
+
+.lv-scan-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:.35rem;
+  padding:0.3rem 0.7rem; border-radius:0.4rem; cursor:pointer;
+  background-color:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12);
+  color:rgba(255,255,255,.8); font-size:0.8rem; font-weight:600;
+  transform:translateZ(0); will-change:transform,box-shadow;
+  transition:background-color .22s ease-in-out, color .22s ease-in-out, border-color .22s ease-in-out, box-shadow .22s ease-in-out, transform .22s ease-in-out;
+}
+.lv-scan-btn:hover{ background-color:rgba(255,255,255,.14); transform:translateY(-1px); box-shadow:0 8px 18px rgba(0,0,0,.28); }
+.lv-scan-btn:active{ transform:translateY(0); box-shadow:0 3px 10px rgba(0,0,0,.22); }
+.lv-scan-btn .fa-refresh{ margin-right:0.25rem; }
+
+.lv-action-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:0.25rem 0.6rem; border-radius:0.3rem; cursor:pointer;
+  background-color:transparent; border:1px solid rgba(255,255,255,.15); color:rgba(255,255,255,.7); font-size:0.75rem;
+  transform:translateZ(0); will-change:transform,box-shadow;
+  transition:background-color .22s ease-in-out, color .22s ease-in-out, border-color .22s ease-in-out, box-shadow .22s ease-in-out, transform .22s ease-in-out;
+}
+.lv-action-btn:hover{ background-color:rgba(255,255,255,.08); transform:translateY(-1px); box-shadow:0 8px 18px rgba(0,0,0,.26); }
+.lv-action-btn:active{ transform:translateY(0); box-shadow:0 3px 10px rgba(0,0,0,.2); }
+
+/* ── 9. FOOTER ────────────────────────────────────────────────────────────── */
+
+.lv-footer{
+  display:flex; gap:.6rem; padding:1rem;
+  border-top:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03);
+  justify-content:center; align-items:center;
+  border-bottom-right-radius:10px; border-bottom-left-radius:10px;
+}
+.lv-footer input[type="submit"],
+.lv-footer input[type="button"]{ min-width:110px; }
+.lv-footer .lv-version{ margin-right:auto; opacity:.7; font-size:.9em; letter-spacing:.02em; white-space:nowrap; }
+
+.lv-footer-row{ text-align:center; font-size:.9em; margin:0.9rem 0 0.5rem 0; display:flex; flex-direction:column; gap:0.25rem; }
+.lv-support-link{ color:#4a90e2; text-decoration:none; font-weight:500; cursor:pointer; transition:color .2s ease; }
+.lv-support-link:hover{ color:#6bb3ff; }
+.lv-version-text{ opacity:.75; font-size:0.95em; }
+
+/* ── 10. LOG SOURCES ──────────────────────────────────────────────────────── */
+
+.lv-sources-list{ display:flex; flex-direction:column; gap:0.35rem; }
+.lv-sources-loading{ opacity:0.5; font-style:italic; padding:0.5rem 0; }
+.lv-sources-note{ font-size:0.78rem; opacity:0.5; }
+.lv-source-row{
+  display:grid; grid-template-columns:2rem 1fr auto auto; gap:0.5rem;
+  align-items:center; padding:0.45rem 0.5rem; border-radius:0.4rem;
+  border-bottom:1px solid rgba(255,255,255,.06) !important;
+  transition:background .25s ease;
+}
+.lv-source-row:hover{ background:rgba(255,255,255,.04); }
+.lv-source-row:last-child{ border-bottom:0 !important; }
+.lv-source-row.lv-source-disabled{ opacity:0.35; pointer-events:none; }
+.lv-source-check{ width:1.1rem; height:1.1rem; accent-color:#3b82f6; cursor:pointer; }
+.lv-source-name{ font-weight:600; font-size:1rem; }
+.lv-source-path{ font-size:0.8rem; opacity:0.5; font-family:monospace; }
+.lv-source-size{ font-size:0.8rem; opacity:0.6; min-width:4rem; text-align:right; }
+.lv-source-status{ font-size:0.8rem; min-width:4.5rem; text-align:right; }
+.lv-source-status .lv-status-dot{ display:inline-block; width:0.5rem; height:0.5rem; border-radius:50%; margin-right:0.25rem; }
+.lv-status-dot.running{ background:#2ecc71; }
+.lv-status-dot.stopped,
+.lv-status-dot.exited{ background:#e74c3c; }
+.lv-status-dot.paused{ background:#f39c12; }
+.lv-status-dot.unknown,
+.lv-status-dot.shut{ background:#666; }
+
+/* ── 11. SCRIPTS / ACTIONS ────────────────────────────────────────────────── */
+
+.lv-script-top{ display:flex; flex-wrap:wrap; gap:.5rem .75rem; align-items:center; justify-content:space-between; margin:0 0 .75rem 0; }
+.lv-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
+.lv-script-list{ display:flex; flex-wrap:wrap; gap:.55rem; margin-top:.5rem; }
+.lv-script-item{ display:flex; align-items:center; gap:.45rem; padding:.45rem .7rem; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.02); cursor:pointer; transition:background .25s ease, border-color .25s ease; }
+.lv-script-item:hover{ background:rgba(255,255,255,.05); }
+.lv-script-item input[type="checkbox"]{ margin:0; flex-shrink:0; }
+.lv-script-item span{ line-height:1.2; }
+
+/* ── 12. CREDITS DIALOG ───────────────────────────────────────────────────── */
+
+/* jQuery UI dialog override — custom geometry */
+body .ui-dialog.lv-credits-dialog,
+.lv-credits-dialog{
+  box-sizing:border-box !important; width:440px !important;
+  min-width:0 !important; max-width:92vw !important;
+  left:50% !important; right:auto !important; margin-left:0 !important;
+  transform:translateX(-50%) !important; position:fixed !important;
+  border-radius:22px !important; overflow:hidden !important;
+  border:1px solid rgba(255,255,255,.12) !important;
+  background:rgba(20,20,20,.96) !important;
+  box-shadow:0 24px 70px rgba(0,0,0,.65) !important;
+  -webkit-clip-path:polygon(20px 0%,calc(100% - 20px) 0%,100% 20px,100% calc(100% - 28px),calc(100% - 28px) 100%,28px 100%,0% calc(100% - 20px),0% 20px) !important;
+  clip-path:polygon(20px 0%,calc(100% - 20px) 0%,100% 20px,100% calc(100% - 28px),calc(100% - 28px) 100%,28px 100%,0% calc(100% - 20px),0% 20px) !important;
+}
+
+/* Transparent internals */
+.ui-dialog.lv-credits-dialog .ui-dialog-titlebar,
+.ui-dialog.lv-credits-dialog .ui-dialog-content,
+.ui-dialog.lv-credits-dialog .ui-widget-content,
+.ui-dialog.lv-credits-dialog .ui-dialog-buttonpane{ background:transparent !important; border:0 !important; }
+
+/* Hide titlebar */
+.ui-dialog.lv-credits-dialog .ui-dialog-titlebar{ display:none !important; height:0 !important; overflow:hidden !important; padding:0 !important; margin:0 !important; visibility:hidden !important; }
+
+/* Content area */
+.ui-dialog.lv-credits-dialog .ui-dialog-content{ padding:1.5rem 1.5rem 1rem !important; overflow:hidden !important; color:rgba(255,255,255,.92) !important; }
+
+/* Button pane — centered */
+.ui-dialog.lv-credits-dialog .ui-dialog-buttonpane{ text-align:center !important; padding:0.75rem 0 1.25rem 0 !important; border-top:1px solid rgba(255,255,255,0.1) !important; }
+.ui-dialog.lv-credits-dialog .ui-dialog-buttonset{ float:none !important; display:inline-block !important; }
+.ui-dialog.lv-credits-dialog .ui-dialog-buttonset .ui-button,
+.ui-dialog.lv-credits-dialog .lv-ok-btn{
+  background:#f47d42 !important; border:1px solid #f47d42 !important; color:#fff !important;
+  padding:0.5rem 2rem !important; font-size:0.9em !important; font-weight:500 !important;
+  border-radius:4px !important; cursor:pointer !important; transition:background .25s ease !important;
+}
+.ui-dialog.lv-credits-dialog .ui-dialog-buttonset .ui-button:hover,
+.ui-dialog.lv-credits-dialog .lv-ok-btn:hover{ background:#d56a35 !important; border-color:#d56a35 !important; }
+
+/* ── 13. MOBILE OVERRIDES (≤600px) ───────────────────────────────────────── */
+
+@media (max-width:600px){
+  .logsviewer-settings{ width:100% !important; min-width:0 !important; margin:0 !important; padding:0 !important; }
+  .logsviewer-settings .lv-settings-panel{ padding:.5rem !important; }
+  .lv-card-hd{ flex-wrap:wrap !important; gap:.4rem .5rem !important; }
+  .lv-row{ grid-template-columns:1fr !important; gap:.35rem !important; padding:.75rem 0 !important; }
+  .lv-color{ flex-direction:column !important; align-items:flex-start !important; gap:.4rem !important; }
+  .lv-color input[type="color"]{ width:48px !important; height:36px !important; }
+  .lv-color input[type="text"].form-control{ max-width:100% !important; width:100% !important; }
+  .lv-source-row{ grid-template-columns:1.5rem 1fr auto auto !important; gap:.25rem .3rem !important; padding:.35rem .25rem !important; }
+  .lv-source-name{ font-size:.82rem !important; }
+  .lv-source-path{ font-size:.72rem !important; }
+  .lv-source-status{ font-size:.72rem !important; min-width:0 !important; white-space:nowrap !important; }
+  .lv-source-size{ font-size:.72rem !important; min-width:0 !important; white-space:nowrap !important; }
+  .lv-card-bd{ padding:.5rem !important; }
+  .lv-card .lv-card .lv-card-bd{ padding:.35rem .4rem !important; }
+  .lv-card{ overflow:hidden !important; }
+  .lv-tabs{ flex-wrap:wrap !important; gap:.3rem !important; }
+  .lv-tab{ font-size:.85em !important; padding:.4rem .65rem !important; }
+  .lv-tab.lv-tab-sources{ margin-left:0 !important; }
+  .lv-footer{ flex-wrap:wrap !important; gap:.5rem !important; padding:.75rem .5rem !important; }
+  .lv-footer input[type="submit"],
+  .lv-footer input[type="button"]{ min-width:0 !important; flex:1 1 auto !important; font-size:.85em !important; }
+  .lv-script-list{ gap:.35rem !important; }
+  .lv-script-item{ font-size:.85em !important; padding:.35rem .55rem !important; }
+  .lv-actions{ flex-wrap:wrap !important; }
+  .lv-scan-btn, .lv-action-btn{ font-size:.78rem !important; padding:.25rem .5rem !important; }
+  .lv-offby{ display:block !important; margin-left:0 !important; margin-top:.15rem !important; }
+  .lv-credits-top{ margin-bottom:.25rem !important; }
+}
