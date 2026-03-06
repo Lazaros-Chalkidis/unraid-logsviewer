@@ -18,15 +18,15 @@ A modern, fast and feature-rich log viewer plugin for Unraid. View System, Docke
 ![Settings Page](screenshots/pc/pc-settings-page.png)
 
 ### Dashboard Widget — Mobile
-![Mobile Dashboard with Syntax Highlighting](screenshots/mobile/mobile-dashboard-full-settings-syntax-on.jpg)
-![Mobile Dashboard](screenshots/mobile/mobile-dashboard-full-settings.jpg)
+![Mobile Dashboard with Syntax Highlighting](screenshots/mobile/mobile-dashboard-full-settings-syntax-on.png)
+![Mobile Dashboard](screenshots/mobile/mobile-dashboard-full-settings.png)
 
 ### Tool Page — Mobile
-![Mobile Tool Page](screenshots/mobile/mobile-full-settings-tool-page.jpg)
+![Mobile Tool Page](screenshots/mobile/mobile-full-settings-tool-page.png)
 
 ### Settings Page — Mobile
-![Mobile Settings Page](screenshots/mobile/mobile-settings-page.jpg)
-![Mobile Settings Page Open Tab](screenshots/mobile/mobile-settings-page-open-tab.jpg)
+![Mobile Settings Page](screenshots/mobile/mobile-settings-page.png)
+![Mobile Settings Page Open Tab](screenshots/mobile/mobile-settings-page-open-tab.png)
 
 ---
 
