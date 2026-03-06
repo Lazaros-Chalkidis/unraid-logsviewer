@@ -4,6 +4,32 @@ A modern, fast and feature-rich log viewer plugin for Unraid. View System, Docke
 
 ---
 
+## 📸 Screenshots
+
+### Dashboard Widget — PC
+![Dashboard with Syntax Highlighting](screenshots/pc/pc-dashboard-full-settings-syntax-on.png)
+![Dashboard with Docker Logs](screenshots/pc/pc-dashboard-full-settings-syntax-on-docker.png)
+![Dashboard with Dropdown](screenshots/pc/pc-dashboard-full-settings-syntax-on-dropdown.png)
+
+### Tool Page — PC
+![Tool Page](screenshots/pc/pc-tool-page-full-settings-syntax-on.png)
+
+### Settings Page — PC
+![Settings Page](screenshots/pc/pc-settings-page.png)
+
+### Dashboard Widget — Mobile
+![Mobile Dashboard with Syntax Highlighting](screenshots/mobile/mobile-dashboard-full-settings-syntax-on.jpg)
+![Mobile Dashboard](screenshots/mobile/mobile-dashboard-full-settings.jpg)
+
+### Tool Page — Mobile
+![Mobile Tool Page](screenshots/mobile/mobile-full-settings-tool-page.jpg)
+
+### Settings Page — Mobile
+![Mobile Settings Page](screenshots/mobile/mobile-settings-page.jpg)
+![Mobile Settings Page Open Tab](screenshots/mobile/mobile-settings-page-open-tab.jpg)
+
+---
+
 ## ✨ Features
 
 - **Dashboard Widget** — Monitor logs in real-time directly from the Unraid dashboard
@@ -19,12 +45,6 @@ A modern, fast and feature-rich log viewer plugin for Unraid. View System, Docke
 - **Status Badges** — At-a-glance counters for Errors, Warnings and Info entries
 - **Mobile Responsive** — Works on all screen sizes
 - **Performance Friendly** — Smart limits for large logs, debounced search, DOM caching
-
----
-
-## 📸 Screenshots
-
-*Coming soon*
 
 ---
 
@@ -66,7 +86,6 @@ After installation, go to **Settings → Logs Viewer** to configure:
 ## 🔄 Log Sources
 
 ### System Logs
-Select which system logs to display:
 - Syslog (`/var/log/syslog`)
 - Dmesg (kernel ring buffer)
 - Nginx Errors
@@ -124,16 +143,19 @@ Automatically discovers all Virtual Machines. Select which ones to monitor.
 ```
 unraid-logsviewer/
 ├── source/
-│   ├── css/              # Stylesheets
-│   ├── js/               # JavaScript
-│   ├── Logsviewer.page   # Dashboard widget
-│   ├── LogsviewerTool.page    # Tools page
-│   ├── LogsviewerSettings.page # Settings page
-│   └── logsviewer_api.php     # Backend API
-├── build.sh              # Build script
-├── CHANGELOG.md          # Version history
-├── logsviewer.plg        # Plugin definition
-└── logsviewer.xml        # CA metadata
+│   ├── css/                        # Stylesheets
+│   ├── js/                         # JavaScript
+│   ├── Logsviewer.page             # Dashboard widget
+│   ├── LogsviewerTool.page         # Tools page
+│   ├── LogsviewerSettings.page     # Settings page
+│   └── logsviewer_api.php          # Backend API
+├── screenshots/
+│   ├── pc/                         # PC screenshots
+│   └── mobile/                     # Mobile screenshots
+├── build.sh                        # Build script
+├── CHANGELOG.md                    # Version history
+├── logsviewer.plg                  # Plugin definition
+└── logsviewer.xml                  # CA metadata
 ```
 
 ---
