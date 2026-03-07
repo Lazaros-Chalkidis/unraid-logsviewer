@@ -1290,7 +1290,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
   </div><!-- /lv-settings-panel -->
 
   <div class="lv-footer-row">
-    <a href="https://forums.unraid.net/topic/logsviewer-plugin" id="lvSupportLink" class="lv-support-link"><?php echo _('Support'); ?></a>
+    <a href="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/" id="lvSupportLink" class="lv-support-link"><?php echo _('Support'); ?></a>
     <div class="lv-version-text">
       <?php 
         $plugin_version = '';
