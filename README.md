@@ -45,6 +45,7 @@ A modern, fast and feature rich log viewer plugin for Unraid. View System, Docke
 - **Status Badges**: At-a-glance counters for Errors, Warnings and Info entries
 - **Mobile Responsive**: Works on all screen sizes
 - **Performance Friendly**: Smart limits for large logs, debounced search, DOM caching
+- **Resizable Widget**: Adjustable height for the dashboard widget
 
 ---
 
