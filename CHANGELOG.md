@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 2026.03.06
+## Version 2026.03.07
 
 ### First release
 - Dashboard Widget for real-time log monitoring directly from the Unraid dashboard.
