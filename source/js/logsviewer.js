@@ -1,4 +1,4 @@
-/* ── Logsviewer Widget JS ────────────────────────────────────────────────────
+/* ── Logs Viewer Widget JS ────────────────────────────────────────────────────
    Drives polling and UI updates in the dashboard widget and Tool page.
    Configuration is injected via window.logsviewerConfig from Logsviewer.page.
    ────────────────────────────────────────────────────────────────────────── */
