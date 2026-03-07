@@ -10,7 +10,7 @@
 View System, Docker, and VM logs in one place with search, filtering, optional syntax highlighting (two modes), autoscroll, export, and helpful status counters.
 Fully configurable, lightweight, and safe for large logs, with sensible defaults and performance-friendly limits.]]></Description>
   <Project>https://github.com/Lazaros-Chalkidis/unraid-logsviewer</Project>
-  <Support>https://forums.unraid.net/topic/logsviewer-plugin</Support>
+  <Support>https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/</Support>
   <Icon>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/source/logsviewerplugin.png</Icon>
   <License>GPL v3</License>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on.png</Screenshot>
