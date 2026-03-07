@@ -181,7 +181,5 @@ Found a bug or have a feature request? Open an issue on [GitHub](https://github.
 
 ## 📄 License
 
-Copyright (C) 2026 Lazaros Chalkidis
-
-Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).
-See the `LICENSE` file for the full license text.
+Copyright (C) 2026 Lazaros Chalkidis  
+Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later). See the [LICENSE](LICENSE) file for the full license text.
