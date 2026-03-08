@@ -4,32 +4,6 @@ A modern, fast and feature rich log viewer plugin for Unraid. View System, Docke
 
 ---
 
-## 📸 Screenshots
-
-### Dashboard Widget PC Screen
-![Dashboard with Syntax Highlighting](screenshots/pc/pc-dashboard-full-settings-syntax-on.png)
-![Dashboard with Docker Logs](screenshots/pc/pc-dashboard-full-settings-syntax-on-docker.png)
-![Dashboard with Dropdown](screenshots/pc/pc-dashboard-full-settings-syntax-on-dropdown.png)
-
-### Tool Page PC Screen
-![Tool Page](screenshots/pc/pc-tool-page-full-settings-syntax-on.png)
-
-### Settings Page PC Screen
-![Settings Page](screenshots/pc/pc-settings-page.png)
-
-### Dashboard Widget Mobile Screen
-![Mobile Dashboard with Syntax Highlighting](screenshots/mobile/mobile-dashboard-full-settings-syntax-on.png)
-![Mobile Dashboard](screenshots/mobile/mobile-dashboard-full-settings.png)
-
-### Tool Page Mobile Screen
-![Mobile Tool Page](screenshots/mobile/mobile-full-settings-tool-page.png)
-
-### Settings Page Mobile Screen
-![Mobile Settings Page](screenshots/mobile/mobile-settings-page.png)
-![Mobile Settings Page Open Tab](screenshots/mobile/mobile-settings-page-open-tab.png)
-
----
-
 ## ✨ Features
 
 - **Dashboard Widget**: Monitor logs in real-time directly from the Unraid dashboard
@@ -45,13 +19,13 @@ A modern, fast and feature rich log viewer plugin for Unraid. View System, Docke
 - **Status Badges**: At-a-glance counters for Errors, Warnings and Info entries
 - **Mobile Responsive**: Works on all screen sizes
 - **Performance Friendly**: Smart limits for large logs, debounced search, DOM caching
-- **Resizable Widget**: Adjustable height for the dashboard widget
+- **Resizable Widget**: Adjustable height for the dashboard widget and tool
 
 ---
 
 ## 📦 Installation
 
-### Via Community Applications (comming soon)
+### Via Community Applications (coming soon)
 1. Open **Community Applications** in Unraid
 2. Search for **Logs Viewer**
 3. Click **Install**
@@ -71,17 +45,20 @@ https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/logsv
 
 After installation, go to **Settings → Logs Viewer** to configure:
 
+The Dashboard Widget and the Tool Page have independent settings each can be configured separately to suit different use cases.
+
 | Setting | Description |
 |---------|-------------|
 | Auto Refresh | Enable/disable automatic log refresh |
 | Refresh Interval | How often to refresh (in seconds) |
 | Tail Lines | Limit the number of lines displayed |
 | Font Size & Family | Customize the log display font |
-| Syntax Highlighting | Choose engine (Highlight.js / Prism.js) |
+| Syntax Highlighting | Choose engine: Highlight.js or Prism.js(beta) |
 | Search | Enable in log search |
 | Export Format | Choose default export format (.log / .txt / .json) |
 | Log Sources | Choose which System logs, Docker containers and VMs to show |
 - And more...
+
 ---
 
 ## 🔄 Log Sources
@@ -119,6 +96,32 @@ Automatically discovers all Virtual Machines. Select which ones to monitor.
 - Origin validation — blocks cross origin requests
 - Input validation with length limits on all parameters
 - Security headers on all API responses
+
+---
+
+## 📸 Screenshots
+
+### Dashboard Widget PC Screen
+![Dashboard with Syntax Highlighting](screenshots/pc/pc-dashboard-full-settings-syntax-on.png)
+![Dashboard with Docker Logs](screenshots/pc/pc-dashboard-full-settings-syntax-on-docker.png)
+![Dashboard with Dropdown](screenshots/pc/pc-dashboard-full-settings-syntax-on-dropdown.png)
+
+### Tool Page PC Screen
+![Tool Page](screenshots/pc/pc-tool-page-full-settings-syntax-on.png)
+
+### Settings Page PC Screen
+![Settings Page](screenshots/pc/pc-settings-page.png)
+
+### Dashboard Widget Mobile Screen
+![Mobile Dashboard with Syntax Highlighting](screenshots/mobile/mobile-dashboard-full-settings-syntax-on.png)
+![Mobile Dashboard](screenshots/mobile/mobile-dashboard-full-settings.png)
+
+### Tool Page Mobile Screen
+![Mobile Tool Page](screenshots/mobile/mobile-full-settings-tool-page.png)
+
+### Settings Page Mobile Screen
+![Mobile Settings Page](screenshots/mobile/mobile-settings-page.png)
+![Mobile Settings Page Open Tab](screenshots/mobile/mobile-settings-page-open-tab.png)
 
 ---
 
@@ -169,7 +172,10 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## 🐛 Issues & Support
 
-Found a bug or have a feature request? Open an issue on [GitHub](https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues).
+If you'd like to suggest new features, report a bug, or have any feedback, feel free to open an issue on 
+[GitHub](https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues) 
+or post on the 
+[Unraid Forum](https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/).
 
 ---
 
@@ -182,5 +188,7 @@ Found a bug or have a feature request? Open an issue on [GitHub](https://github.
 
 ## 📄 License
 
-Copyright (C) 2026 Lazaros Chalkidis  
-Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later). See the [LICENSE](LICENSE) file for the full license text.
+Copyright (C) 2026 Logs Viewer Unraid Plugin - Lazaros Chalkidis
+
+Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).
+See the `LICENSE` file for the full license text.
