@@ -22,3 +22,4 @@
 - Settings page with full configuration options.
 - Dark theme with custom color support and CSS variable theming.
 - Fully responsive layout compatible with all screen sizes, including mobile devices introduced in Unraid 7.2.x
+- Resizable Widget: Adjustable height for the dashboard widget and tool
