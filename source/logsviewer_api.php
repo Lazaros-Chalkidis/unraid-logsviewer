@@ -39,7 +39,7 @@ final class LogsViewerEndpoint
     public function __construct()
     {
         if (!is_dir(self::CACHE_DIR)) {
-            @mkdir(self::CACHE_DIR, 0777, true);
+            @mkdir(self::CACHE_DIR, 0700, true);
         }
     }
 
@@ -743,7 +743,7 @@ final class LogsViewerEndpoint
 
     private function cachePut(array $cfg, string $json): void
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0777, true);
+        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0700, true);
         $path = $this->cachePath($this->cacheKey($cfg));
         $tmp  = $path . '.' . getmypid() . '.tmp';
         if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $path);

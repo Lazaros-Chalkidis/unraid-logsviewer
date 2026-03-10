@@ -89,6 +89,10 @@ fi
 
 echo "✅ Package created: $(du -h ${PACKAGE_PATH} | cut -f1)"
 
+# Compute MD5 for PLG integrity check
+PACKAGE_MD5=$(md5sum "${PACKAGE_PATH}" | cut -d' ' -f1)
+echo "🔐 MD5: ${PACKAGE_MD5}"
+
 # --- Helper: base64 without line breaks (portable-ish) ---
 b64_nolf() {
   if base64 --help 2>/dev/null | grep -q -- "-w"; then
@@ -202,6 +206,7 @@ else
  <!ENTITY gitURL "${GIT_URL}">
  <!ENTITY pluginURL "${PLUGIN_URL_STRUCTURE}">
  <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
+ <!ENTITY md5 "${PACKAGE_MD5}">
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
@@ -219,6 +224,7 @@ ${CHANGES_BLOCK}
 
 <FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new">
 <URL>&pluginURL;</URL>
+<MD5>&md5;</MD5>
 </FILE>
 
 <FILE Name="/boot/config/plugins/&name;/&name;.cfg">

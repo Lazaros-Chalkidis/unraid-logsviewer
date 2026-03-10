@@ -42,6 +42,12 @@ if ($version_override === 'legacy') {
     $isResponsiveWebgui = version_compare($webgui_version, '7.2.0-beta', '>=');
 }
 
+$_gf_families = ['jetbrains', 'fira', 'sourcecodepro', 'ibmplex'];
+$_needsGoogleFonts = in_array($cfg['TOOL_LOG_FONT_FAMILY'] ?? 'system', $_gf_families);
+$googleFontsLink = $_needsGoogleFonts
+    ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap">'
+    : '';
+
 $tile_config = [
     'enabledScripts'  => $enabledScripts,
     'refreshEnabled'  => ($cfg['TOOL_REFRESH_ENABLED'] ?? '0') === '1',
@@ -338,13 +344,14 @@ $render_fallback_tbody = static function(
     string $header_html,
     string $tabs_html,
     string $panel_html,
-    string $config_html
+    string $config_html,
+    string $googleFontsLink = ''
 ): string {
     $dash_row_class = 'dash_logsviewer_toggle logsviewer-content';
 
     return <<<HTML
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/widget.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap">
+{$googleFontsLink}
 <tbody id="db-logsviewer" title="{$tile_title}">
     <tr>
         <td class="next" colspan="3">
@@ -389,7 +396,7 @@ $widget_content = $isResponsiveWebgui
 <style>.logsviewer-tool-wrapper{visibility:hidden;}</style>
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/widget.css">
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/tool.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap">
+<?php if ($googleFontsLink): echo $googleFontsLink . "\n"; endif; ?>
 
 <div class="logsviewer-tool-wrapper">
 <div class="logsviewer-tool-panel">

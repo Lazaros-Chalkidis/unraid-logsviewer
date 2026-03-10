@@ -2,15 +2,16 @@
 <!DOCTYPE PLUGIN [
  <!ENTITY name "logsviewer">
  <!ENTITY author "Lazaros Chalkidis">
- <!ENTITY version "2026.03.07">
+ <!ENTITY version "2026.03.10">
  <!ENTITY branch "main">
  <!ENTITY gitURL "https://github.com/Lazaros-Chalkidis/unraid-logsviewer">
  <!ENTITY pluginURL "&gitURL;/releases/download/&version;/&name;-&version;.txz">
  <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
+ <!ENTITY md5 "f0584887d71970a6984679f2775521d6">
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
+<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="&gitURL;/issues">
 
 <DESCRIPTION>
 Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
@@ -43,10 +44,12 @@ Fully configurable, lightweight, and safe for large logs, with sensible defaults
 - Settings page with full configuration options.
 - Dark theme with custom color support and CSS variable theming.
 - Fully responsive layout compatible with all screen sizes, including mobile devices introduced in Unraid 7.2.x
+- Resizable Widget: Adjustable height for the dashboard widget and tool
 </CHANGES>
 
 <FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new">
 <URL>&pluginURL;</URL>
+<MD5>&md5;</MD5>
 </FILE>
 
 <FILE Name="/boot/config/plugins/&name;/&name;.cfg">
