@@ -73,7 +73,7 @@ METAEOF
 # Set correct permissions before packaging
 find "${PLUGIN_DEST_PATH}" -type d -exec chmod 755 {} \;
 find "${PLUGIN_DEST_PATH}" -type f -exec chmod 644 {} \;
-find "${PLUGIN_DEST_PATH}" -name "*.page" -exec chmod 755 {} \;
+
 
 # Create .txz archive
 FILENAME="${PLUGIN_NAME}-${VERSION}"
@@ -166,7 +166,6 @@ upgradepkg --install-new /boot/config/plugins/&name;/&name;-&version;.txz
 chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
-find /usr/local/emhttp/plugins/&name; -name "*.page" -exec chmod 755 {} \;
 
 echo ""
 echo "----------------------------------------------------"
@@ -243,7 +242,6 @@ ${CHANGES_BLOCK}
 chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
-find /usr/local/emhttp/plugins/&name; -name "*.page" -exec chmod 755 {} \;
 
 echo ""
 echo "----------------------------------------------------"
