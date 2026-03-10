@@ -1,5 +1,13 @@
 # Changelog
 
+## Version 2026.03.10a
+
+### Improvements
+- Security: cache directory permissions tightened (0777 → 0700)
+- Performance: Google Fonts loads conditionally only when a custom font is selected
+- Plugin: added MD5 checksum to package integrity verification
+
+
 ## Version 2026.03.07
 
 ### First release
