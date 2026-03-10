@@ -120,7 +120,7 @@ if [[ "$LOCAL_INSTALL" == "local" ]]; then
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="&gitURL;/issues">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="&gitURL;/issues">
 
 <DESCRIPTION>
 Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
@@ -209,7 +209,7 @@ else
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="&gitURL;/issues">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="&gitURL;/issues">
 
 <DESCRIPTION>
 Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
