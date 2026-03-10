@@ -96,6 +96,8 @@ Automatically discovers all Virtual Machines. Select which ones to monitor.
 - Origin validation — blocks cross origin requests
 - Input validation with length limits on all parameters
 - Security headers on all API responses
+- Cache directory restricted to root only (0700)
+- MD5 package integrity verification on install
 
 ---
 
