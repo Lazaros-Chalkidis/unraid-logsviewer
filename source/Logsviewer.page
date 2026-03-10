@@ -71,6 +71,8 @@ $_needsGoogleFonts = in_array($cfg['LOG_FONT_FAMILY'] ?? 'system', $_gf_families
 $googleFontsLink = $_needsGoogleFonts
     ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap">'
     : '';
+
+$tile_config = [
     'apiContext'      => 'dash',
     'lvToken'         => LogsViewerEndpoint::generateNonce(),
     'enabledScripts'  => $enabledScripts,
