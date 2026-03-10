@@ -91,13 +91,25 @@ Automatically discovers all Virtual Machines. Select which ones to monitor.
 
 ## 🔒 Security
 
-- CSRF token protection on all API requests
+- CSRF token protection on all API requests¹
 - Rate limiting (60 requests/minute per IP)
-- Origin validation — blocks cross origin requests
+- Origin validation — blocks cross-origin requests
 - Input validation with length limits on all parameters
 - Security headers on all API responses
-- Cache directory restricted to root only (0700)
 - MD5 package integrity verification on install
+
+File & Directory Permissions:
+- Plugin directory: 755 (rwxr-xr-x)
+- PHP files: 644 (rw-r--r--) 
+- Page files: 644 (rw-r--r--) 
+- Static assets (JS, CSS, PNG): 644 (rw-r--r--) 
+- Config file (/boot/config/plugins/logsviewer/logsviewer.cfg): 600 (rw-------) 
+- Config directory (/boot/config/plugins/logsviewer/): 700 (rwx------) 
+- Cache directory (/tmp/logsviewer_cache/): 700 (rwx------) 
+- No world-writable files (verified with find -perm -002)
+
+¹ Uses a custom nonce implementation (hourly rotation, stored in /tmp) instead of Unraid's built in $var['csrf_token']. 
+Both approaches are valid, this was a deliberate choice to keep the API self-contained.
 
 ---
 
