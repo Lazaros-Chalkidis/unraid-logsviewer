@@ -39,7 +39,6 @@ else
   CHANGES_TEXT="- Automated main build release."
 fi
 
-
 # --- Changelog from CHANGELOG.md (optional) ---
 CHANGELOG_MD_FILE="CHANGELOG.md"
 if [[ -f "${CHANGELOG_MD_FILE}" ]]; then
@@ -73,7 +72,6 @@ METAEOF
 # Set correct permissions before packaging
 find "${PLUGIN_DEST_PATH}" -type d -exec chmod 755 {} \;
 find "${PLUGIN_DEST_PATH}" -type f -exec chmod 644 {} \;
-
 
 # Create .txz archive
 FILENAME="${PLUGIN_NAME}-${VERSION}"
@@ -120,7 +118,7 @@ if [[ "$LOCAL_INSTALL" == "local" ]]; then
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="&gitURL;/issues">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
 Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
@@ -209,7 +207,7 @@ else
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="&gitURL;/issues">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
 Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
