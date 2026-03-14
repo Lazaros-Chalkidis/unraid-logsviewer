@@ -25,7 +25,7 @@ A modern, fast and feature rich log viewer plugin for Unraid. View System, Docke
 
 ## 📦 Installation
 
-### Via Community Applications (coming soon)
+### Via Community Applications (recommended)
 1. Open **Community Applications** in Unraid
 2. Search for **Logs Viewer**
 3. Click **Install**
