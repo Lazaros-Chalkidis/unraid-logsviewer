@@ -1,11 +1,12 @@
 # Changelog
 
-## Version 2026.03.10a
+## Version 2026.03.14
 
 ### Improvements
-- Security: cache directory permissions tightened (0777 → 0700)
-- Performance: Google Fonts loads conditionally only when a custom font is selected
-- Plugin: added MD5 checksum to package integrity verification
+- Plugin: added Title display in Plugins page
+- Plugin: minimum Unraid version updated to 7.2.0
+- Security: support URL corrected to official forum thread
+- Plugin: file permissions corrected (page files 644 instead of 755)
 
 
 ## Version 2026.03.07
