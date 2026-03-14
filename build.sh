@@ -118,7 +118,7 @@ if [[ "$LOCAL_INSTALL" == "local" ]]; then
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
 Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
@@ -207,7 +207,7 @@ else
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="6.9.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
 Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.

@@ -13,6 +13,10 @@ Fully configurable, lightweight, and safe for large logs, with sensible defaults
   <Support>https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/</Support>
   <Icon>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/source/logsviewerplugin.png</Icon>
   <License>GPL v3</License>
+  <Maintainer>
+  <Name>Lazaros Chalkidis</Name>
+  <Image>https://avatars.githubusercontent.com/u/263085199?v=4</Image>
+  </Maintainer>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-tool-page-full-settings-syntax-on.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-settings-page.png</Screenshot>
