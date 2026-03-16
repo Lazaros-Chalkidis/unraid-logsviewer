@@ -1,5 +1,20 @@
 # Changelog
 
+## Version 2026.03.16
+
+### Performance
+- Fixed browser freezing during auto-refresh on large logs (render skip when content unchanged)
+- Docker logs now load in parallel instead of one-by-one (faster with multiple containers)
+- Reduced unnecessary server requests during polling
+- Faster line counting for large log files
+- Improved server-side response caching
+- Google Fonts no longer block page loading
+- Fixed incorrect mobile detection on low-core servers (Celeron, J-series, i3)
+- Removed redundant background timer
+
+### Fixes
+- Single quotes in logs now display correctly instead of showing as &#039;
+
 ## Version 2026.03.14
 
 ### Improvements

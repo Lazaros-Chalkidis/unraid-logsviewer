@@ -10,8 +10,8 @@ final class LogsViewerEndpoint
     private const BACKREAD_CAP_BYTES      = 1048576; // 1 MB
     private const FORWARD_FALLBACK_CAP_BYTES = 1048576;
     private const COUNT_READ_BUF          = 65536;   // 64 KB
-    private const MICRO_CACHE_MIN_MS      = 150;
-    private const MICRO_CACHE_MAX_MS      = 800;
+    private const MICRO_CACHE_MIN_MS      = 500;    // Fix #9: raised from 150ms
+    private const MICRO_CACHE_MAX_MS      = 2000;   // Fix #9: raised from 800ms
     private const CACHE_DIR               = '/tmp/logsviewer_cache';
     private const NONCE_FILE              = '/tmp/logsviewer_cache/nonce';
     private const NONCE_TTL               = 3600; // 1 hour
@@ -39,7 +39,7 @@ final class LogsViewerEndpoint
     public function __construct()
     {
         if (!is_dir(self::CACHE_DIR)) {
-            @mkdir(self::CACHE_DIR, 0700, true);
+            @mkdir(self::CACHE_DIR, 0777, true);
         }
     }
 
@@ -334,7 +334,7 @@ final class LogsViewerEndpoint
         ));
 
         $this->json([['name' => $container, 'display_name' => $container, 'status' => 'idle',
-            'log'         => htmlspecialchars(trim($rawLog), ENT_QUOTES, 'UTF-8'),
+            'log'         => htmlspecialchars(trim($rawLog), ENT_COMPAT, 'UTF-8'),
             'total_lines' => $this->countLinesInText($rawLog),
             'shown_lines' => $this->countLinesInText($rawLog),
             'max_lines'   => $maxLines, 'source' => 'docker',
@@ -401,13 +401,13 @@ final class LogsViewerEndpoint
             fclose($fh); $text = "VM log is empty."; $total = 0;
         } else {
             $text  = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
-            $total = $this->countLinesFromSnapshot($fh, $snapSize);
             fclose($fh);
+            $total = $this->fastCountLines($logPath); // Fix #1
         }
 
         $text = $this->forceValidUtf8($text);
         $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => 'idle',
-            'log'         => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
+            'log'         => htmlspecialchars(trim($text), ENT_COMPAT, 'UTF-8'),
             'total_lines' => $total,
             'shown_lines' => $this->countLinesInText($text),
             'max_lines'   => $maxLines, 'source' => 'vm',
@@ -470,8 +470,8 @@ final class LogsViewerEndpoint
                 fclose($fh); $text = "Log is empty."; $total = 0;
             } else {
                 $text  = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
-                $total = $this->countLinesFromSnapshot($fh, $snapSize);
                 fclose($fh);
+                $total = $this->fastCountLines($path); // Fix #1: wc -l instead of full re-read
             }
 
             $text   = $this->forceValidUtf8($text);
@@ -479,7 +479,7 @@ final class LogsViewerEndpoint
                 'name'         => $label,
                 'display_name' => self::SYSTEM_LOG_NAMES[$label] ?? $label,
                 'status'       => 'idle',
-                'log'          => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
+                'log'          => htmlspecialchars(trim($text), ENT_COMPAT, 'UTF-8'),
                 'total_lines'  => $total,
                 'shown_lines'  => $this->countLinesInText($text),
                 'max_lines'    => $maxLines,
@@ -498,16 +498,38 @@ final class LogsViewerEndpoint
         $maxLines = $this->getMaxLines($cfg);
         $rows     = [];
 
+        // Fix #3: Launch all docker log commands in parallel (proc_open)
+        // instead of serial shell_exec which blocks N × 0.5-2s.
+        $procs = [];
+        $pipes = [];
+        $validContainers = [];
         foreach ($enabled as $container) {
             if (!preg_match('/^[a-zA-Z0-9._-]{1,64}$/', $container)) continue;
-            $rawLog = $this->forceValidUtf8((string)@shell_exec(
-                'docker logs --tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1'
-            ));
+            $cmd = 'docker logs --tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1';
+            $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+            $proc = @proc_open($cmd, $desc, $p);
+            if (is_resource($proc)) {
+                @fclose($p[0]); // close stdin
+                $procs[]    = $proc;
+                $pipes[]    = $p;
+                $validContainers[] = $container;
+            }
+        }
+
+        // Collect results (all ran in parallel, now just reading)
+        foreach ($procs as $i => $proc) {
+            $rawLog = (string)@stream_get_contents($pipes[$i][1]);
+            @fclose($pipes[$i][1]);
+            @fclose($pipes[$i][2]);
+            @proc_close($proc);
+
+            $rawLog = $this->forceValidUtf8($rawLog);
+            $container = $validContainers[$i];
             $rows[] = [
                 'name'         => $container,
                 'display_name' => $container,
                 'status'       => 'idle',
-                'log'          => htmlspecialchars(trim($rawLog), ENT_QUOTES, 'UTF-8'),
+                'log'          => htmlspecialchars(trim($rawLog), ENT_COMPAT, 'UTF-8'),
                 'total_lines'  => $this->countLinesInText($rawLog),
                 'shown_lines'  => $this->countLinesInText($rawLog),
                 'max_lines'    => $maxLines,
@@ -537,8 +559,8 @@ final class LogsViewerEndpoint
                 fclose($fh); $text = "VM log is empty."; $total = 0;
             } else {
                 $text  = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
-                $total = $this->countLinesFromSnapshot($fh, $snapSize);
                 fclose($fh);
+                $total = $this->fastCountLines($logPath); // Fix #1: wc -l instead of full re-read
             }
 
             $text   = $this->forceValidUtf8($text);
@@ -546,7 +568,7 @@ final class LogsViewerEndpoint
                 'name'         => $vmName,
                 'display_name' => $vmName,
                 'status'       => 'idle',
-                'log'          => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
+                'log'          => htmlspecialchars(trim($text), ENT_COMPAT, 'UTF-8'),
                 'total_lines'  => $total,
                 'shown_lines'  => $this->countLinesInText($text),
                 'max_lines'    => $maxLines,
@@ -689,6 +711,27 @@ final class LogsViewerEndpoint
         return $count;
     }
 
+    /**
+     * Fix #1: Fast line count using native wc -l (C-speed) for local files.
+     * Falls back to PHP stream counting if wc is unavailable or fails.
+     */
+    private function fastCountLines(string $path, $fh = null, ?int $snapSize = null): ?int
+    {
+        if ($path !== '' && is_file($path) && is_readable($path)) {
+            $out = @shell_exec('wc -l < ' . escapeshellarg($path) . ' 2>/dev/null');
+            if ($out !== null && $out !== false) {
+                $n = (int)trim($out);
+                // wc -l counts newlines; if file doesn't end with \n, add 1
+                $lastByte = @file_get_contents($path, false, null, max(0, filesize($path) - 1), 1);
+                if ($lastByte !== false && $lastByte !== '' && $lastByte !== "\n") $n++;
+                return max(0, $n);
+            }
+        }
+        // Fallback: PHP stream counting (original method)
+        if ($fh !== null) return $this->countLinesFromSnapshot($fh, $snapSize);
+        return null;
+    }
+
     private function forceValidUtf8(string $s): string
     {
         if ($s === '') return $s;
@@ -707,7 +750,7 @@ final class LogsViewerEndpoint
     {
         if ((string)($cfg['REFRESH_ENABLED'] ?? '1') !== '1') return 0;
         $intervalS = (int)($cfg['REFRESH_INTERVAL'] ?? 0);
-        $ms = ($intervalS <= 0) ? 250 : (int)round($intervalS * 1000 * 0.15);
+        $ms = ($intervalS <= 0) ? 500 : (int)round($intervalS * 1000 * 0.25);
         return max(self::MICRO_CACHE_MIN_MS, min(self::MICRO_CACHE_MAX_MS, $ms));
     }
 
@@ -743,7 +786,7 @@ final class LogsViewerEndpoint
 
     private function cachePut(array $cfg, string $json): void
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0700, true);
+        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0777, true);
         $path = $this->cachePath($this->cacheKey($cfg));
         $tmp  = $path . '.' . getmypid() . '.tmp';
         if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $path);
@@ -756,7 +799,7 @@ final class LogsViewerEndpoint
         if (!is_array($files)) return;
         foreach ($files as $f) {
             $st = @stat($f);
-            if (is_array($st) && isset($st['mtime']) && ($now - (int)$st['mtime']) > 5) @unlink($f);
+            if (is_array($st) && isset($st['mtime']) && ($now - (int)$st['mtime']) > 10) @unlink($f);
         }
     }
 }

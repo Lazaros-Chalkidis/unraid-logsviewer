@@ -782,7 +782,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
           </div>
           <!-- Plugin Support Thread -->
           <div style="margin-bottom:1.1rem;">
-            <a href="https://forums.unraid.net/topic/logsviewer-plugin" target="_blank" rel="noopener"
+            <a href="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/" target="_blank" rel="noopener"
                style="color:#4a90e2; text-decoration:none; font-size:0.9em;">Plugin Support Thread</a>
           </div>
         </div>

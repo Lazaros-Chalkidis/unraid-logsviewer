@@ -69,7 +69,7 @@ $_gf_families = ['jetbrains', 'fira', 'sourcecodepro', 'ibmplex'];
 $_needsGoogleFonts = in_array($cfg['LOG_FONT_FAMILY'] ?? 'system', $_gf_families)
                   || in_array($cfg['TOOL_LOG_FONT_FAMILY'] ?? 'system', $_gf_families);
 $googleFontsLink = $_needsGoogleFonts
-    ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap">'
+    ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" media="print" onload="this.media=\'all\'">'
     : '';
 
 $tile_config = [

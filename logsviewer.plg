@@ -2,12 +2,12 @@
 <!DOCTYPE PLUGIN [
  <!ENTITY name "logsviewer">
  <!ENTITY author "Lazaros Chalkidis">
- <!ENTITY version "2026.03.14">
+ <!ENTITY version "2026.03.16">
  <!ENTITY branch "main">
  <!ENTITY gitURL "https://github.com/Lazaros-Chalkidis/unraid-logsviewer">
  <!ENTITY pluginURL "&gitURL;/releases/download/&version;/&name;-&version;.txz">
  <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
- <!ENTITY md5 "09e69bf053199c6a4d9b105d55eca2dd">
+ <!ENTITY md5 "098d9e5de0fa0b5b6af065133e0ab98c">
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
@@ -21,6 +21,21 @@ Fully configurable, lightweight, and safe for large logs, with sensible defaults
 
 <CHANGES>
 # Changelog
+
+## Version 2026.03.16
+
+### Performance
+- Fixed browser freezing during auto-refresh on large logs (render skip when content unchanged)
+- Docker logs now load in parallel instead of one-by-one (faster with multiple containers)
+- Reduced unnecessary server requests during polling
+- Faster line counting for large log files
+- Improved server-side response caching
+- Google Fonts no longer block page loading
+- Fixed incorrect mobile detection on low-core servers (Celeron, J-series, i3)
+- Removed redundant background timer
+
+### Fixes
+- Single quotes in logs now display correctly instead of showing as &#039;
 
 ## Version 2026.03.14
 

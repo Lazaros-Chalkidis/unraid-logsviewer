@@ -9,6 +9,8 @@ let logsviewer_cfg = {};
 let logsviewer_searchState = { term: '', hits: [], idx: -1 };
 let logsviewer_pauseHoverActive = false;
 let logsviewer_pollBackoffUntil = 0;
+let logsviewer_lastRenderKey = '';          // diff-check: skip re-render when content unchanged
+let logsviewer_systemFetchCounter = 0;     // throttle background system fetch (#2)
 
 // Cached DOM references — populated on first use, cleared on re-init
 const logsviewer_dom = {
@@ -1198,9 +1200,9 @@ function logsviewer_isMobileish() {
     try {
         const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
         const narrow = typeof window.innerWidth === 'number' && window.innerWidth <= 768;
-        const cores = Number(navigator && navigator.hardwareConcurrency);
-        const lowCores = Number.isFinite(cores) && cores > 0 && cores <= 4;
-        return Boolean(coarse || narrow || lowCores);
+        // Fix #7: Removed hardwareConcurrency ≤ 4 check — many Unraid servers (Celeron/J-series/i3)
+        // have ≤ 4 cores and are NOT mobile. Only use actual mobile signals.
+        return Boolean(coarse || narrow);
     } catch (e) {
         return false;
     }
@@ -1341,8 +1343,36 @@ function logsviewer_setupSyntaxDropdown() {
 }
 
 // ---------------------------------------------------------------------------
+// Fast non-crypto hash for render diff-check (Fix #4)
+function logsviewer_quickHash(str) {
+    var s = String(str || ''), len = s.length, h = 0;
+    if (len === 0) return '0|0';
+    for (var i = 0; i < Math.min(256, len); i++) {
+        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    if (len > 512) {
+        var mid = (len >>> 1);
+        for (var i = mid; i < Math.min(mid + 256, len); i++) {
+            h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+        }
+    }
+    for (var i = Math.max(0, len - 256); i < len; i++) {
+        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    return len + '|' + h;
+}
+
+// ---------------------------------------------------------------------------
 function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
     const filter = logsviewer_getFilterValue();
+    const searchTerm = String(logsviewer_searchState.term || '').trim();
+
+    // ── Fix #4: Diff check — skip entire render if nothing changed ──
+    var renderKey = logsviewer_quickHash(rawText) + '|' + filter + '|' + logsviewer_currentSyntax + '|' + searchTerm;
+    if (renderKey === logsviewer_lastRenderKey) {
+        return; // content, filter, syntax, search all identical → no work needed
+    }
+    logsviewer_lastRenderKey = renderKey;
 
     // Always clear the perf toast at start of every render — it will only be
     // re-set below if THIS specific log actually exceeds the threshold.
@@ -1464,6 +1494,9 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     }
 }
 
+    // ── Fix #5: Count levels on RAW text (before HTML spans inflate string) ──
+    var badgeCounts = logsviewer_cfg.showBadges ? logsviewer_countLevels(filtered) : null;
+
     // Highlight levels (optional)
     filtered = logsviewer_highlightLevels(filtered);
 
@@ -1485,9 +1518,9 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
             logDisplay.removeClass('hljs');
         }
 
-        // Badges (optional)
-        if (logsviewer_cfg.showBadges) {
-            logsviewer_updateBadges(logsviewer_countLevels(filtered));
+        // Badges (optional) — uses pre-computed counts from raw text
+        if (logsviewer_cfg.showBadges && badgeCounts) {
+            logsviewer_updateBadges(badgeCounts);
             $('.logsviewer-badges').show();
         } else {
             $('.logsviewer-badges').hide();
@@ -1908,19 +1941,30 @@ function logsviewer_status() {
     });
 
     // -------------------------------------------------------------------
-    // Background login detection (always from syslog)
+    // Background login detection (always from syslog)  — Fix #2
     // -------------------------------------------------------------------
-    // The login toast is an "idle" message and must be available even when
-    // the user is browsing docker/nginx/etc. We therefore poll syslog in the
-    // background and only use it for extracting the latest login event.
+    // When active category IS system, data is already fetched above → just use cache.
+    // When browsing docker/vm, only poll system every 3rd cycle to halve AJAX load.
     try{
-        logsviewer_fetchCategory('system', function(sysScripts){
-            if (!Array.isArray(sysScripts) || !sysScripts.length) return;
+        if (logsviewer_activeCategory === 'system') {
+            // Already fetched above — just check cached syslog data
             var sys = logsviewer_findLogData('system', 'syslog');
             if (sys && typeof sys.log === 'string' && sys.log.length) {
                 logsviewer_checkLoginToast(sys.log);
             }
-        }, { autoShow: false });
+        } else {
+            logsviewer_systemFetchCounter++;
+            if (logsviewer_systemFetchCounter >= 3) {
+                logsviewer_systemFetchCounter = 0;
+                logsviewer_fetchCategory('system', function(sysScripts){
+                    if (!Array.isArray(sysScripts) || !sysScripts.length) return;
+                    var sys = logsviewer_findLogData('system', 'syslog');
+                    if (sys && typeof sys.log === 'string' && sys.log.length) {
+                        logsviewer_checkLoginToast(sys.log);
+                    }
+                }, { autoShow: false });
+            }
+        }
     }catch(_){ }
 }
 
@@ -1976,8 +2020,8 @@ $(function() {
         });
 
         updateCompactVisibility();
-        if (window.__logsviewerCompactInterval) { clearInterval(window.__logsviewerCompactInterval); }
-        window.__logsviewerCompactInterval = setInterval(updateCompactVisibility, 500);
+        // Fix #6: Removed redundant 500ms setInterval — MutationObserver above handles visibility
+        if (window.__logsviewerCompactInterval) { clearInterval(window.__logsviewerCompactInterval); window.__logsviewerCompactInterval = null; }
     }
 
     // Badge click to filter (existing)
