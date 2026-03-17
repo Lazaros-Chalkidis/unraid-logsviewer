@@ -46,7 +46,6 @@ $tile_config = [
     'enabledScripts'  => $enabledScripts,
     'refreshEnabled'  => ($cfg['TOOL_REFRESH_ENABLED'] ?? '0') === '1',
     'refreshInterval' => intval($cfg['TOOL_REFRESH_INTERVAL'] ?? 0) * 1000,
-    'refreshOnlyWhenRunning' => ($cfg['TOOL_REFRESH_ONLY_WHEN_RUNNING'] ?? '0') === '1',
 
     'fontSize'        => $cfg['TOOL_LOG_FONT_SIZE'] ?? '1rem',
     'fontFamily'      => $cfg['TOOL_LOG_FONT_FAMILY'] ?? 'system',

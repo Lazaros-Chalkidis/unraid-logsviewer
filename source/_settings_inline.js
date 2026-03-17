@@ -261,7 +261,6 @@
       const dashDefaults = {
         REFRESH_ENABLED: '1',
         REFRESH_INTERVAL: '10',
-        REFRESH_ONLY_WHEN_RUNNING: '0',
         ENABLED_SCRIPTS: ['syslog'],
         LOG_FONT_SIZE: '1rem',
         LOG_BG_COLOR: '',
@@ -293,7 +292,6 @@
       const toolDefaults = {
         TOOL_REFRESH_ENABLED: '1',
         TOOL_REFRESH_INTERVAL: '10',
-        TOOL_REFRESH_ONLY_WHEN_RUNNING: '0',
         TOOL_ENABLED_SCRIPTS: ['syslog'],
         TOOL_LOG_FONT_SIZE: '1rem',
         TOOL_LOG_BG_COLOR: '',
@@ -401,11 +399,20 @@
           try { if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Dash'); } catch (_) {}
         }
 
-        // Clear localStorage (autoscroll + per-context resized panel heights)
-        try { localStorage.removeItem('logsviewer_autoscroll'); } catch (_) {}
-        try { localStorage.removeItem('logsviewer_panel_height_dash'); } catch (_) {}
-        try { localStorage.removeItem('logsviewer_panel_height_tool'); } catch (_) {}
-
+        // Clear localStorage — ONLY for the tab being reset
+        try {
+          if (isToolTabActive()) {
+            localStorage.removeItem('logsviewer_panel_height_tool');
+            localStorage.removeItem('logsviewer_autoscroll_tool');
+            localStorage.removeItem('logsviewer_syntax_v4_tool');
+            localStorage.setItem('logsviewer_panel_height_reset_tool', '1');
+          } else {
+            localStorage.removeItem('logsviewer_panel_height_dash');
+            localStorage.removeItem('logsviewer_autoscroll_dash');
+            localStorage.removeItem('logsviewer_syntax_v4_dash');
+            localStorage.setItem('logsviewer_panel_height_reset_dash', '1');
+          }
+        } catch (_) {}
         // Make sure Apply becomes clickable and Dynamix sees changes
         enableApplyAndMarkDirty(form);
 

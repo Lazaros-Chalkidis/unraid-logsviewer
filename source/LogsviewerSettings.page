@@ -124,8 +124,6 @@ if (isset($_POST['#apply'])) {
     'AUTO_SCROLL_DEFAULT'         => $yn($_POST['AUTO_SCROLL_DEFAULT'] ?? ($cfg_existing['AUTO_SCROLL_DEFAULT'] ?? '1'), '1'),
     'PAUSE_ON_HOVER'              => isset($_POST['PAUSE_ON_HOVER']) ? '1' : '0',
 
-    'REFRESH_ONLY_WHEN_RUNNING'   => isset($_POST['REFRESH_ONLY_WHEN_RUNNING']) ? '1' : '0',
-
     'SHOW_BADGES'                 => $yn($_POST['SHOW_BADGES'] ?? ($cfg_existing['SHOW_BADGES'] ?? '1'), '1'),
     'SHOW_TOTAL_LINES'            => $yn($_POST['SHOW_TOTAL_LINES'] ?? ($cfg_existing['SHOW_TOTAL_LINES'] ?? '1'), '1'),
     'SHOW_TIMESTAMP'              => $yn($_POST['SHOW_TIMESTAMP'] ?? ($cfg_existing['SHOW_TIMESTAMP'] ?? '1'), '1'),
@@ -140,7 +138,6 @@ if (isset($_POST['#apply'])) {
     'TOOL_REFRESH_ENABLED'           => $_POST['TOOL_REFRESH_ENABLED'] ?? ($cfg_existing['TOOL_REFRESH_ENABLED'] ?? '1'),
     'TOOL_REFRESH_INTERVAL'          => $_POST['TOOL_REFRESH_INTERVAL'] ?? ($cfg_existing['TOOL_REFRESH_INTERVAL'] ?? '10'),
     'TOOL_SHOW_IDLE_LOGS'            => isset($_POST['TOOL_SHOW_IDLE_LOGS']) ? '1' : '0',
-    'TOOL_REFRESH_ONLY_WHEN_RUNNING' => isset($_POST['TOOL_REFRESH_ONLY_WHEN_RUNNING']) ? '1' : '0',
     'TOOL_LOG_FONT_SIZE'             => $_POST['TOOL_LOG_FONT_SIZE'] ?? ($cfg_existing['TOOL_LOG_FONT_SIZE'] ?? '1rem'),
     'TOOL_LOG_FONT_FAMILY'           => $sanitize_font_family($_POST['TOOL_LOG_FONT_FAMILY'] ?? ($cfg_existing['TOOL_LOG_FONT_FAMILY'] ?? 'system'), 'system'),
     'TOOL_LOG_BG_COLOR'              => $sanitize_hex($_POST['TOOL_LOG_BG_COLOR'] ?? ($cfg_existing['TOOL_LOG_BG_COLOR'] ?? ''), ''),
@@ -320,17 +317,6 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
             <input type="number" name="TOOL_REFRESH_INTERVAL" class="form-control" min="1"
               value="<?php echo htmlspecialchars($cfg['TOOL_REFRESH_INTERVAL'] ?? '10'); ?>">
             <div class="lv-hint"><?php echo _('Minimum: 1 second.'); ?></div>
-          </div>
-        </div>
-
-        <div class="lv-row">
-          <div>
-            <div class="lv-label"><?php echo _('Refresh only when scripts are running'); ?></div>
-            <div class="lv-desc"><?php echo _('When enabled, polling backs off when no scripts are running (reduces load).'); ?></div>
-          </div>
-          <div class="lv-field lv-toggle">
-            <label><input type="checkbox" name="TOOL_REFRESH_ONLY_WHEN_RUNNING" value="1" <?php echo (($cfg['TOOL_REFRESH_ONLY_WHEN_RUNNING'] ?? '0') === '1') ? 'checked' : ''; ?>> <?php echo _('Enabled'); ?></label>
-            <div class="lv-hint"><?php echo _('Default: Off (keeps current behavior).'); ?></div>
           </div>
         </div>
 
@@ -830,17 +816,6 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
             <input type="number" name="REFRESH_INTERVAL" class="form-control" min="1"
               value="<?php echo htmlspecialchars($cfg['REFRESH_INTERVAL'] ?? '10'); ?>">
             <div class="lv-hint"><?php echo _('Minimum: 1 second.'); ?></div>
-          </div>
-        </div>
-
-        <div class="lv-row">
-          <div>
-            <div class="lv-label"><?php echo _('Refresh only when scripts are running'); ?></div>
-            <div class="lv-desc"><?php echo _('When enabled, polling backs off when no scripts are running (reduces load).'); ?></div>
-          </div>
-          <div class="lv-field lv-toggle">
-            <label><input type="checkbox" name="REFRESH_ONLY_WHEN_RUNNING" value="1" <?php echo (($cfg['REFRESH_ONLY_WHEN_RUNNING'] ?? '0') === '1') ? 'checked' : ''; ?>> <?php echo _('Enabled'); ?></label>
-            <div class="lv-hint"><?php echo _('Default: Off (keeps current behavior).'); ?></div>
           </div>
         </div>
 
@@ -1606,7 +1581,6 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
       const dashDefaults = {
         REFRESH_ENABLED: '1',
         REFRESH_INTERVAL: '10',
-        REFRESH_ONLY_WHEN_RUNNING: '0',
         ENABLED_SCRIPTS: ['syslog'],
         LOG_FONT_SIZE: '1rem',
         LOG_BG_COLOR: '',
@@ -1635,7 +1609,6 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
       const toolDefaults = {
         TOOL_REFRESH_ENABLED: '1',
         TOOL_REFRESH_INTERVAL: '10',
-        TOOL_REFRESH_ONLY_WHEN_RUNNING: '0',
         TOOL_ENABLED_SCRIPTS: ['syslog'],
         TOOL_LOG_FONT_SIZE: '1rem',
         TOOL_LOG_BG_COLOR: '',
@@ -1645,7 +1618,6 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
         TOOL_HIGHLIGHT_MODE: 'full',
         TOOL_SYNTAX_HIGHLIGHTING: '0',
         TOOL_SYNTAX_ENGINE: 'hljs',
-        SYNTAX_ENGINE: 'hljs',
         TOOL_SEARCH_ENABLED: '0',
         TOOL_SEARCH_HIGHLIGHT: '0',
         TOOL_AUTO_SCROLL_DEFAULT: '1',
@@ -1757,29 +1729,18 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
           }
         }
 
-        // Clear localStorage: delete all logsviewer panel height keys + set a reset flag
-        // The flag is read by the widget/tool on next load and triggers height reset
+        // Clear localStorage — ONLY for the tab being reset
         try {
-          for (var i = localStorage.length - 1; i >= 0; i--) {
-            var k = localStorage.key(i);
-            if (k && k.indexOf('logsviewer_panel_height') === 0) {
-              localStorage.removeItem(k);
-            }
-          }
-          // Also write an explicit reset flag so the widget/tool resets even if the key
-          // was already absent (e.g. Unraid AJAX keeps the same page open)
-          localStorage.setItem('logsviewer_panel_height_reset', '1');
-        } catch (_) {}
-        try { localStorage.removeItem('logsviewer_autoscroll'); } catch (_) {}
-
-        // Reset syntax preference back to Plain Text (clears all stored syntax keys)
-        try { localStorage.removeItem('logsviewer_syntax'); } catch (_) {}
-        try {
-          for (let i = localStorage.length - 1; i >= 0; i--) {
-            const k = localStorage.key(i);
-            if (k && k.indexOf('logsviewer_syntax_') === 0) {
-              localStorage.removeItem(k);
-            }
+          if (isToolTabActive()) {
+            localStorage.removeItem('logsviewer_panel_height_tool');
+            localStorage.removeItem('logsviewer_autoscroll_tool');
+            localStorage.removeItem('logsviewer_syntax_v4_tool');
+            localStorage.setItem('logsviewer_panel_height_reset_tool', '1');
+          } else {
+            localStorage.removeItem('logsviewer_panel_height_dash');
+            localStorage.removeItem('logsviewer_autoscroll_dash');
+            localStorage.removeItem('logsviewer_syntax_v4_dash');
+            localStorage.setItem('logsviewer_panel_height_reset_dash', '1');
           }
         } catch (_) {}
 // Make sure Apply becomes clickable and Dynamix sees changes

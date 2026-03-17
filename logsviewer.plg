@@ -2,12 +2,12 @@
 <!DOCTYPE PLUGIN [
  <!ENTITY name "logsviewer">
  <!ENTITY author "Lazaros Chalkidis">
- <!ENTITY version "2026.03.16">
+ <!ENTITY version "2026.03.17">
  <!ENTITY branch "main">
  <!ENTITY gitURL "https://github.com/Lazaros-Chalkidis/unraid-logsviewer">
  <!ENTITY pluginURL "&gitURL;/releases/download/&version;/&name;-&version;.txz">
  <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
- <!ENTITY md5 "098d9e5de0fa0b5b6af065133e0ab98c">
+ <!ENTITY md5 "4eda19785f178c9dd81aafaeb7c0d69e">
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
@@ -20,7 +20,21 @@ Fully configurable, lightweight, and safe for large logs, with sensible defaults
 </DESCRIPTION>
 
 <CHANGES>
-# Changelog
+# CHANGELOG
+
+## Version 2026.03.17
+
+### Fixes
+- Fixed widget stopping after ~1 hour (automatic CSRF token renewal)
+- Reset to Defaults now works independently per tab (Dashboard and Tool no longer affect each other)
+- Fixed syntax selection being lost when resetting the other tab
+- Fixed panel height being reset on both pages when only one was reset
+- Removed stray config key that could reset Dashboard syntax engine when resetting Tool
+
+### Removed
+- Removed "Refresh only when scripts are running" option (was ineffective and caused confusion)
+
+---
 
 ## Version 2026.03.16
 
@@ -37,6 +51,8 @@ Fully configurable, lightweight, and safe for large logs, with sensible defaults
 ### Fixes
 - Single quotes in logs now display correctly instead of showing as &#039;
 
+---
+
 ## Version 2026.03.14
 
 ### Improvements
@@ -45,6 +61,7 @@ Fully configurable, lightweight, and safe for large logs, with sensible defaults
 - Security: support URL corrected to official forum thread
 - Plugin: file permissions corrected (page files 644 instead of 755)
 
+---
 
 ## Version 2026.03.07
 

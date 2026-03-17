@@ -1,4 +1,18 @@
-# Changelog
+# CHANGELOG
+
+## Version 2026.03.17
+
+### Fixes
+- Fixed widget stopping after ~1 hour (automatic CSRF token renewal)
+- Reset to Defaults now works independently per tab (Dashboard and Tool no longer affect each other)
+- Fixed syntax selection being lost when resetting the other tab
+- Fixed panel height being reset on both pages when only one was reset
+- Removed stray config key that could reset Dashboard syntax engine when resetting Tool
+
+### Removed
+- Removed "Refresh only when scripts are running" option (was ineffective and caused confusion)
+
+---
 
 ## Version 2026.03.16
 
@@ -15,6 +29,8 @@
 ### Fixes
 - Single quotes in logs now display correctly instead of showing as &#039;
 
+---
+
 ## Version 2026.03.14
 
 ### Improvements
@@ -23,6 +39,7 @@
 - Security: support URL corrected to official forum thread
 - Plugin: file permissions corrected (page files 644 instead of 755)
 
+---
 
 ## Version 2026.03.07
 

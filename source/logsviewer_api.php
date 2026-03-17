@@ -39,7 +39,7 @@ final class LogsViewerEndpoint
     public function __construct()
     {
         if (!is_dir(self::CACHE_DIR)) {
-            @mkdir(self::CACHE_DIR, 0777, true);
+            @mkdir(self::CACHE_DIR, 0755, true);
         }
     }
 
@@ -48,7 +48,7 @@ final class LogsViewerEndpoint
     /** Generate or return existing nonce (stored in a temp file, rotated hourly) */
     public static function generateNonce(): string
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0700, true);
+        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0755, true);
         $file = self::NONCE_FILE;
         $now  = time();
 
@@ -125,10 +125,17 @@ final class LogsViewerEndpoint
     public function run(): void
     {
         $this->enforceAjaxGet();
+
+        // Nonce refresh must bypass nonce verification (the old one has expired)
+        $action = (string)($_GET['action'] ?? '');
+        if ($action === 'refresh_nonce') {
+            $this->enforceRateLimit();
+            $this->json(['token' => self::generateNonce()]);
+        }
+
         $this->verifyNonce();
         $this->enforceRateLimit();
 
-        $action = (string)($_GET['action'] ?? '');
         $routes = [
             'get_script_states'     => fn() => $this->replyStates(),
             'discover_sources'      => fn() => $this->replyDiscoverSources(),
@@ -786,7 +793,7 @@ final class LogsViewerEndpoint
 
     private function cachePut(array $cfg, string $json): void
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0777, true);
+        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0755, true);
         $path = $this->cachePath($this->cacheKey($cfg));
         $tmp  = $path . '.' . getmypid() . '.tmp';
         if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $path);

@@ -8,7 +8,6 @@
 let logsviewer_cfg = {};
 let logsviewer_searchState = { term: '', hits: [], idx: -1 };
 let logsviewer_pauseHoverActive = false;
-let logsviewer_pollBackoffUntil = 0;
 let logsviewer_lastRenderKey = '';          // diff-check: skip re-render when content unchanged
 let logsviewer_systemFetchCounter = 0;     // throttle background system fetch (#2)
 
@@ -378,8 +377,28 @@ function logsviewer_fetchCategory(category, callback, opts) {
 
             if (callback) callback(scripts);
         })
-        .fail(function() {
-            console.error('Failed to fetch logs for category:', category);
+        .fail(function(jqXHR) {
+            // Nonce expired (403) → refresh token and retry once
+            if (jqXHR && jqXHR.status === 403) {
+                logsviewer_refreshNonce(function(ok) {
+                    if (ok) {
+                        // Retry with fresh nonce (no further retry on failure)
+                        var retryUrl = logsviewer_apiUrl('get_script_states', { category: category });
+                        $.ajax({ url: retryUrl, dataType: 'json', timeout: 15000 })
+                            .done(function(scripts) {
+                                if (!Array.isArray(scripts)) scripts = [];
+                                logsviewer_categoryData[category] = scripts;
+                                if (callback) callback(scripts);
+                            })
+                            .fail(function() {
+                                if (callback) callback([]);
+                            });
+                    } else {
+                        if (callback) callback([]);
+                    }
+                });
+                return;
+            }
             if (callback) callback([]);
         });
 }
@@ -406,6 +425,33 @@ function logsviewer_apiUrl(action, extraParams) {
         });
     }
     return url;
+}
+
+// ---------------------------------------------------------------------------
+// Auto-refresh expired CSRF nonce (token rotates hourly on server)
+let logsviewer_nonceRefreshing = false;
+
+function logsviewer_refreshNonce(callback) {
+    if (logsviewer_nonceRefreshing) return;
+    logsviewer_nonceRefreshing = true;
+
+    var url = '/plugins/logsviewer/logsviewer_api.php?action=refresh_nonce';
+    if (logsviewer_cfg.apiContext) {
+        url += '&context=' + encodeURIComponent(logsviewer_cfg.apiContext);
+    }
+
+    $.ajax({ url: url, dataType: 'json', timeout: 5000 })
+        .done(function(data) {
+            if (data && data.token) {
+                logsviewer_cfg.lvToken = data.token;
+            }
+            logsviewer_nonceRefreshing = false;
+            if (callback) callback(true);
+        })
+        .fail(function() {
+            logsviewer_nonceRefreshing = false;
+            if (callback) callback(false);
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -1909,29 +1955,12 @@ function logsviewer_showErrorToast(message) {
 function logsviewer_status() {
     var config = logsviewer_cfg || {};
 
-    // Safe backoff
-    if (config.refreshEnabled && config.refreshOnlyWhenRunning && Date.now() < logsviewer_pollBackoffUntil) {
-        return;
-    }
-
     var logContainer = $(logsviewer_dom.container);
     var scrollTarget = logContainer.length ? logContainer.get(0) : null;
     var autoscrollEnabled = $(logsviewer_dom.autoscroll).prop('checked');
     var allowAutoscroll = autoscrollEnabled && !(config.pauseOnHover && logsviewer_pauseHoverActive);
 
     logsviewer_fetchCategory(logsviewer_activeCategory, function(scripts) {
-        // refresh-only-when-running backoff
-        if (config.refreshOnlyWhenRunning) {
-            var anyRunning = Array.isArray(scripts) ? scripts.some(function(s) { return s && s.status === 'running'; }) : false;
-            if (!anyRunning) {
-                var base = Number(config.refreshInterval || 0);
-                var backoff = Math.max(base || 10000, 10000) * 4;
-                logsviewer_pollBackoffUntil = Date.now() + backoff;
-            } else {
-                logsviewer_pollBackoffUntil = 0;
-            }
-        }
-
         // Auto-scroll: always snap to bottom when autoscroll is active
         if (allowAutoscroll && scrollTarget) {
             requestAnimationFrame(function() {
@@ -2104,16 +2133,17 @@ $(function() {
             ? (logsviewer_isMobileish() ? 200 : 400)
             : 300;
 
-        // If settings page requested a reset, clear all height keys and consume flag
+        // If settings page requested a reset for THIS context, clear its height key and consume flag
+        var resetFlagKey = 'logsviewer_panel_height_reset_' + (ctx === 'tool' ? 'tool' : 'dash');
         try {
+            if (localStorage.getItem(resetFlagKey) === '1') {
+                localStorage.removeItem(resetFlagKey);
+                localStorage.removeItem(storageKey);
+            }
+            // Backward compat: consume old global flag (from pre-v2 installs) without nuking other context
             if (localStorage.getItem('logsviewer_panel_height_reset') === '1') {
                 localStorage.removeItem('logsviewer_panel_height_reset');
-                for (var i = localStorage.length - 1; i >= 0; i--) {
-                    var k = localStorage.key(i);
-                    if (k && k.indexOf('logsviewer_panel_height') === 0) {
-                        localStorage.removeItem(k);
-                    }
-                }
+                localStorage.removeItem(storageKey);
             }
         } catch(_) {}
 
@@ -2156,14 +2186,10 @@ $(function() {
         // Expose reset function for Settings page
         window.logsviewer_resetPanelHeight = function(context) {
             try {
-                // Delete all height keys + set flag for cross-page reset
-                for (var i = localStorage.length - 1; i >= 0; i--) {
-                    var k = localStorage.key(i);
-                    if (k && k.indexOf('logsviewer_panel_height') === 0) {
-                        localStorage.removeItem(k);
-                    }
-                }
-                localStorage.setItem('logsviewer_panel_height_reset', '1');
+                // Delete only this context's height key + set context-specific flag
+                localStorage.removeItem(storageKey);
+                var flagKey = 'logsviewer_panel_height_reset_' + (ctx === 'tool' ? 'tool' : 'dash');
+                localStorage.setItem(flagKey, '1');
             } catch(_) {}
             // Apply immediately on current page
             resizeEnabled = false;
