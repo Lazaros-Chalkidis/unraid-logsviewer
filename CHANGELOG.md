@@ -1,4 +1,13 @@
-# CHANGELOG
+
+## v2026.03.21
+
+### New Features
+- Theme Support: Full compatibility with Unraid Dark / White / Gray /Azure themes across Dashboard widget, Tool page, and Settings page
+
+### Changes
+- Prism syntax engine promoted from Beta to stable
+
+---
 
 ## Version 2026.03.17
 

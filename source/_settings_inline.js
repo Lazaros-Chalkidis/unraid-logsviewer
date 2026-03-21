@@ -1,4 +1,9 @@
 (function () {
+      // Light theme helper
+      function _lv_isLight() {
+        var el = document.querySelector('.logsviewer-settings');
+        return el && el.classList.contains('lv-light');
+      }
       // ═══════════ Accordion logic ═══════════
       // Each panel: first lv-card expanded, rest collapsed
       function lvInitAccordions(panelId) {
@@ -85,14 +90,15 @@
         }
         function applyColor(val, userInitiated){
           const normalized = normalizeHex(val);
-          const display = normalized || '#0b0f14';
+          const _light = _lv_isLight();
+          const display = normalized || (_light ? '#ffffff' : '#0b0f14');
 
           // Update visible controls / preview
           picker.value = display;
           hex.value = display;
           preview.style.background = display;
-          preview.style.borderColor = 'rgba(255,255,255,.14)';
-          preview.style.color = 'rgba(255,255,255,.9)';
+          preview.style.borderColor = _light ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
+          preview.style.color = _light ? 'rgba(0,0,0,.8)' : 'rgba(255,255,255,.9)';
 
           // IMPORTANT:
           // - Only the hidden field submits (name="LOG_BG_COLOR").
@@ -133,7 +139,7 @@
         });
 
         // Initial sync (do NOT mark dirty)
-        applyColor(hidden.value || picker.value || '#0b0f14', false);
+        applyColor(hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#0b0f14'), false);
       }
 
       // TOOL TAB color picker handler (identical logic)
@@ -166,14 +172,14 @@
         
         function applyColorTool(val, userInitiated){
           const normalized = normalizeHex(val);
-          const display = normalized || '#1b1b1b';
+          const display = normalized || (_lv_isLight() ? '#ffffff' : '#1b1b1b');
 
           toolPicker.value = display;
           toolHex.value = display;
           if (toolPreview) {
             toolPreview.style.background = display;
-            toolPreview.style.borderColor = 'rgba(255,255,255,.14)';
-            toolPreview.style.color = 'rgba(255,255,255,.9)';
+            toolPreview.style.borderColor = _lv_isLight() ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
+            toolPreview.style.color = _lv_isLight() ? 'rgba(0,0,0,.8)' : 'rgba(255,255,255,.9)';
           }
 
           if (userInitiated) {
@@ -208,7 +214,7 @@
         });
 
         // Initial sync
-        applyColorTool(toolHidden.value || toolPicker.value || '#1b1b1b', false);
+        applyColorTool(toolHidden.value || toolPicker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'), false);
       }
     })();
 
@@ -356,13 +362,14 @@
           const hidden  = document.getElementById(colorIds.hidden);
           const preview = document.getElementById(colorIds.preview);
           if (picker && hex && hidden && preview) {
-            const defaultColor = colorIds.defaultColor || '#1b1b1b';
+            const _light = _lv_isLight();
+            const defaultColor = colorIds.defaultColor || (_light ? '#ffffff' : '#1b1b1b');
             picker.value = defaultColor;
             hex.value = defaultColor;
             hidden.value = '';
             preview.style.background = defaultColor;
-            preview.style.borderColor = 'rgba(255,255,255,.14)';
-            preview.style.color = 'rgba(255,255,255,.9)';
+            preview.style.borderColor = _light ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
+            preview.style.color = _light ? 'rgba(0,0,0,.8)' : 'rgba(255,255,255,.9)';
           }
         }
       }

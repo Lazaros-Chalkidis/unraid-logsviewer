@@ -7,6 +7,11 @@ require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
 $cfg = parse_plugin_cfg('logsviewer', true);
 
+// Light theme detection — read Unraid's dynamix.cfg
+$_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
+$_theme_name = $_dyn_cfg['display']['theme'] ?? '';
+$lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';
+
 // Dashboard (Widget) Sources — use ONLY DASH_* keys.
 // Migration (B) happens automatically: legacy/global -> DASH_* one time.
 $cfg_file = '/boot/config/plugins/logsviewer/logsviewer.cfg';
@@ -408,11 +413,23 @@ $tabs_html      = $render_tabs($tabs_aria_label, $enabledScripts, $systemLogName
 $panel_html     = $render_log_panel($log_placeholder, $last_update_label, $tile_config['showToast'] ?? true);
 $config_html    = $render_config($tile_config_json);
 
+// Inject light theme class into widget wrapper divs
+if ($lv_light_class !== '') {
+    $tabs_html  = str_replace('class="logsviewer-body"', 'class="logsviewer-body' . $lv_light_class . '"', $tabs_html);
+    $panel_html = str_replace('class="logsviewer-body logsviewer-collapsible"', 'class="logsviewer-body logsviewer-collapsible' . $lv_light_class . '"', $panel_html);
+}
+
 $controls_responsive = $render_controls(true);
 $controls_legacy     = $render_controls(false);
 
 $header_responsive = $render_header(true,  $tile_title, $compact_html, $autoscroll_html, $controls_responsive);
 $header_legacy     = $render_header(false, $tile_title, $compact_html, $autoscroll_html, $controls_legacy);
+
+// Inject light theme class into headers (header is outside .logsviewer-body in tile markup)
+if ($lv_light_class !== '') {
+    $header_responsive = str_replace('class="tile-header logsviewer-header"', 'class="tile-header logsviewer-header' . $lv_light_class . '"', $header_responsive);
+    $header_legacy     = str_replace('class="logsviewer-legacy-header"', 'class="logsviewer-legacy-header' . $lv_light_class . '"', $header_legacy);
+}
 
 $tile = [
     'name'    => 'logsviewer',

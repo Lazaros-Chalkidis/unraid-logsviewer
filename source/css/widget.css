@@ -4,6 +4,35 @@
    tool.css and settings.css layer on top with page-specific overrides.
    ========================================================================== */
 
+/* ── LIGHT / DARK THEME VARIABLES ─────────────────────────────────────────── */
+:root {
+  --lv-c-text:          rgba(255,255,255,.85);
+  --lv-c-text-mid:      rgba(255,255,255,.65);
+  --lv-c-text-muted:    rgba(255,255,255,.50);
+  --lv-c-border:        rgba(255,255,255,.10);
+  --lv-c-border-strong: rgba(255,255,255,.18);
+  --lv-c-border-subtle: rgba(255,255,255,.06);
+  --lv-c-bg-hover:      rgba(255,255,255,.07);
+  --lv-c-bg-subtle:     rgba(255,255,255,.04);
+  --lv-c-bg-faint:      rgba(255,255,255,.02);
+  --lv-c-resizer:       rgba(255,255,255,.25);
+  --lv-c-panel-bg:      rgba(0,0,0,.20);
+}
+.lv-light {
+  --lv-c-text:          rgba(0,0,0,.85);
+  --lv-c-text-mid:      rgba(0,0,0,.65);
+  --lv-c-text-muted:    rgba(0,0,0,.50);
+  --lv-c-border:        rgba(0,0,0,.12);
+  --lv-c-border-strong: rgba(0,0,0,.20);
+  --lv-c-border-subtle: rgba(0,0,0,.08);
+  --lv-c-bg-hover:      rgba(0,0,0,.05);
+  --lv-c-bg-subtle:     rgba(0,0,0,.04);
+  --lv-c-bg-faint:      rgba(0,0,0,.02);
+  --lv-c-resizer:       rgba(0,0,0,.15);
+  --lv-c-panel-bg:      rgba(0,0,0,.03);
+}
+
+
 /* ── 1. SCOPE & CSS TOKENS ────────────────────────────────────────────────── */
 
 .logsviewer-body{
@@ -37,6 +66,50 @@
   --logsviewer-font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
   --logsviewer-font-weight:400;
   --logsviewer-white-space:pre-wrap;
+}
+
+/* Light theme: override ALL logsviewer tokens */
+.lv-light.logsviewer-body,
+.lv-light .logsviewer-body{
+  --logsviewer-bg:#f5f5f5;
+  --logsviewer-border:#ccc;
+  --logsviewer-text-primary:#1a1a1a;
+  --logsviewer-text-secondary:#444;
+  --logsviewer-text-muted:#777;
+  --logsviewer-tab-bg:#e4e4e4;
+  --logsviewer-tab-border:#ccc;
+  --logsviewer-tab-active-bg:#f5f5f5;
+  --logsviewer-tab-active-border:#bbb;
+  --logsviewer-tab-hover-border:#999;
+  --logsviewer-tab-focus-ring:#3b82f6;
+  --logsviewer-tab-running-bg:#d4edda;
+  --logsviewer-tab-running-border:#28a745;
+  --logsviewer-accent:#2563eb;
+  --logsviewer-success-bg:#d4edda;
+  --logsviewer-success-border:#28a745;
+  --logsviewer-toggle-off:#b0b0b0;
+  --logsviewer-toggle-on:#3b82f6;
+  --logsviewer-toggle-knob:#fff;
+  --logsviewer-log-bg:#fff;
+}
+
+/* Header lives OUTSIDE .logsviewer-body in dashboard tile markup.
+   The .lv-light class on the header itself (dashboard) or on the
+   tool-wrapper ancestor (tool page) provides these tokens. */
+.lv-light.logsviewer-header,
+.lv-light .logsviewer-header,
+.lv-light.logsviewer-legacy-header,
+.lv-light .logsviewer-legacy-header{
+  --logsviewer-bg:#f5f5f5;
+  --logsviewer-border:#ccc;
+  --logsviewer-text-primary:#1a1a1a;
+  --logsviewer-text-secondary:#444;
+  --logsviewer-text-muted:#777;
+  --logsviewer-tab-bg:#e4e4e4;
+  --logsviewer-tab-border:#ccc;
+  --logsviewer-tab-hover-border:#999;
+  --logsviewer-accent:#2563eb;
+  --logsviewer-toggle-on:#486dba;
 }
 
 /* Header inherits tokens with toggle override */
@@ -89,7 +162,7 @@
   transition:color 0.2s ease, background-color 0.2s ease;
 }
 #logsviewer-settings-icon:hover,
-#logsviewer-export-icon:hover{ color:var(--logsviewer-accent,#4aa3ff); background-color:rgba(255,255,255,0.05); }
+#logsviewer-export-icon:hover{ color:var(--logsviewer-accent,#4aa3ff); background-color:var(--lv-c-bg-hover); }
 #logsviewer-settings-icon:focus-visible,
 #logsviewer-export-icon:focus-visible{ outline:2px solid var(--logsviewer-accent,#4aa3ff); outline-offset:2px; }
 #logsviewer-manual-refresh.disabled{ opacity:0.5; pointer-events:none; cursor:not-allowed; }
@@ -105,9 +178,9 @@
 /* ── 3. AUTOSCROLL TOGGLE ─────────────────────────────────────────────────── */
 
 .logsviewer-autoscroll-container{ display:inline-flex; align-items:center; gap:12px; justify-self:start; margin-top:0.35rem; }
-.logsviewer-autoscroll-title{ user-select:none; line-height:1; font-weight:600; font-size:1.8rem; color:#fffb; }
+.logsviewer-autoscroll-title{ user-select:none; line-height:1; font-weight:600; font-size:1.8rem; color:var(--lv-c-text-mid); }
 .logsviewer-autoscroll-state{ font-weight:700; }
-.logsviewer-autoscroll-state--off{ color:#fffb; }
+.logsviewer-autoscroll-state--off{ color:var(--lv-c-text-mid); }
 .logsviewer-autoscroll-state--on{ color:#0088cc; font-size:1.8rem; }
 
 /* Autoscroll aligned under header title */
@@ -136,7 +209,7 @@
   position:absolute !important; inset:0 !important; cursor:pointer !important;
   background:var(--logsviewer-toggle-off) !important;
   border-radius:4px !important;
-  border:2px solid rgba(255,255,255,0.85) !important;
+  border:2px solid var(--lv-c-text) !important;
   transition:background-color 0.18s ease, border-color 0.18s ease;
   display:block !important; box-sizing:border-box !important;
 }
@@ -153,7 +226,7 @@
   display:block !important; z-index:2 !important;
   pointer-events:none !important;
 }
-.logsviewer-switch input:checked + .logsviewer-switch-slider{ background:var(--logsviewer-toggle-on) !important; border-color:rgba(255,255,255,0.95) !important; }
+.logsviewer-switch input:checked + .logsviewer-switch-slider{ background:var(--logsviewer-toggle-on) !important; border-color:var(--lv-c-text) !important; }
 .logsviewer-switch input:checked + .logsviewer-switch-slider:before,
 .logsviewer-switch input:checked + .logsviewer-switch-slider:after{ transform:translateX(16px) translateY(-50%) !important; }
 .logsviewer-switch input:focus-visible + .logsviewer-switch-slider{ outline:2px solid var(--logsviewer-tab-focus-ring); outline-offset:2px; }
@@ -189,13 +262,13 @@
   transition:background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .logsviewer-cat-btn + .logsviewer-cat-btn{ border-left:none; }
-.logsviewer-cat-btn:hover{ background:rgba(255,255,255,.06); color:var(--logsviewer-text-primary); }
+.logsviewer-cat-btn:hover{ background:var(--lv-c-bg-hover); color:var(--logsviewer-text-primary); }
 .logsviewer-cat-btn.logsviewer-cat-btn--active{ background-color:var(--logsviewer-bg,#1b1b1b); border-bottom-color:var(--logsviewer-bg,#1b1b1b); color:var(--logsviewer-text-primary); z-index:1; }
 .logsviewer-cat-btn.logsviewer-cat-btn--hidden{ display:none; }
 
 /* Tab underlines via ::after */
 .logsviewer-cat-btn::after{ content:""; position:absolute; left:16px; right:16px; bottom:0; height:1px; background:transparent; transition:background 0.15s ease; z-index:2; pointer-events:none; }
-.logsviewer-cat-btn.logsviewer-cat-btn--active::after{ background:#ffffff; }
+.logsviewer-cat-btn.logsviewer-cat-btn--active::after{ background:var(--lv-c-text); }
 .logsviewer-cat-btn:hover:not(.logsviewer-cat-btn--active)::after{ background:#ff8c00; }
 
 .logsviewer-cat-btn__label{ pointer-events:none; }
@@ -223,7 +296,7 @@
   border-bottom:1px solid var(--logsviewer-tab-border,#3c3c3c);
 }
 .logsviewer-cat-dropdown li:last-child{ border-bottom:none; }
-.logsviewer-cat-dropdown li:hover{ background:rgba(255,255,255,0.10); color:var(--logsviewer-text-primary,#fff); }
+.logsviewer-cat-dropdown li:hover{ background:var(--lv-c-bg-hover); color:var(--logsviewer-text-primary,#fff); }
 
 /* Active item in dropdown (currently loaded log) */
 .logsviewer-cat-dropdown li.lv-item--active{
@@ -257,7 +330,7 @@
   transition:background 0.15s ease, color 0.15s ease;
 }
 .logsviewer-tabs-row__controls .logsviewer-tabrow-ctrl + .logsviewer-tabrow-ctrl{ border-left:none; }
-.logsviewer-tabs-row__controls .logsviewer-tabrow-ctrl:hover{ background:rgba(255,255,255,.06); color:var(--logsviewer-text-primary); }
+.logsviewer-tabs-row__controls .logsviewer-tabrow-ctrl:hover{ background:var(--lv-c-bg-hover); color:var(--logsviewer-text-primary); }
 .logsviewer-tabrow-ctrl__label{ pointer-events:none; }
 .logsviewer-tabrow-ctrl__caret{ font-size:0.72em; opacity:0.5; pointer-events:none; }
 
@@ -267,7 +340,7 @@
   position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:1.06rem;
 }
 .logsviewer-tabrow-ctrl .logsviewer-filter-select option,
-.logsviewer-tabrow-ctrl .logsviewer-syntax-select option{ background:#2c2c2c; color:#e0e0e0; font-size:1.06rem; }
+.logsviewer-tabrow-ctrl .logsviewer-syntax-select option{ background:var(--logsviewer-tab-bg,#2c2c2c); color:var(--logsviewer-text-primary,#e0e0e0); font-size:1.06rem; }
 
 /* Legacy sizing */
 .logsviewer-body--legacy .logsviewer-cat-btn{ font-size:0.72rem; padding:0.35rem 0.5rem; }
@@ -306,7 +379,7 @@
 
 /* Custom scrollbar */
 .logsviewer-log::-webkit-resizer{
-  background:linear-gradient(135deg,transparent 60%,rgba(255,255,255,0.25) 60%,rgba(255,255,255,0.25) 65%,transparent 65%,transparent 72%,rgba(255,255,255,0.25) 72%,rgba(255,255,255,0.25) 77%,transparent 77%,transparent 84%,rgba(255,255,255,0.25) 84%);
+  background:linear-gradient(135deg,transparent 60%,var(--lv-c-resizer) 60%,var(--lv-c-resizer) 65%,transparent 65%,transparent 72%,var(--lv-c-resizer) 72%,var(--lv-c-resizer) 77%,transparent 77%,transparent 84%,var(--lv-c-resizer) 84%);
 }
 .logsviewer-log::-webkit-scrollbar{ width:6px; height:6px; }
 .logsviewer-log::-webkit-scrollbar-track{ background:transparent; }
@@ -385,7 +458,7 @@
   border-radius:0.55rem;
   border:1px solid var(--logsviewer-border,#3c3c3c);
   background-color:var(--logsviewer-log-bg) !important;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.03);
+  box-shadow:inset 0 0 0 1px var(--lv-c-bg-faint);
   overflow:hidden;
   contain:layout style;
 }
@@ -428,7 +501,7 @@
 /* Selected log toast */
 .logsviewer-selected-toast{
   font-size:0.82rem;
-  color:var(--logsviewer-text-secondary,rgba(255,255,255,.55));
+  color:var(--logsviewer-text-secondary,var(--lv-c-text-muted));
   letter-spacing:0.01em;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   padding:0 0.25rem;
@@ -529,7 +602,7 @@
   display:inline-flex; align-items:center; justify-content:center; gap:0.35em;
   height:1.85em; padding:0 0.8em;
   border-radius:0.5rem; font-size:0.85rem; line-height:1; font-weight:700;
-  border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.08);
+  border:1px solid var(--lv-c-resizer); background:var(--lv-c-bg-hover);
   user-select:none; cursor:pointer; white-space:nowrap;
   transition:transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
   will-change:transform;
@@ -545,7 +618,7 @@
 .logsviewer-badge--critical:hover{ background:linear-gradient(135deg,rgba(255,0,0,0.3),rgba(255,0,0,0.18)); border-color:rgba(255,0,0,0.6); }
 .logsviewer-badge:active{ transform:translateY(1px); }
 .logsviewer-badge:focus-visible{ outline:2px solid var(--logsviewer-tab-focus-ring); outline-offset:2px; }
-.logsviewer-badge-label{ color:#fffb; font-weight:700; }
+.logsviewer-badge-label{ color:var(--lv-c-text-mid); font-weight:700; }
 .logsviewer-badge-count{ font-variant-numeric:tabular-nums; font-weight:800; }
 .logsviewer-count--info{ color:#1e90ff; }
 .logsviewer-count--warning{ color:#ffbf00; }
@@ -655,7 +728,7 @@
 .logsviewer-tabs .script-tab.selected-script::after,
 .logsviewer-tabs .script-tab[aria-pressed="true"]::after,
 .logsviewer-tabs .script-tab[aria-selected="true"]::after{
-  content:'' !important; position:absolute !important; left:2.7rem !important; right:2.7rem !important; bottom:0 !important; height:1px !important; background:#ffffff !important;
+  content:'' !important; position:absolute !important; left:2.7rem !important; right:2.7rem !important; bottom:0 !important; height:1px !important; background:var(--lv-c-text) !important;
 }
 .logsviewer-tabs .script-tab:not(.selected-script):not([aria-pressed="true"]):not([aria-selected="true"])::after{
   content:'' !important; position:absolute !important; left:2.7rem !important; right:2.7rem !important; bottom:0 !important; height:1px !important;

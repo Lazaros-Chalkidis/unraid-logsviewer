@@ -12,6 +12,11 @@ require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 // Load TOOL configuration
 $cfg = parse_plugin_cfg('logsviewer', true);
 
+// Light theme detection
+$_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
+$_theme_name = $_dyn_cfg['display']['theme'] ?? '';
+$lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';
+
 // Use TOOL_ prefixed config keys
 $enabledScripts = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_SCRIPTS'] ?? 'syslog'))));
 if (!$enabledScripts) $enabledScripts = ['syslog'];
@@ -372,6 +377,12 @@ $tabs_html      = $render_tabs($tabs_aria_label, $enabledSystemLogs, $systemLogN
 $panel_html     = $render_log_panel($log_placeholder, $last_update_label, $tile_config['showToast'] ?? true);
 // DO NOT call render_config here - we'll inject it separately!
 
+// Inject light theme class into widget wrapper divs
+if ($lv_light_class !== '') {
+    $tabs_html  = str_replace('class="logsviewer-body"', 'class="logsviewer-body' . $lv_light_class . '"', $tabs_html);
+    $panel_html = str_replace('class="logsviewer-body logsviewer-collapsible"', 'class="logsviewer-body logsviewer-collapsible' . $lv_light_class . '"', $panel_html);
+}
+
 $controls_responsive = $render_controls(true);
 $controls_legacy     = $render_controls(false);
 
@@ -390,7 +401,7 @@ $widget_content = $isResponsiveWebgui
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/tool.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" media="print" onload="this.media='all'">
 
-<div class="logsviewer-tool-wrapper">
+<div class="logsviewer-tool-wrapper<?php echo $lv_light_class; ?>">
 <div class="logsviewer-tool-panel">
 <div class="logsviewer-widget-content">
 <?php echo $widget_content; ?>

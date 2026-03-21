@@ -28,6 +28,31 @@ let logsviewer_activeLogTotalLines = 0;    // Current displayed log total lines
 
 let logsviewer_lastShown = { category: null, source: null }; // Track last rendered log
 
+// Light theme detection — PHP injects .lv-light; JS luminance backup
+function logsviewer_isLightTheme() {
+    // Primary: check PHP-injected class
+    var el = document.querySelector('.logsviewer-body, .logsviewer-tool-wrapper');
+    if (el && el.classList.contains('lv-light')) return true;
+    // Backup: check body background luminance
+    try {
+        var bg = getComputedStyle(document.body).backgroundColor;
+        var m = bg.match(/(\d+)/g);
+        if (m && m.length >= 3) {
+            var lum = (0.299 * +m[0] + 0.587 * +m[1] + 0.114 * +m[2]) / 255;
+            return lum > 0.5;
+        }
+    } catch (_) {}
+    return false;
+}
+
+// Run luminance backup on load — inject .lv-light if PHP missed it
+function logsviewer_detectTheme() {
+    if (!logsviewer_isLightTheme()) return;
+    document.querySelectorAll('.logsviewer-body, .logsviewer-tool-wrapper').forEach(function(el) {
+        if (!el.classList.contains('lv-light')) el.classList.add('lv-light');
+    });
+}
+
 // Login event toast de-dupe (avoid repeating on each poll)
 let logsviewer_lastLoginEventId = null;
 
@@ -998,7 +1023,7 @@ function logsviewer_loadHighlightJs(callback) {
     if (!document.querySelector('link[data-logsviewer-hljs-css]')) {
         const cssLink = document.createElement('link');
         cssLink.rel = 'stylesheet';
-        cssLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
+        cssLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/' + (logsviewer_isLightTheme() ? 'github' : 'github-dark') + '.min.css';
         cssLink.setAttribute('data-logsviewer-hljs-css', '1');
         document.head.appendChild(cssLink);
     }
@@ -1057,8 +1082,7 @@ function logsviewer_loadPrism(callback) {
     if (!document.querySelector('link[data-logsviewer-prism-css]')) {
         const cssLink = document.createElement('link');
         cssLink.rel = 'stylesheet';
-        // Theme: okaidia (nice contrast on dark UIs). Can be swapped later.
-        cssLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-okaidia.min.css';
+        cssLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/' + (logsviewer_isLightTheme() ? 'prism' : 'prism-okaidia') + '.min.css';
         cssLink.setAttribute('data-logsviewer-prism-css', '1');
         document.head.appendChild(cssLink);
     }
@@ -1409,6 +1433,28 @@ function logsviewer_quickHash(str) {
 }
 
 // ---------------------------------------------------------------------------
+// XSS defense-in-depth: whitelist-sanitize HTML before innerHTML write.
+// Only <span ...> and </span> tags are allowed (produced by hljs, Prism,
+// level highlighting, and search highlighting). Everything else is escaped.
+// Also double-escapes ALL &lt; / &gt; entities so dangerous content always
+// displays visibly as "&lt;script&gt;" instead of "<script>".
+// ---------------------------------------------------------------------------
+function logsviewer_sanitizeHTML(html) {
+    // 1. Replace any raw HTML tag that is NOT <span> / </span>
+    html = html.replace(/<\/?(?!span[\s>\/])[a-zA-Z][^>]*>/g, function(tag) {
+        return tag.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    });
+
+    // 2. Double-escape ALL entity-encoded angle brackets.
+    //    At this point, every &lt; and &gt; in the string is escaped user content
+    //    (legitimate highlighter/level/search tags use real < >).
+    //    &lt;script&gt; → &amp;lt;script&amp;gt;  (user sees: &lt;script&gt;)
+    html = html.replace(/&lt;/g, '&amp;lt;').replace(/&gt;/g, '&amp;gt;');
+
+    return html;
+}
+
+// ---------------------------------------------------------------------------
 function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
     const filter = logsviewer_getFilterValue();
     const searchTerm = String(logsviewer_searchState.term || '').trim();
@@ -1553,6 +1599,9 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     requestAnimationFrame(function() {
         const el = logDisplay[0];
         if (!el) return;
+
+        // XSS defense-in-depth: strip any non-span HTML tags before writing
+        filtered = logsviewer_sanitizeHTML(filtered);
 
         // innerHTML write (single reflow)
         el.innerHTML = filtered;
@@ -1736,30 +1785,31 @@ function logsviewer_applyThemePreset(target, preset) {
     const set = (k, v) => target.style.setProperty(k, v);
 
     // Log-panel-only palette (scoped to #logsviewer-container)
+    const _light = logsviewer_isLightTheme();
     if (p === 'terminal') {
-        set('--logsviewer-log-bg', '#12161c');
-        set('--logsviewer-border', '#2c3a52');
-        set('--logsviewer-tab-border', '#2c3a52');
-        set('--logsviewer-tab-hover-border', '#3b4d6c');
-        set('--logsviewer-text-primary', '#e6edf6');
-        set('--logsviewer-text-secondary', '#b7c3d6');
-        set('--logsviewer-text-muted', '#7e8aa2');
+        set('--logsviewer-log-bg',           _light ? '#f0f4f8' : '#12161c');
+        set('--logsviewer-border',           _light ? '#b8c9dc' : '#2c3a52');
+        set('--logsviewer-tab-border',       _light ? '#b8c9dc' : '#2c3a52');
+        set('--logsviewer-tab-hover-border', _light ? '#8fa4bd' : '#3b4d6c');
+        set('--logsviewer-text-primary',     _light ? '#1a2a3a' : '#e6edf6');
+        set('--logsviewer-text-secondary',   _light ? '#3d5066' : '#b7c3d6');
+        set('--logsviewer-text-muted',       _light ? '#7a8ea2' : '#7e8aa2');
     } else if (p === 'dim') {
-        set('--logsviewer-log-bg', '#171717');
-        set('--logsviewer-border', '#3a3a3a');
-        set('--logsviewer-tab-border', '#343434');
-        set('--logsviewer-tab-hover-border', '#4a4a4a');
-        set('--logsviewer-text-primary', '#d7d7d7');
-        set('--logsviewer-text-secondary', '#bdbdbd');
-        set('--logsviewer-text-muted', '#8d8d8d');
+        set('--logsviewer-log-bg',           _light ? '#f5f5f5' : '#171717');
+        set('--logsviewer-border',           _light ? '#ccc'    : '#3a3a3a');
+        set('--logsviewer-tab-border',       _light ? '#c0c0c0' : '#343434');
+        set('--logsviewer-tab-hover-border', _light ? '#aaa'    : '#4a4a4a');
+        set('--logsviewer-text-primary',     _light ? '#2a2a2a' : '#d7d7d7');
+        set('--logsviewer-text-secondary',   _light ? '#555'    : '#bdbdbd');
+        set('--logsviewer-text-muted',       _light ? '#888'    : '#8d8d8d');
     } else if (p === 'contrast') {
-        set('--logsviewer-log-bg', '#0f0f0f');
-        set('--logsviewer-border', '#5a5a5a');
-        set('--logsviewer-tab-border', '#4a4a4a');
-        set('--logsviewer-tab-hover-border', '#6a6a6a');
-        set('--logsviewer-text-primary', '#ffffff');
-        set('--logsviewer-text-secondary', '#e0e0e0');
-        set('--logsviewer-text-muted', '#b0b0b0');
+        set('--logsviewer-log-bg',           _light ? '#ffffff' : '#0f0f0f');
+        set('--logsviewer-border',           _light ? '#999'    : '#5a5a5a');
+        set('--logsviewer-tab-border',       _light ? '#aaa'    : '#4a4a4a');
+        set('--logsviewer-tab-hover-border', _light ? '#777'    : '#6a6a6a');
+        set('--logsviewer-text-primary',     _light ? '#000000' : '#ffffff');
+        set('--logsviewer-text-secondary',   _light ? '#222'    : '#e0e0e0');
+        set('--logsviewer-text-muted',       _light ? '#555'    : '#b0b0b0');
     }
 }
 
@@ -1850,7 +1900,7 @@ function logsviewer_applyConfig() {
         // Always set explicitly to ensure consistent background across Dashboard/Tool pages.
         // Unraid's --bg-elevation-* variables differ between page contexts, so we can't rely
         // on CSS variable fallback chains for consistency.
-        logPanel.style.setProperty('--logsviewer-log-bg', bgColor || '#1b1b1b');
+        logPanel.style.setProperty('--logsviewer-log-bg', bgColor || (logsviewer_isLightTheme() ? '#ffffff' : '#1b1b1b'));
     }
 
     // Backwards-compat cleanup (in case an older version set it globally)
@@ -2007,6 +2057,9 @@ $(function() {
         widgetRoot.toggleClass('logsviewer-body--responsive', !!config.isResponsive);
         widgetRoot.toggleClass('logsviewer-body--legacy', !config.isResponsive);
     }
+
+    // Detect light/dark theme (JS luminance backup for PHP detection)
+    logsviewer_detectTheme();
 
     // Apply config (theme/bg/wrap/font/search/ui visibility)
     logsviewer_applyConfig();

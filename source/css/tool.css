@@ -18,8 +18,8 @@
 
 /* ── 3. PANEL CARD ────────────────────────────────────────────────────────── */
 .logsviewer-tool-panel{
-  background:rgba(0,0,0,0.2);
-  border:1px solid rgba(255,255,255,0.1);
+  background:var(--lv-c-panel-bg);
+  border:1px solid var(--lv-c-border);
   border-radius:8px; overflow:hidden;
   box-shadow:0 2px 8px rgba(0,0,0,0.3);
 }
@@ -58,15 +58,15 @@
   display:inline-flex !important; align-items:center !important; justify-content:center !important;
   width:24px !important; height:24px !important; padding:0 !important; margin:0 !important;
   border-radius:4px !important;
-  background:rgba(255,255,255,0.08) !important; border:1px solid rgba(255,255,255,0.10) !important;
+  background:var(--lv-c-border-subtle) !important; border:1px solid var(--lv-c-border) !important;
   text-decoration:none !important;
-  color:var(--logsviewer-text-secondary,rgba(255,255,255,0.7)) !important;
+  color:var(--logsviewer-text-secondary,var(--lv-c-text-mid)) !important;
   transition:color 0.15s ease, background 0.15s ease !important;
 }
 .logsviewer-tool-wrapper .logsviewer-header__controls a:hover,
 .logsviewer-tool-wrapper .tile-header-right-controls a:hover{
   color:var(--logsviewer-text-primary,#fff) !important;
-  background:rgba(255,255,255,0.14) !important;
+  background:var(--lv-c-bg-hover) !important;
 }
 
 /* Icon inside anchor */

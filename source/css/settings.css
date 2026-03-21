@@ -3,6 +3,39 @@
    Loaded via <link> in LogsviewerSettings.page.
    ========================================================================== */
 
+/* ── LIGHT / DARK THEME VARIABLES ─────────────────────────────────────────── */
+:root {
+  --lv-c-text:          rgba(255,255,255,.85);
+  --lv-c-text-mid:      rgba(255,255,255,.65);
+  --lv-c-text-muted:    rgba(255,255,255,.50);
+  --lv-c-border:        rgba(255,255,255,.10);
+  --lv-c-border-strong: rgba(255,255,255,.18);
+  --lv-c-border-subtle: rgba(255,255,255,.06);
+  --lv-c-bg-hover:      rgba(255,255,255,.07);
+  --lv-c-bg-subtle:     rgba(255,255,255,.04);
+  --lv-c-bg-faint:      rgba(255,255,255,.02);
+  --lv-c-resizer:       rgba(255,255,255,.25);
+  --lv-c-panel-bg:      rgba(0,0,0,.20);
+  --lv-c-tab-active-bg: rgba(0,0,0,.35);
+  --lv-c-tab-active-text: #fff;
+}
+.lv-light {
+  --lv-c-text:          rgba(0,0,0,.85);
+  --lv-c-text-mid:      rgba(0,0,0,.65);
+  --lv-c-text-muted:    rgba(0,0,0,.50);
+  --lv-c-border:        rgba(0,0,0,.12);
+  --lv-c-border-strong: rgba(0,0,0,.20);
+  --lv-c-border-subtle: rgba(0,0,0,.08);
+  --lv-c-bg-hover:      rgba(0,0,0,.05);
+  --lv-c-bg-subtle:     rgba(0,0,0,.04);
+  --lv-c-bg-faint:      rgba(0,0,0,.02);
+  --lv-c-resizer:       rgba(0,0,0,.15);
+  --lv-c-panel-bg:      rgba(0,0,0,.03);
+  --lv-c-tab-active-bg: rgba(0,0,0,.06);
+  --lv-c-tab-active-text: #1a1a1a;
+}
+
+
 /* ── 1. FOUC PREVENTION ───────────────────────────────────────────────────── */
 .logsviewer-settings,
 .lv-credits-top{ visibility:visible !important; }
@@ -22,8 +55,8 @@
 .logsviewer-settings .lv-settings-panel{
   padding:1rem; box-sizing:border-box;
   display:grid; gap:0;
-  background:rgba(0,0,0,0.2);
-  border:1px solid rgba(255,255,255,0.12);
+  background:var(--lv-c-panel-bg);
+  border:1px solid var(--lv-c-border);
   border-radius:1px;
 }
 @media (max-width:768px){ .logsviewer-settings .lv-settings-panel{ padding:.75rem; } }
@@ -41,16 +74,16 @@
 .lv-tab{
   display:inline-flex; align-items:center; gap:.4rem;
   padding:.55rem .9rem;
-  border:1px solid rgba(255,255,255,.12); border-bottom:0;
+  border:1px solid var(--lv-c-border); border-bottom:0;
   border-radius:.55rem .55rem 0 0;
-  background:rgba(255,255,255,.04); color:rgba(255,255,255,.75);
+  background:var(--lv-c-bg-subtle); color:var(--lv-c-resizer);
   cursor:pointer; font-weight:700; user-select:none;
   transition:background .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease !important;
 }
 .lv-tab .lv-tabicon{ opacity:.9; font-size:1.05em; transform:translateY(1px); }
-.lv-tab:hover{ background:rgba(255,255,255,.06) !important; color:rgba(255,255,255,.9) !important; }
-.lv-tab.active{ background:rgba(0,0,0,.35) !important; color:#fff !important; border-color:rgba(255,128,0,.55) !important; }
-.lv-tab.active:hover{ background:rgba(0,0,0,.35) !important; color:#fff !important; }
+.lv-tab:hover{ background:var(--lv-c-bg-hover) !important; color:var(--lv-c-resizer) !important; }
+.lv-tab.active{ background:var(--lv-c-tab-active-bg) !important; color:var(--lv-c-tab-active-text) !important; border-color:rgba(255,128,0,.55) !important; }
+.lv-tab.active:hover{ background:var(--lv-c-tab-active-bg) !important; color:var(--lv-c-tab-active-text) !important; }
 
 /* Flush first card under tabs (no gap) */
 #lvDashboardPanel > .lv-card:first-child,
@@ -65,7 +98,7 @@
 
 .lv-credits{
   font-size:.82em !important; text-decoration:none !important;
-  color:rgba(255,255,255,.55) !important; cursor:pointer !important;
+  color:var(--lv-c-text-muted) !important; cursor:pointer !important;
   white-space:nowrap !important;
   display:inline-flex !important; align-items:center !important;
   margin:0 !important; padding:0 .1rem !important; border:0 !important; background:transparent !important;
@@ -76,18 +109,18 @@
 /* ── 5. CARDS ─────────────────────────────────────────────────────────────── */
 
 .lv-card{
-  border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.02);
+  border:1px solid var(--lv-c-bg-hover); background:var(--lv-c-bg-faint);
   border-radius:10px; overflow:hidden; margin-bottom:1rem;
 }
 .lv-card-hd{
-  padding:.85rem 1rem; border-bottom:1px solid rgba(255,255,255,.08);
-  background:rgba(255,255,255,.03); font-weight:800;
+  padding:.85rem 1rem; border-bottom:1px solid var(--lv-c-border-subtle);
+  background:var(--lv-c-bg-subtle); font-weight:800;
   display:flex; justify-content:space-between; align-items:center; gap:.75rem;
   /* Accordion: clickable header */
   cursor:pointer; user-select:none; position:relative; padding-right:2.5rem;
   transition:background .25s ease;
 }
-.lv-card-hd:hover{ background:rgba(255,255,255,.05); }
+.lv-card-hd:hover{ background:var(--lv-c-bg-hover); }
 .lv-card-hd::after{ content:'\25B2'; position:absolute; right:1rem; top:50%; transform:translateY(-50%); font-size:.65rem; opacity:.5; }
 .lv-card.lv-collapsed .lv-card-hd::after{ transform:translateY(-50%) rotate(180deg); }
 .lv-card.lv-collapsed .lv-card-bd{ display:none; }
@@ -98,7 +131,7 @@
 .lv-row{
   display:grid; grid-template-columns:minmax(260px,1fr) minmax(300px,1fr);
   gap:.75rem 1rem; align-items:center;
-  padding:.65rem 0; border-bottom:1px solid rgba(255,255,255,.06);
+  padding:.65rem 0; border-bottom:1px solid var(--lv-c-border-subtle);
 }
 .lv-row:last-child{ border-bottom:0; padding-bottom:0; }
 .lv-label{ font-weight:800; }
@@ -119,36 +152,36 @@
 
 /* ── 8. BUTTONS ───────────────────────────────────────────────────────────── */
 
-.lv-btn{ padding:.35rem .6rem; border-radius:7px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.03); cursor:pointer; user-select:none; font-size:.95em; transition:background .25s ease, color .25s ease, border-color .25s ease; }
-.lv-btn:hover{ background:rgba(255,255,255,.06); }
+.lv-btn{ padding:.35rem .6rem; border-radius:7px; border:1px solid var(--lv-c-border-strong); background:var(--lv-c-bg-subtle); cursor:pointer; user-select:none; font-size:.95em; transition:background .25s ease, color .25s ease, border-color .25s ease; }
+.lv-btn:hover{ background:var(--lv-c-bg-hover); }
 
 .lv-scan-btn{
   display:inline-flex; align-items:center; justify-content:center; gap:.35rem;
   padding:0.3rem 0.7rem; border-radius:0.4rem; cursor:pointer;
-  background-color:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12);
-  color:rgba(255,255,255,.8); font-size:0.8rem; font-weight:600;
+  background-color:var(--lv-c-border-subtle); border:1px solid var(--lv-c-border);
+  color:var(--lv-c-text); font-size:0.8rem; font-weight:600;
   transform:translateZ(0); will-change:transform,box-shadow;
   transition:background-color .22s ease-in-out, color .22s ease-in-out, border-color .22s ease-in-out, box-shadow .22s ease-in-out, transform .22s ease-in-out;
 }
-.lv-scan-btn:hover{ background-color:rgba(255,255,255,.14); transform:translateY(-1px); box-shadow:0 8px 18px rgba(0,0,0,.28); }
+.lv-scan-btn:hover{ background-color:var(--lv-c-bg-hover); transform:translateY(-1px); box-shadow:0 8px 18px rgba(0,0,0,.28); }
 .lv-scan-btn:active{ transform:translateY(0); box-shadow:0 3px 10px rgba(0,0,0,.22); }
 .lv-scan-btn .fa-refresh{ margin-right:0.25rem; }
 
 .lv-action-btn{
   display:inline-flex; align-items:center; justify-content:center;
   padding:0.25rem 0.6rem; border-radius:0.3rem; cursor:pointer;
-  background-color:transparent; border:1px solid rgba(255,255,255,.15); color:rgba(255,255,255,.7); font-size:0.75rem;
+  background-color:transparent; border:1px solid var(--lv-c-border-strong); color:var(--lv-c-border-strong); font-size:0.75rem;
   transform:translateZ(0); will-change:transform,box-shadow;
   transition:background-color .22s ease-in-out, color .22s ease-in-out, border-color .22s ease-in-out, box-shadow .22s ease-in-out, transform .22s ease-in-out;
 }
-.lv-action-btn:hover{ background-color:rgba(255,255,255,.08); transform:translateY(-1px); box-shadow:0 8px 18px rgba(0,0,0,.26); }
+.lv-action-btn:hover{ background-color:var(--lv-c-bg-hover); transform:translateY(-1px); box-shadow:0 8px 18px rgba(0,0,0,.26); }
 .lv-action-btn:active{ transform:translateY(0); box-shadow:0 3px 10px rgba(0,0,0,.2); }
 
 /* ── 9. FOOTER ────────────────────────────────────────────────────────────── */
 
 .lv-footer{
   display:flex; gap:.6rem; padding:1rem;
-  border-top:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03);
+  border-top:1px solid var(--lv-c-bg-hover); background:var(--lv-c-bg-subtle);
   justify-content:center; align-items:center;
   border-bottom-right-radius:10px; border-bottom-left-radius:10px;
 }
@@ -169,10 +202,10 @@
 .lv-source-row{
   display:grid; grid-template-columns:2rem 1fr auto auto; gap:0.5rem;
   align-items:center; padding:0.45rem 0.5rem; border-radius:0.4rem;
-  border-bottom:1px solid rgba(255,255,255,.06) !important;
+  border-bottom:1px solid var(--lv-c-border-subtle) !important;
   transition:background .25s ease;
 }
-.lv-source-row:hover{ background:rgba(255,255,255,.04); }
+.lv-source-row:hover{ background:var(--lv-c-bg-subtle); }
 .lv-source-row:last-child{ border-bottom:0 !important; }
 .lv-source-row.lv-source-disabled{ opacity:0.35; pointer-events:none; }
 .lv-source-check{ width:1.1rem; height:1.1rem; accent-color:#3b82f6; cursor:pointer; }
@@ -193,8 +226,8 @@
 .lv-script-top{ display:flex; flex-wrap:wrap; gap:.5rem .75rem; align-items:center; justify-content:space-between; margin:0 0 .75rem 0; }
 .lv-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
 .lv-script-list{ display:flex; flex-wrap:wrap; gap:.55rem; margin-top:.5rem; }
-.lv-script-item{ display:flex; align-items:center; gap:.45rem; padding:.45rem .7rem; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.02); cursor:pointer; transition:background .25s ease, border-color .25s ease; }
-.lv-script-item:hover{ background:rgba(255,255,255,.05); }
+.lv-script-item{ display:flex; align-items:center; gap:.45rem; padding:.45rem .7rem; border-radius:999px; border:1px solid var(--lv-c-border); background:var(--lv-c-bg-faint); cursor:pointer; transition:background .25s ease, border-color .25s ease; }
+.lv-script-item:hover{ background:var(--lv-c-bg-hover); }
 .lv-script-item input[type="checkbox"]{ margin:0; flex-shrink:0; }
 .lv-script-item span{ line-height:1.2; }
 
@@ -208,7 +241,7 @@ body .ui-dialog.lv-credits-dialog,
   left:50% !important; right:auto !important; margin-left:0 !important;
   transform:translateX(-50%) !important; position:fixed !important;
   border-radius:22px !important; overflow:hidden !important;
-  border:1px solid rgba(255,255,255,.12) !important;
+  border:1px solid var(--lv-c-border) !important;
   background:rgba(20,20,20,.96) !important;
   box-shadow:0 24px 70px rgba(0,0,0,.65) !important;
   -webkit-clip-path:polygon(20px 0%,calc(100% - 20px) 0%,100% 20px,100% calc(100% - 28px),calc(100% - 28px) 100%,28px 100%,0% calc(100% - 20px),0% 20px) !important;
@@ -225,10 +258,10 @@ body .ui-dialog.lv-credits-dialog,
 .ui-dialog.lv-credits-dialog .ui-dialog-titlebar{ display:none !important; height:0 !important; overflow:hidden !important; padding:0 !important; margin:0 !important; visibility:hidden !important; }
 
 /* Content area */
-.ui-dialog.lv-credits-dialog .ui-dialog-content{ padding:1.5rem 1.5rem 1rem !important; overflow:hidden !important; color:rgba(255,255,255,.92) !important; }
+.ui-dialog.lv-credits-dialog .ui-dialog-content{ padding:1.5rem 1.5rem 1rem !important; overflow:hidden !important; color:var(--lv-c-text) !important; }
 
 /* Button pane — centered */
-.ui-dialog.lv-credits-dialog .ui-dialog-buttonpane{ text-align:center !important; padding:0.75rem 0 1.25rem 0 !important; border-top:1px solid rgba(255,255,255,0.1) !important; }
+.ui-dialog.lv-credits-dialog .ui-dialog-buttonpane{ text-align:center !important; padding:0.75rem 0 1.25rem 0 !important; border-top:1px solid var(--lv-c-border) !important; }
 .ui-dialog.lv-credits-dialog .ui-dialog-buttonset{ float:none !important; display:inline-block !important; }
 .ui-dialog.lv-credits-dialog .ui-dialog-buttonset .ui-button,
 .ui-dialog.lv-credits-dialog .lv-ok-btn{
@@ -269,4 +302,11 @@ body .ui-dialog.lv-credits-dialog,
   .lv-scan-btn, .lv-action-btn{ font-size:.78rem !important; padding:.25rem .5rem !important; }
   .lv-offby{ display:block !important; margin-left:0 !important; margin-top:.15rem !important; }
   .lv-credits-top{ margin-bottom:.25rem !important; }
+}
+
+/* ── 14. LIGHT THEME EDGE CASES ──────────────────────────────────────────── */
+.lv-light .lv-credits-dialog,
+.lv-light body .ui-dialog.lv-credits-dialog{
+  background:rgba(245,245,245,.97) !important;
+  box-shadow:0 24px 70px rgba(0,0,0,.18) !important;
 }

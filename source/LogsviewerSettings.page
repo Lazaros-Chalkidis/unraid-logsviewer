@@ -104,7 +104,7 @@ if (isset($_POST['#apply'])) {
     'ENABLED_SCRIPTS'   => implode(',', $selected),
     'SHOW_IDLE_LOGS'    => isset($_POST['SHOW_IDLE_LOGS']) ? '1' : '0',
     'LOG_FONT_SIZE'     => $_POST['LOG_FONT_SIZE'] ?? ($cfg_existing['LOG_FONT_SIZE'] ?? '1rem'),
-    'LOG_BG_COLOR'      => $sanitize_hex($_POST['LOG_BG_COLOR'] ?? ($cfg_existing['LOG_BG_COLOR'] ?? '#1b1b1b'), '#1b1b1b'),
+    'LOG_BG_COLOR'      => $sanitize_hex($_POST['LOG_BG_COLOR'] ?? ($cfg_existing['LOG_BG_COLOR'] ?? ''), ''),
     'VERSION_OVERRIDE'  => $_POST['VERSION_OVERRIDE'] ?? ($cfg_existing['VERSION_OVERRIDE'] ?? 'auto'),
 
     // NEW (extras OFF by default)
@@ -198,9 +198,27 @@ if (isset($_POST['#apply'])) {
   if (!in_array($new_cfg['TOOL_HIGHLIGHT_MODE'], $allowed_hm, true)) $new_cfg['TOOL_HIGHLIGHT_MODE'] = 'full';
   if (!in_array($new_cfg['TOOL_EXPORT_FORMAT'], $allowed_export, true)) $new_cfg['TOOL_EXPORT_FORMAT'] = 'log';
 
+  // Whitelist remaining free-text fields
+  $allowed_version = ['auto','legacy','responsive'];
+  if (!in_array($new_cfg['VERSION_OVERRIDE'], $allowed_version, true)) $new_cfg['VERSION_OVERRIDE'] = 'auto';
+
+  $allowed_engine = ['hljs','prism'];
+  if (!in_array($new_cfg['SYNTAX_ENGINE'] ?? 'hljs', $allowed_engine, true)) $new_cfg['SYNTAX_ENGINE'] = 'hljs';
+  if (!in_array($new_cfg['TOOL_SYNTAX_ENGINE'] ?? 'hljs', $allowed_engine, true)) $new_cfg['TOOL_SYNTAX_ENGINE'] = 'hljs';
+
+  // Clamp numeric fields
+  $new_cfg['REFRESH_INTERVAL']      = max(1, min(3600, (int)$new_cfg['REFRESH_INTERVAL']));
+  $new_cfg['TOOL_REFRESH_INTERVAL'] = max(1, min(3600, (int)$new_cfg['TOOL_REFRESH_INTERVAL']));
+
+  // Binary fields: force '0' or '1'
+  foreach (['REFRESH_ENABLED','TOOL_REFRESH_ENABLED','SYNTAX_HIGHLIGHTING','TOOL_SYNTAX_HIGHLIGHTING'] as $_bf) {
+    $new_cfg[$_bf] = ($new_cfg[$_bf] === '1') ? '1' : '0';
+  }
+
   // Serialize cfg
   $ini = '';
   foreach ($new_cfg as $key => $value) {
+    $value = str_replace('"', '\"', (string)$value);
     $ini .= "{$key}=\"{$value}\"\n";
   }
   file_put_contents($cfg_file, $ini);
@@ -249,8 +267,13 @@ if (empty($enabled_scripts_array)) $enabled_scripts_array = ['syslog'];
 $tool_enabled_scripts_arr = isset($cfg['TOOL_ENABLED_SCRIPTS']) ? array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_SCRIPTS']))) : ['syslog'];
 if (empty($tool_enabled_scripts_arr)) $tool_enabled_scripts_arr = ['syslog'];
 
-$bg_default = $cfg['LOG_BG_COLOR'] ?? '#1b1b1b';
-$tool_bg_default = $cfg['TOOL_LOG_BG_COLOR'] ?? '#1b1b1b';
+$bg_default = $cfg['LOG_BG_COLOR'] ?? '';
+$tool_bg_default = $cfg['TOOL_LOG_BG_COLOR'] ?? '';
+
+// Light theme detection
+$_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
+$_theme_name = $_dyn_cfg['display']['theme'] ?? '';
+$lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';
 
 // Active tab persistence: POST (during save) → config file (on GET reload)
 $active_tab = $_POST['lv_active_tab'] ?? ($cfg['LV_ACTIVE_TAB'] ?? 'dash');
@@ -261,11 +284,11 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
 <style>.logsviewer-settings,.lv-credits-top{visibility:hidden;}</style>
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/settings.css">
 
- <div class="lv-credits-top">
+ <div class="lv-credits-top<?php echo $lv_light_class; ?>">
       <a href="#" class="lv-credits" id="lvCreditsLink">Credits</a>
     </div>
 
-<form name="scriptlogs_settings" method="post" class="logsviewer-settings">
+<form name="scriptlogs_settings" method="post" class="logsviewer-settings<?php echo $lv_light_class; ?>">
 
   <div class="lv-tabs" id="lvTopTabs">
     <div class="lv-tab<?php echo ($active_tab === 'dash') ? ' active' : ''; ?>" id="lvTabDashboard" role="button" tabindex="0">
@@ -413,7 +436,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
   <div class="lv-field">
     <select name="TOOL_SYNTAX_ENGINE" class="form-control">
       <?php echo mk_option($cfg['TOOL_SYNTAX_ENGINE'] ?? 'hljs', "hljs", _("Highlight.js (Default)"));?> 
-      <?php echo mk_option($cfg['TOOL_SYNTAX_ENGINE'] ?? 'hljs', "prism", _("Prism (Beta)"));?> 
+      <?php echo mk_option($cfg['TOOL_SYNTAX_ENGINE'] ?? 'hljs', "prism", _("Prism"));?> 
     </select>
   </div>
 </div>
@@ -734,8 +757,8 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
     <div id="lvCreditsModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
       <div id="lvCreditsBox" style="
         width:456px; max-width:94vw; height:384px;
-        background:#1a1a1a;
-        border:1px solid rgba(255,255,255,0.13);
+        background:var(--background-color,#1a1a1a);
+        border:1px solid var(--lv-c-border);
         border-radius:8px;
         box-shadow:0 8px 40px rgba(0,0,0,0.75);
         overflow:hidden;
@@ -748,11 +771,11 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
             <img src="/plugins/logsviewer/logsviewerplugin.png" alt="Logsviewer" style="width:46px; height:46px;">
           </div>
           <!-- Title -->
-          <div style="font-size:1.3em; margin-bottom:1.5rem; font-weight:700; color:#fff;">
+          <div style="font-size:1.3em; margin-bottom:1.5rem; font-weight:700; color:var(--lv-c-text);">
             Logs Viewer
           </div>
           <!-- Credits table with avatar -->
-          <table style="width:auto; margin:0 auto 1.5rem; border-collapse:collapse; font-size:0.95em; color:rgba(255,255,255,0.9);">
+          <table style="width:auto; margin:0 auto 1.5rem; border-collapse:collapse; font-size:0.95em; color:var(--lv-c-text);">
             <tr>
               <td style="padding:0.4rem 1rem 0.4rem 0; vertical-align:middle;">
                 <img src="/plugins/logsviewer/avatar.png" alt="" style="width:42px; height:42px; border-radius:50%; object-fit:cover; display:block;">
@@ -763,7 +786,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
 
           </table>
           <!-- Copyright -->
-          <div style="font-size:0.82em; opacity:0.48; margin-bottom:1.1rem; color:#fff; font-style:italic;">
+          <div style="font-size:0.82em; opacity:0.48; margin-bottom:1.1rem; color:var(--lv-c-text); font-style:italic;">
             Copyright © 2026 Logs Viewer Plugin
           </div>
           <!-- Plugin Support Thread -->
@@ -773,7 +796,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
           </div>
         </div>
         <!-- Footer -->
-        <div style="padding:0.9rem; text-align:center; border-top:1px solid rgba(255,255,255,0.1); flex-shrink:0;">
+        <div style="padding:0.9rem; text-align:center; border-top:1px solid var(--lv-c-border); flex-shrink:0;">
           <button id="lvCreditsOkBtn" style="
             background:#f47d42; border:1px solid #f47d42; color:#fff;
             padding:0.5rem 2.5rem; font-size:0.9em; font-weight:500;
@@ -912,7 +935,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
   <div class="lv-field">
     <select name="SYNTAX_ENGINE" class="form-control">
       <?php echo mk_option($cfg['SYNTAX_ENGINE'] ?? 'hljs', "hljs", _("Highlight.js (Default)"));?> 
-      <?php echo mk_option($cfg['SYNTAX_ENGINE'] ?? 'hljs', "prism", _("Prism (Beta)"));?> 
+      <?php echo mk_option($cfg['SYNTAX_ENGINE'] ?? 'hljs', "prism", _("Prism"));?> 
     </select>
   </div>
 </div>
@@ -1318,6 +1341,11 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
     window.lvToken = <?php echo json_encode(LogsViewerEndpoint::generateNonce()); ?>;
   </script>
   <script>
+    // Light theme helper — checks for .lv-light class on settings wrapper
+    function _lv_isLight() {
+      var el = document.querySelector('.logsviewer-settings');
+      return el && el.classList.contains('lv-light');
+    }
     (function () {
       // ═══════════ Accordion logic ═══════════
       // Each panel: first lv-card expanded, rest collapsed
@@ -1405,14 +1433,15 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
         }
         function applyColor(val, userInitiated){
           const normalized = normalizeHex(val);
-          const display = normalized || '#0b0f14';
+          const _light = _lv_isLight();
+          const display = normalized || (_light ? '#ffffff' : '#0b0f14');
 
           // Update visible controls / preview
           picker.value = display;
           hex.value = display;
           preview.style.background = display;
-          preview.style.borderColor = 'rgba(255,255,255,.14)';
-          preview.style.color = 'rgba(255,255,255,.9)';
+          preview.style.borderColor = _light ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
+          preview.style.color = _light ? 'rgba(0,0,0,.8)' : 'rgba(255,255,255,.9)';
 
           // IMPORTANT:
           // - Only the hidden field submits (name="LOG_BG_COLOR").
@@ -1453,7 +1482,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
         });
 
         // Initial sync (do NOT mark dirty)
-        applyColor(hidden.value || picker.value || '#0b0f14', false);
+        applyColor(hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#0b0f14'), false);
       }
 
       // TOOL TAB color picker handler (identical logic)
@@ -1486,14 +1515,15 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
         
         function applyColorTool(val, userInitiated){
           const normalized = normalizeHex(val);
-          const display = normalized || '#1b1b1b';
+          const _light = _lv_isLight();
+          const display = normalized || (_light ? '#ffffff' : '#1b1b1b');
 
           toolPicker.value = display;
           toolHex.value = display;
           if (toolPreview) {
             toolPreview.style.background = display;
-            toolPreview.style.borderColor = 'rgba(255,255,255,.14)';
-            toolPreview.style.color = 'rgba(255,255,255,.9)';
+            toolPreview.style.borderColor = _light ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
+            toolPreview.style.color = _light ? 'rgba(0,0,0,.8)' : 'rgba(255,255,255,.9)';
           }
 
           if (userInitiated) {
@@ -1528,7 +1558,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
         });
 
         // Initial sync
-        applyColorTool(toolHidden.value || toolPicker.value || '#1b1b1b', false);
+        applyColorTool(toolHidden.value || toolPicker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'), false);
       }
     })();
 
@@ -1670,13 +1700,14 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
           const hidden  = document.getElementById(colorIds.hidden);
           const preview = document.getElementById(colorIds.preview);
           if (picker && hex && hidden && preview) {
-            const defaultColor = colorIds.defaultColor || '#1b1b1b';
+            const _light = _lv_isLight();
+            const defaultColor = colorIds.defaultColor || (_light ? '#ffffff' : '#1b1b1b');
             picker.value = defaultColor;
             hex.value = defaultColor;
             hidden.value = '';
             preview.style.background = defaultColor;
-            preview.style.borderColor = 'rgba(255,255,255,.14)';
-            preview.style.color = 'rgba(255,255,255,.9)';
+            preview.style.borderColor = _light ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
+            preview.style.color = _light ? 'rgba(0,0,0,.8)' : 'rgba(255,255,255,.9)';
           }
         }
       }
@@ -1694,7 +1725,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
         if (isToolTabActive()) {
           // Reset ONLY Tool fields
           resetFieldsFromDefaults(form, toolDefaults,
-            { picker: 'lvToolBgColorPicker', hex: 'lvToolBgColorHex', hidden: 'lvToolBgColorHidden', preview: 'lvToolBgPreview', defaultColor: '#1b1b1b' },
+            { picker: 'lvToolBgColorPicker', hex: 'lvToolBgColorHex', hidden: 'lvToolBgColorHidden', preview: 'lvToolBgPreview' },
             'TOOL_ENABLED_SCRIPTS',
             document.getElementById('lvToolSelectedCount')
           );
@@ -1712,7 +1743,7 @@ if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash'
         } else {
           // Reset ONLY Dashboard fields
           resetFieldsFromDefaults(form, dashDefaults,
-            { picker: 'lvBgColorPicker', hex: 'lvBgColorHex', hidden: 'lvBgColorHidden', preview: 'lvBgPreview', defaultColor: '#1b1b1b' },
+            { picker: 'lvBgColorPicker', hex: 'lvBgColorHex', hidden: 'lvBgColorHidden', preview: 'lvBgPreview' },
             'ENABLED_SCRIPTS',
             document.getElementById('lvSelectedCount')
           );
