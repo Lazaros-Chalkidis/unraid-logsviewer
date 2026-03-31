@@ -43,6 +43,39 @@ final class LogsViewerEndpoint
         }
     }
 
+    // ── Cached runtime state (avoid duplicate shell calls per request) ────
+    private ?array $_dockerStatesCache = null;
+    private ?array $_vmStatesCache = null;
+
+    private function getDockerStates(): array
+    {
+        if ($this->_dockerStatesCache !== null) return $this->_dockerStatesCache;
+        $this->_dockerStatesCache = [];
+        $raw = @shell_exec('docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
+        if ($raw) {
+            foreach (array_filter(explode("\n", trim($raw))) as $line) {
+                $p = explode("\t", $line);
+                if (count($p) >= 2) $this->_dockerStatesCache[trim($p[0])] = trim($p[1]);
+            }
+        }
+        return $this->_dockerStatesCache;
+    }
+
+    private function getVmStates(): array
+    {
+        if ($this->_vmStatesCache !== null) return $this->_vmStatesCache;
+        $this->_vmStatesCache = [];
+        $raw = @shell_exec('virsh list --all 2>/dev/null');
+        if ($raw) {
+            foreach (array_filter(explode("\n", trim($raw))) as $line) {
+                if (preg_match('/^\s*[-\d]+\s+(\S+)\s+(.+)$/', $line, $m)) {
+                    $this->_vmStatesCache[trim($m[1])] = (stripos(trim($m[2]), 'running') !== false) ? 'running' : 'stopped';
+                }
+            }
+        }
+        return $this->_vmStatesCache;
+    }
+
     // ── Nonce (CSRF token) ────────────────────────────────────────────────
 
     /** Generate or return existing nonce (stored in a temp file, rotated hourly) */
@@ -340,8 +373,9 @@ final class LogsViewerEndpoint
             'docker logs --tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1'
         ));
 
-        $this->json([['name' => $container, 'display_name' => $container, 'status' => 'idle',
-            'log'         => htmlspecialchars(trim($rawLog), ENT_COMPAT, 'UTF-8'),
+        $cState = $this->getDockerStates()[$container] ?? 'unknown';
+        $this->json([['name' => $container, 'display_name' => $container, 'status' => $cState,
+            'log'         => htmlspecialchars(trim($rawLog), ENT_QUOTES, 'UTF-8'),
             'total_lines' => $this->countLinesInText($rawLog),
             'shown_lines' => $this->countLinesInText($rawLog),
             'max_lines'   => $maxLines, 'source' => 'docker',
@@ -360,13 +394,14 @@ final class LogsViewerEndpoint
         $output = @shell_exec('virsh list --all --name 2>/dev/null');
         if (empty($output)) return [];
 
+        $states = $this->getVmStates();
         $vms = [];
         foreach (array_filter(explode("\n", trim($output)), fn($v) => trim($v) !== '') as $name) {
             $name    = trim($name);
-            $logPath = '/var/log/libvirt/qemu/' . $name . '.log';
+            $logPath = $this->safeVmLogPath($name) ?? '/dev/null';
             $vms[]   = [
                 'name'     => $name,
-                'status'   => trim((string)@shell_exec('virsh domstate ' . escapeshellarg($name) . ' 2>/dev/null')) ?: 'unknown',
+                'status'   => $states[$name] ?? 'unknown',
                 'log_path' => $logPath,
                 'log_size' => is_file($logPath) ? (int)@filesize($logPath) : 0,
             ];
@@ -391,12 +426,18 @@ final class LogsViewerEndpoint
             $this->json(['error' => 'Invalid VM name'], 400);
         }
 
+        $vState = $this->getVmStates()[$vmName] ?? 'unknown';
+
         $cfg      = parse_plugin_cfg('logsviewer', true);
         $maxLines = $this->getMaxLines($cfg);
-        $logPath  = '/var/log/libvirt/qemu/' . $vmName . '.log';
+        $logPath  = $this->safeVmLogPath($vmName);
+
+        if ($logPath === null) {
+            $this->json(['error' => 'Invalid VM log path'], 400);
+        }
 
         if (!is_file($logPath) || !is_readable($logPath)) {
-            $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => 'idle',
+            $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => $vState,
                 'log' => 'No log file found for this VM.', 'total_lines' => 0, 'shown_lines' => 0, 'max_lines' => 0, 'source' => 'vm',
             ]]);
         }
@@ -413,8 +454,8 @@ final class LogsViewerEndpoint
         }
 
         $text = $this->forceValidUtf8($text);
-        $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => 'idle',
-            'log'         => htmlspecialchars(trim($text), ENT_COMPAT, 'UTF-8'),
+        $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => $vState,
+            'log'         => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
             'total_lines' => $total,
             'shown_lines' => $this->countLinesInText($text),
             'max_lines'   => $maxLines, 'source' => 'vm',
@@ -431,10 +472,22 @@ final class LogsViewerEndpoint
         if ($cacheMs > 0) {
             $cached = $this->cacheGet($cfg, $cacheMs);
             if ($cached !== null) {
+                // Phase B: hash check on cached content too
+                $cachedHash = md5($cached);
+                $clientHash = (string)($_GET['_since_hash'] ?? '');
+                if ($clientHash !== '' && preg_match('/^[a-f0-9]{32}$/', $clientHash) && $clientHash === $cachedHash) {
+                    header('X-LV-Hash: ' . $cachedHash);
+                    $this->json(['unchanged' => true, '_hash' => $cachedHash], 200);
+                }
                 http_response_code(200);
                 header('Content-Type: application/json');
                 header('Cache-Control: no-cache, must-revalidate');
                 header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+                header('X-Content-Type-Options: nosniff');
+                header('X-Frame-Options: SAMEORIGIN');
+                header('Referrer-Policy: same-origin');
+                header("Content-Security-Policy: default-src 'none'");
+                header('X-LV-Hash: ' . $cachedHash);
                 echo $cached;
                 exit;
             }
@@ -444,12 +497,19 @@ final class LogsViewerEndpoint
         if ($context === 'dash') $this->migrateDashIfNeeded($cfg);
         $category = (string)($_GET['category'] ?? 'system');
 
+        // Phase A: single-source polling (fetch only the log the user is viewing)
+        $source = (string)($_GET['source'] ?? '');
+        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $source)) {
+            $source = '';
+        }
+        $singleSource = ($source !== '') ? $source : null;
+
         if ($category === 'docker') {
-            $rows = $this->fetchDockerLogs($cfg, $context);
+            $rows = $this->fetchDockerLogs($cfg, $context, $singleSource);
         } elseif ($category === 'vm') {
-            $rows = $this->fetchVmLogs($cfg, $context);
+            $rows = $this->fetchVmLogs($cfg, $context, $singleSource);
         } else {
-            $rows = $this->fetchSystemLogs($cfg, $context);
+            $rows = $this->fetchSystemLogs($cfg, $context, $singleSource);
         }
 
         $jsonOut = json_encode($rows);
@@ -457,12 +517,31 @@ final class LogsViewerEndpoint
             $this->cachePut($cfg, (string)$jsonOut);
         }
 
+        // Phase B: content hash for unchanged detection
+        // Client sends _since_hash from the previous poll. If the content
+        // hasn't changed, we return a tiny {"unchanged":true} response
+        // instead of the full payload (saves 99%+ bandwidth on idle logs).
+        if ($jsonOut !== false) {
+            $contentHash = md5((string)$jsonOut);
+            $clientHash  = (string)($_GET['_since_hash'] ?? '');
+
+            if ($clientHash !== '' && preg_match('/^[a-f0-9]{32}$/', $clientHash) && $clientHash === $contentHash) {
+                header('X-LV-Hash: ' . $contentHash);
+                $this->json(['unchanged' => true, '_hash' => $contentHash], 200);
+            }
+
+            header('X-LV-Hash: ' . $contentHash);
+        }
+
         $this->json($rows, 200);
     }
 
-    private function fetchSystemLogs(array $cfg, string $context): array
+    private function fetchSystemLogs(array $cfg, string $context, ?string $singleSource = null): array
     {
         $labels   = $this->getEnabledSystem($cfg, $context);
+        if ($singleSource !== null) {
+            $labels = in_array($singleSource, $labels, true) ? [$singleSource] : [];
+        }
         $maxLines = $this->getMaxLines($cfg);
         $rows     = [];
 
@@ -486,7 +565,7 @@ final class LogsViewerEndpoint
                 'name'         => $label,
                 'display_name' => self::SYSTEM_LOG_NAMES[$label] ?? $label,
                 'status'       => 'idle',
-                'log'          => htmlspecialchars(trim($text), ENT_COMPAT, 'UTF-8'),
+                'log'          => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
                 'total_lines'  => $total,
                 'shown_lines'  => $this->countLinesInText($text),
                 'max_lines'    => $maxLines,
@@ -497,13 +576,20 @@ final class LogsViewerEndpoint
         return $rows;
     }
 
-    private function fetchDockerLogs(array $cfg, string $context): array
+    private function fetchDockerLogs(array $cfg, string $context, ?string $singleSource = null): array
     {
         $enabled = $this->getEnabledDocker($cfg, $context);
         if (empty($enabled) || !$this->isDockerAvailable()) return [];
+        if ($singleSource !== null) {
+            $enabled = in_array($singleSource, $enabled, true) ? [$singleSource] : [];
+            if (empty($enabled)) return [];
+        }
 
         $maxLines = $this->getMaxLines($cfg);
         $rows     = [];
+
+        // Get actual container states (cached per request)
+        $containerStates = $this->getDockerStates();
 
         // Fix #3: Launch all docker log commands in parallel (proc_open)
         // instead of serial shell_exec which blocks N × 0.5-2s.
@@ -535,8 +621,8 @@ final class LogsViewerEndpoint
             $rows[] = [
                 'name'         => $container,
                 'display_name' => $container,
-                'status'       => 'idle',
-                'log'          => htmlspecialchars(trim($rawLog), ENT_COMPAT, 'UTF-8'),
+                'status'       => $containerStates[$container] ?? 'unknown',
+                'log'          => htmlspecialchars(trim($rawLog), ENT_QUOTES, 'UTF-8'),
                 'total_lines'  => $this->countLinesInText($rawLog),
                 'shown_lines'  => $this->countLinesInText($rawLog),
                 'max_lines'    => $maxLines,
@@ -547,17 +633,25 @@ final class LogsViewerEndpoint
         return $rows;
     }
 
-    private function fetchVmLogs(array $cfg, string $context): array
+    private function fetchVmLogs(array $cfg, string $context, ?string $singleSource = null): array
     {
         $enabled = $this->getEnabledVms($cfg, $context);
         if (empty($enabled) || !$this->isVirshAvailable()) return [];
+        if ($singleSource !== null) {
+            $enabled = in_array($singleSource, $enabled, true) ? [$singleSource] : [];
+            if (empty($enabled)) return [];
+        }
 
         $maxLines = $this->getMaxLines($cfg);
         $rows     = [];
 
+        // Get actual VM states (cached per request)
+        $vmStates = $this->getVmStates();
+
         foreach ($enabled as $vmName) {
             if (!preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $vmName)) continue;
-            $logPath = '/var/log/libvirt/qemu/' . $vmName . '.log';
+            $logPath = $this->safeVmLogPath($vmName);
+            if ($logPath === null) continue;
 
             [$fh, $snapSize] = $this->openSnapshot($logPath);
             if ($fh === null) {
@@ -574,8 +668,8 @@ final class LogsViewerEndpoint
             $rows[] = [
                 'name'         => $vmName,
                 'display_name' => $vmName,
-                'status'       => 'idle',
-                'log'          => htmlspecialchars(trim($text), ENT_COMPAT, 'UTF-8'),
+                'status'       => $vmStates[$vmName] ?? 'unknown',
+                'log'          => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
                 'total_lines'  => $total,
                 'shown_lines'  => $this->countLinesInText($text),
                 'max_lines'    => $maxLines,
@@ -719,6 +813,28 @@ final class LogsViewerEndpoint
     }
 
     /**
+     * Security: Build VM log path and verify it stays within the allowed directory.
+     * Returns null if the path would escape /var/log/libvirt/qemu/.
+     */
+    private function safeVmLogPath(string $vmName): ?string
+    {
+        $base = '/var/log/libvirt/qemu/';
+        $path = $base . $vmName . '.log';
+        $real = @realpath($path);
+        // If file doesn't exist yet, validate the directory component
+        if ($real === false) {
+            // Ensure no directory traversal characters snuck through
+            if (strpos($vmName, '..') !== false || strpos($vmName, '/') !== false || strpos($vmName, '\\') !== false) {
+                return null;
+            }
+            return $path;
+        }
+        // File exists: verify it resolves within the allowed directory
+        if (strncmp($real, $base, strlen($base)) !== 0) return null;
+        return $real;
+    }
+
+    /**
      * Fix #1: Fast line count using native wc -l (C-speed) for local files.
      * Falls back to PHP stream counting if wc is unavailable or fails.
      */
@@ -768,8 +884,9 @@ final class LogsViewerEndpoint
         $sysKey    = $this->isToolContext() ? 'TOOL_ENABLED_SYSTEM_LOGS'       : 'DASH_ENABLED_SYSTEM_LOGS';
         $dockerKey = $this->isToolContext() ? 'TOOL_ENABLED_DOCKER_CONTAINERS' : 'DASH_ENABLED_DOCKER_CONTAINERS';
         $vmKey     = $this->isToolContext() ? 'TOOL_ENABLED_VMS'               : 'DASH_ENABLED_VMS';
+        $source    = (string)($_GET['source'] ?? '');
         return hash('sha256', implode('|', [
-            'states', $category, $ctx,
+            'states', $category, $ctx, $source,
             (string)($cfg[$sysKey] ?? ''),
             (string)($cfg[$dockerKey] ?? ''),
             (string)($cfg[$vmKey] ?? ''),

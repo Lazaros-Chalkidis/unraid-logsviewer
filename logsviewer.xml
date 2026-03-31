@@ -6,15 +6,14 @@
   <Beta>false</Beta>
   <Category>Tools:Utilities</Category>
   <Name>Logs Viewer</Name>
-  <Description><![CDATA[Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
-View System, Docker, and VM logs in one place with search, filtering, optional syntax highlighting (two modes), autoscroll, export, and helpful status counters.
-Fully configurable, lightweight, and safe for large logs, with sensible defaults and performance-friendly limits.]]></Description>
+  <Description><![CDATA[Real time log viewer. Dashboard widget and dedicated Tools page in one plugin. System, Docker and VM logs in one place with live auto refresh, severity badges, search, filtering, syntax highlighting and export.]]>
+  </Description>
   <Project>https://github.com/Lazaros-Chalkidis/unraid-logsviewer</Project>
   <Support>https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/</Support>
   <Icon>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/source/logsviewerplugin.png</Icon>
   <License>GPL v3</License>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on-docker.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-tool-page-full-settings-syntax-on.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-settings-page.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/mobile/mobile-dashboard-full-settings.png</Screenshot>
 </Container>

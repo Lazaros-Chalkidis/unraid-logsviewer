@@ -61,7 +61,7 @@
   background:var(--lv-c-border-subtle) !important; border:1px solid var(--lv-c-border) !important;
   text-decoration:none !important;
   color:var(--logsviewer-text-secondary,var(--lv-c-text-mid)) !important;
-  transition:color 0.15s ease, background 0.15s ease !important;
+  transition:color 0.15s ease, background-color 0.15s ease !important;
 }
 .logsviewer-tool-wrapper .logsviewer-header__controls a:hover,
 .logsviewer-tool-wrapper .tile-header-right-controls a:hover{
@@ -108,3 +108,23 @@
 
 /* ── 8. FOOTER ────────────────────────────────────────────────────────────── */
 .logsviewer-footer{ margin-top:1rem !important; margin-bottom:1rem !important; }
+
+/* ── 9. RESPONSIVE ───────────────────────────────────────────────────────── */
+
+@media (max-width:560px){
+  .logsviewer-tool-wrapper{ width:100% !important; padding:0 0.3rem !important; margin:0.5rem auto !important; }
+  .logsviewer-tool-panel{ border-radius:4px; }
+  .logsviewer-tool-wrapper .logsviewer-header{
+    min-height:auto !important; padding:0.4rem 0.5rem !important;
+  }
+  .logsviewer-tool-wrapper .logsviewer-log{ height:180px !important; min-height:100px !important; }
+  .logsviewer-tool-wrapper .logsviewer-body{ padding:0 0.3rem 0.3rem !important; }
+  .logsviewer-tool-wrapper .logsviewer-tabs-row{ padding-left:0.3rem !important; padding-right:0.3rem !important; }
+  .logsviewer-footer{ margin-top:0.5rem !important; margin-bottom:0.5rem !important; }
+}
+
+@media (max-width:480px){
+  .logsviewer-tool-wrapper{ padding:0 0.2rem !important; margin:0.25rem auto !important; }
+  .logsviewer-tool-wrapper .logsviewer-log{ height:150px !important; }
+  .logsviewer-tool-wrapper .logsviewer-header{ padding:0.3rem 0.4rem !important; }
+}
