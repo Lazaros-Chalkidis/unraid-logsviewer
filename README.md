@@ -2,14 +2,6 @@
 
 A fast, full featured log viewer plugin for Unraid. System, Docker and VM logs on your dashboard or a dedicated Tools page. No terminal needed.
 
-<p align="center">
-  <img src="https://img.shields.io/github/v/release/Lazaros-Chalkidis/unraid-logsviewer?label=Latest%20Version&color=blue" style="margin: 4px;" />&nbsp;
-  <img src="https://img.shields.io/github/last-commit/Lazaros-Chalkidis/unraid-logsviewer?label=Last%20Update" style="margin: 4px;" />&nbsp;
-  <img src="https://img.shields.io/github/downloads/Lazaros-Chalkidis/unraid-logsviewer/total?label=Downloads&color=brightgreen" style="margin: 4px;" />&nbsp;
-  <img src="https://img.shields.io/github/issues/Lazaros-Chalkidis/unraid-logsviewer?label=Issues" style="margin: 4px;" />&nbsp;
-  <img src="https://img.shields.io/github/license/Lazaros-Chalkidis/unraid-logsviewer?label=License" style="margin: 4px;" />
-</p>
-
 ---
 
 ## Features

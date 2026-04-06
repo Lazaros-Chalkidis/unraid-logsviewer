@@ -63,7 +63,7 @@
   --logsviewer-toggle-on:#3b82f6;
   --logsviewer-toggle-knob:#f5f5f5;
   --logsviewer-log-bg:var(--logsviewer-bg);
-  --logsviewer-toast-bg:#0a0a0a;
+  --logsviewer-toast-bg:#1b1b1b;
   --logsviewer-toast-text:rgba(255,255,255,0.5);
   --logsviewer-toast-selected:rgba(255,255,255,0.45);
   --logsviewer-tab-hover-bg:#323232;
@@ -483,21 +483,42 @@
 /* Toast panel in footer (bottom row, black background) */
 .logsviewer-toast-panel{
   width:100%;
-  padding:0.40rem 0.7rem;
-  background:var(--logsviewer-toast-bg,#0a0a0a);
-  overflow:hidden;
-  contain:layout style;
+  padding:0.40rem 1rem 0.40rem 0.7rem;
+  background:var(--logsviewer-toast-bg,#1b1b1b);
+  overflow:visible;
+  contain:style;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:0.75rem;
+  box-sizing:border-box;
 }
 .logsviewer-toast-panel.lv-toast-hidden{ display:none !important; }
 
-/* Single toast line */
+/* Left toast slot */
 .logsviewer-toast-line{
   min-height:1.92rem; display:flex; align-items:center; gap:0.5rem;
   overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
   color:var(--logsviewer-toast-text, rgba(255,255,255,0.5));
   font-family:var(--logsviewer-font-family); font-size:1.15rem;
-  justify-content:center; text-align:center;
+  flex:1; min-width:0;
 }
+
+/* Right toast slot */
+.logsviewer-toast-right{
+  display:flex; align-items:center; gap:0.4rem;
+  white-space:nowrap; flex-shrink:0;
+  font-family:var(--logsviewer-font-family); font-size:1.05rem;
+}
+.logsviewer-toast-right:empty{ display:none; }
+.lv-toast-sep{ width:1px; height:0.9rem; background:rgba(255,255,255,0.25); }
+.lv-light .lv-toast-sep{ background:rgba(0,0,0,0.20); }
+.lv-toast-size{ color:rgba(255,255,255,0.30); }
+.lv-light .lv-toast-size{ color:rgba(0,0,0,0.30); }
+.lv-toast-newlines{ color:rgba(46,204,113,0.85); }
+.lv-toast-newerrors{ color:#ff8c00; }
+.lv-toast-newcritical{ color:#D43A3A; }
+.lv-toast-paused{ color:rgba(195,134,0,1); }
 
 /* Toasts reset to static when inside panel */
 .logsviewer-toast-panel #logsviewer-search-toast,
@@ -566,7 +587,7 @@
 
 /* Proportion strip (full width, top of footer) */
 .logsviewer-proportion-strip{
-  display:flex; height:4px; overflow:hidden; width:100%;
+  display:flex; height:3.2px; overflow:hidden; width:100%;
 }
 .logsviewer-proportion-strip__seg{ transition:flex 0.3s ease; }
 .logsviewer-proportion-strip__seg--ok{ background:var(--lv-c-bg-hover); flex:1; }

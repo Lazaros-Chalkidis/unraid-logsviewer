@@ -491,9 +491,51 @@
 
 .lv-footer input[type="button"],
 .lv-footer input[type="submit"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: .25rem !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  width: auto !important;
   min-width: 95px !important;
-  padding: 5px 14px !important;
-  font-size: 11.5px !important;
+  transition: background .2s, border-color .2s, color .2s !important;
+  border: 1px solid var(--lv-c-border-strong) !important;
+  background: var(--lv-c-bg-subtle) !important;
+  color: var(--lv-c-text-mid) !important;
+  white-space: nowrap !important;
+}
+.lv-footer input[type="button"]:hover,
+.lv-footer input[type="submit"]:hover {
+  background: var(--lv-c-bg-hover) !important;
+  border-color: var(--lv-c-text-faint) !important;
+}
+.lv-footer input[type="button"]:active,
+.lv-footer input[type="submit"]:active { transform: scale(.98); }
+
+.lv-footer input[name="#apply"] {
+  background: rgba(76,175,80,.1) !important;
+  border-color: rgba(76,175,80,.3) !important;
+  color: #4caf50 !important;
+}
+.lv-footer input[name="#apply"]:hover {
+  background: rgba(76,175,80,.2) !important;
+  border-color: rgba(76,175,80,.5) !important;
+}
+
+.lv-footer #lvResetDefaults {
+  background: rgba(244,125,66,.12) !important;
+  border-color: rgba(244,125,66,.3) !important;
+  color: #f47d42 !important;
+}
+.lv-footer #lvResetDefaults:hover {
+  background: rgba(244,125,66,.2) !important;
+  border-color: rgba(244,125,66,.5) !important;
 }
 
 .lv-footer-row {
@@ -577,22 +619,46 @@
 .lv-sub-card-bd { padding: 0; }
 
 .lv-source-row {
-  display: grid;
-  grid-template-columns: 2rem 1fr auto auto;
-  gap: 0.5rem;
+  display: flex;
   align-items: center;
-  padding: 0.45rem 0.75rem;
-  border-bottom: 1px solid var(--lv-c-border-subtle);
-  transition: background-color .15s;
+  min-height: 38px;
+  border-bottom: 1px solid var(--lv-c-border-row);
 }
-.lv-source-row:hover { background: var(--lv-c-bg-subtle); }
+.lv-source-row:nth-child(odd) { background: var(--lv-row-odd); }
+.lv-source-row:nth-child(even) { background: var(--lv-row-even); }
+.lv-source-row:hover { background: var(--lv-c-bg-hover); }
 .lv-source-row:last-child { border-bottom: 0; }
 .lv-source-row.lv-source-disabled { opacity: 0.35; pointer-events: none; }
-.lv-source-check { width: 1.1rem; height: 1.1rem; accent-color: #3b82f6; cursor: pointer; }
-.lv-source-name { font-weight: 600; font-size: 12.5px; color: var(--lv-c-text); }
-.lv-source-path { font-size: 10.5px; opacity: 0.5; font-family: monospace; margin-top: 1px; }
-.lv-source-size { font-size: 11px; opacity: 0.6; min-width: 4rem; text-align: right; }
-.lv-source-status { font-size: 11px; min-width: 4.5rem; text-align: right; }
+
+.lv-source-label {
+  width: 170px;
+  flex-shrink: 0;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--lv-c-text-mid);
+  background: var(--lv-label-bg);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-right: 1px solid var(--lv-c-border-row);
+}
+
+.lv-source-field {
+  flex: 1;
+  padding: 5px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.lv-source-check { width: 1.1rem; height: 1.1rem; accent-color: #3b82f6; cursor: pointer; flex-shrink: 0; }
+.lv-source-name { font-weight: 600; font-size: 12.5px; color: var(--lv-c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-source-path { font-size: 10.5px; opacity: 0.5; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.lv-source-size { font-size: 11px; opacity: 0.6; min-width: 4.5rem; text-align: right; flex-shrink: 0; margin-left: auto; }
+.lv-source-status { font-size: 11px; min-width: 4.5rem; text-align: right; flex-shrink: 0; }
 .lv-source-status .lv-status-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; margin-right: 0.25rem; }
 .lv-status-dot.running { background: #2ecc71; }
 .lv-status-dot.stopped,
@@ -602,59 +668,100 @@
 .lv-status-dot.shut { background: #666; }
 
 .lv-sources-list { display: flex; flex-direction: column; gap: 0; }
-.lv-sources-loading { opacity: 0.5; font-style: italic; padding: 0.5rem 0.75rem; font-size: 12px; }
-.lv-sources-note { font-size: 10.5px; opacity: 0.5; padding: 6px 0.75rem 2px; }
+.lv-sources-loading {
+  opacity: 0.5;
+  font-style: italic;
+  padding: 0.6rem 0.75rem;
+  font-size: 11.5px;
+  background: var(--lv-row-even);
+}
+
+.lv-sources-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--lv-c-text-muted);
+  padding: 7px 0.75rem;
+  border-top: 1px solid var(--lv-c-border-row);
+  background: var(--lv-label-bg);
+}
+.lv-sources-note .fa { font-size: 11px; opacity: 0.7; }
 
 .lv-source-actions {
   display: flex;
   gap: 0.5rem;
-  padding: 8px 0.75rem;
+  padding: 7px 0.75rem;
   align-items: center;
+  border-top: 1px solid var(--lv-c-border-row);
+  background: var(--lv-label-bg);
 }
 
 .lv-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 7px !important;
-  border-radius: 2px !important;
-  cursor: pointer;
-  background: transparent !important;
-  border: 1px solid var(--lv-accent) !important;
-  color: var(--lv-accent) !important;
-  font-size: 8px !important;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  transition: background-color .15s, border-color .15s;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: .25rem !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  transition: background .2s, border-color .2s, color .2s !important;
+  border: 1px solid var(--lv-c-border-strong) !important;
+  background: var(--lv-c-bg-subtle) !important;
+  color: var(--lv-c-text-mid) !important;
+  white-space: nowrap !important;
 }
-.lv-action-btn:hover { background-color: var(--lv-accent-dim) !important; }
+.lv-action-btn:hover {
+  background: var(--lv-c-bg-hover) !important;
+  border-color: var(--lv-c-text-faint) !important;
+}
+.lv-action-btn:active { transform: scale(.98); }
 
 .lv-scan-btn {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 7px !important;
-  border-radius: 2px !important;
-  cursor: pointer;
-  background: transparent !important;
-  border: 1px solid var(--lv-accent) !important;
-  color: var(--lv-accent) !important;
-  font-size: 8px !important;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  transition: background-color .15s;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: .25rem !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  transition: background .2s, border-color .2s, color .2s !important;
+  border: 1px solid var(--lv-c-border-strong) !important;
+  background: var(--lv-c-bg-subtle) !important;
+  color: var(--lv-c-text-mid) !important;
+  white-space: nowrap !important;
 }
-.lv-scan-btn:hover { background-color: var(--lv-accent-dim) !important; }
+.lv-scan-btn:hover {
+  background: var(--lv-c-bg-hover) !important;
+  border-color: var(--lv-c-text-faint) !important;
+}
+.lv-scan-btn:active { transform: scale(.98); }
 .lv-scan-btn .fa-refresh { margin-right: 0.15rem; }
 
 .lv-source-unavailable {
-  font-size: 11.5px;
-  opacity: 0.5;
-  padding: 6px 0.75rem 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--lv-c-text-muted);
+  padding: 8px 0.75rem;
+  border-top: 1px solid var(--lv-c-border-row);
+  background: var(--lv-row-even);
 }
+.lv-source-unavailable .fa { font-size: 11px; opacity: 0.7; }
 
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -817,13 +924,15 @@
   .lv-credits-top { margin-bottom: .25rem !important; }
   .lv-color-row { flex-direction: column !important; align-items: flex-start !important; gap: .4rem !important; }
   .lv-color-row input[type="text"] { width: 100% !important; }
-  .lv-source-row { grid-template-columns: 1.5rem 1fr auto auto !important; gap: .25rem .3rem !important; padding: .35rem .5rem !important; }
+  .lv-source-row { flex-direction: column !important; align-items: stretch !important; }
+  .lv-source-label { width: 100% !important; border-right: none !important; border-bottom: 1px solid var(--lv-c-border-row) !important; padding: 5px 10px !important; }
+  .lv-source-field { padding: 4px 10px !important; }
   .lv-source-name { font-size: .82rem !important; }
   .lv-source-path { font-size: .72rem !important; }
   .lv-source-status { font-size: .72rem !important; min-width: 0 !important; }
   .lv-source-size { font-size: .72rem !important; min-width: 0 !important; }
   .lv-source-actions { flex-wrap: wrap !important; }
-  .lv-action-btn, .lv-scan-btn { font-size: .78rem !important; padding: .25rem .5rem !important; }
+  .lv-action-btn, .lv-scan-btn { font-size: 10px !important; padding: 2px 6px !important; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -839,12 +948,14 @@
   .lv-select { font-size: 12px !important; min-width: 0 !important; max-width: 100% !important; }
   .lv-footer { padding: 0.5rem 0.3rem !important; }
   .lv-footer input[type="submit"],
-  .lv-footer input[type="button"] { font-size: 0.8em !important; padding: 0.35rem 0.5rem !important; }
-  .lv-source-row { padding: 0.3rem 0.4rem !important; }
+  .lv-footer input[type="button"] { font-size: 0.8em !important; padding: 2px 6px !important; min-width: 70px !important; }
+  .lv-source-row { padding: 0 !important; }
+  .lv-source-label { padding: 4px 8px !important; }
+  .lv-source-field { padding: 3px 8px !important; }
   .lv-source-name { font-size: 0.75rem !important; }
   .lv-source-path { font-size: 0.65rem !important; }
   .lv-source-status, .lv-source-size { font-size: 0.65rem !important; }
-  .lv-action-btn, .lv-scan-btn { font-size: 7px !important; padding: 2px 5px !important; }
+  .lv-action-btn, .lv-scan-btn { font-size: 9px !important; padding: 2px 5px !important; }
   .lv-toggle-track { width: 20px !important; height: 11px !important; }
   .lv-toggle-track::after { width: 9px !important; height: 9px !important; }
   .lv-toggle-txt { font-size: 11px !important; }

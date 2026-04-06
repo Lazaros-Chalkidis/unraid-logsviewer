@@ -121,9 +121,7 @@ if [[ "$LOCAL_INSTALL" == "local" ]]; then
 <PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
-Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
-View System, Docker, and VM logs in one place with search, filtering, optional syntax highlighting (two modes), autoscroll, export, and helpful status counters.
-Fully configurable, lightweight, and safe for large logs, with sensible defaults and performance - friendly limits.
+Real time log viewer. Dashboard widget and dedicated Tools page in one plugin. System, Docker and VM logs in one place with live auto refresh, severity badges, search, filtering, syntax highlighting and export.
 </DESCRIPTION>
 
 <CHANGES>
@@ -210,9 +208,7 @@ else
 <PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
-Logs Viewer is a modern and fast log viewer, featuring a Dashboard widget and a Tools page.
-View System, Docker, and VM logs in one place with search, filtering, optional syntax highlighting (two modes), autoscroll, export, and helpful status counters.
-Fully configurable, lightweight, and safe for large logs, with sensible defaults and performance-friendly limits.
+Real time log viewer. Dashboard widget and dedicated Tools page in one plugin. System, Docker and VM logs in one place with live auto refresh, severity badges, search, filtering, syntax highlighting and export.
 </DESCRIPTION>
 
 <CHANGES>

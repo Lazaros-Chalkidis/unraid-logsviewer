@@ -378,7 +378,7 @@ final class LogsViewerEndpoint
             'log'         => htmlspecialchars(trim($rawLog), ENT_QUOTES, 'UTF-8'),
             'total_lines' => $this->countLinesInText($rawLog),
             'shown_lines' => $this->countLinesInText($rawLog),
-            'max_lines'   => $maxLines, 'source' => 'docker',
+            'max_lines'   => $maxLines, 'source' => 'docker', 'file_size' => strlen($rawLog),
         ]]);
     }
 
@@ -438,7 +438,7 @@ final class LogsViewerEndpoint
 
         if (!is_file($logPath) || !is_readable($logPath)) {
             $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => $vState,
-                'log' => 'No log file found for this VM.', 'total_lines' => 0, 'shown_lines' => 0, 'max_lines' => 0, 'source' => 'vm',
+                'log' => 'No log file found for this VM.', 'total_lines' => 0, 'shown_lines' => 0, 'max_lines' => 0, 'source' => 'vm', 'file_size' => 0,
             ]]);
         }
 
@@ -458,7 +458,7 @@ final class LogsViewerEndpoint
             'log'         => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
             'total_lines' => $total,
             'shown_lines' => $this->countLinesInText($text),
-            'max_lines'   => $maxLines, 'source' => 'vm',
+            'max_lines'   => $maxLines, 'source' => 'vm', 'file_size' => $snapSize,
         ]]);
     }
 
@@ -570,6 +570,7 @@ final class LogsViewerEndpoint
                 'shown_lines'  => $this->countLinesInText($text),
                 'max_lines'    => $maxLines,
                 'source'       => 'system',
+                'file_size'    => $snapSize,
             ];
         }
 
@@ -627,6 +628,7 @@ final class LogsViewerEndpoint
                 'shown_lines'  => $this->countLinesInText($rawLog),
                 'max_lines'    => $maxLines,
                 'source'       => 'docker',
+                'file_size'    => strlen($rawLog),
             ];
         }
 
@@ -674,6 +676,7 @@ final class LogsViewerEndpoint
                 'shown_lines'  => $this->countLinesInText($text),
                 'max_lines'    => $maxLines,
                 'source'       => 'vm',
+                'file_size'    => $snapSize,
             ];
         }
 

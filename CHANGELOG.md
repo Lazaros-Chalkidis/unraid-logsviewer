@@ -1,10 +1,37 @@
 
 # Logs Viewer
 
+## 2026.04.06
+
+### Fixed
+- Perf/syntax toast no longer gets stuck after using search, properly auto-dismisses after 6 seconds and does not reappear on the same log
+- Hex color input was not accepting manual values
+- Toast right side content was clipped on smaller widgets
+- Theme preset selection (Terminal, Dim, Contrast) was not saving due to a mismatched validation whitelist
+- Toast background no longer follows the log panel color when a theme preset is active, only when Default preset with a manual background color
+
+### New Features
+- Toast panel split into two slots: left side keeps existing messages (selected log, search, login, perf), right side shows contextual info
+- File size displayed permanently on the right side of the toast bar
+- New lines indicator: "+N new lines" in green when new lines are detected between polls
+- Error spike indicator: "+N err" in orange when error count increases between polls
+- Critical spike indicator: "+N crit" in red when critical count increases between polls
+- Indicators persist until the next poll cycle brings new data
+- "Paused" indicator appears on the right side of the toast when hovering over the log panel (requires pause on hover enabled)
+- Toast background color in dark theme now follows the Log background color setting
+
+### Improvements
+- Default log background color changed to #1b1b1b
+- Hex color input field now accepts manual typing (applied on blur or Enter, reverts if invalid)
+- System Logs / Docker Logs / VM Logs sections in Settings redesigned to match the rest of the page (label column with checkbox and name on the left, path and size on the right, alternating row backgrounds, styled note and action rows)
+- Toast separator lines made more visible
+- File size added to all API responses with zero additional server overhead
+- Settings page buttons (Apply, Reset to Defaults, Done) restyled to match StreamViewer design with color-coded variants (green for Apply, orange for Reset, neutral for Done)
+- Log source action buttons (Select All, Deselect All, Scan) restyled to match the same design language
+
 ## 2026.03.31
 
 ### Bug Fixes
-
 - Syntax dropdown not working on Unraid 7.2+ where tiles load after the page (switched to event delegation)
 - HTML entities appearing literally in syntax highlighted output (added decode step before engine processing)
 - Hover transition on buttons causing a diagonal fade out artifact (fixed across all stylesheets)
@@ -18,7 +45,6 @@
 - Section header accidentally placed inside a JS function body, breaking storageKey
 
 ### New Features
-
 - Color coded proportion strip in the footer showing the ratio of info, warning, error and critical lines at a glance
 - Colored category dots next to System (blue), Dockers (green) and VMs (orange) tab names
 - Green or red status dot next to each Docker container and VM in dropdown menus based on running state
@@ -33,7 +59,6 @@
 - Security headers added to the cached API response path
 
 ### Improvements
-
 - Redesigned footer layout with line count and pulse on the left, severity badges in the center, clock and timestamp on the right
 - Severity badges restyled as colored pills with subtle borders and hover lift
 - Syntax and Filter controls moved into the tabs rail as compact pill buttons

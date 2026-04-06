@@ -63,7 +63,7 @@ $sanitize_version = static function($v) {
 };
 $sanitize_theme = static function($v) {
   $v = strtolower(trim((string)$v));
-  $allowed = ['default','dracula','monokai','solarized','nord','gruvbox'];
+  $allowed = ['default','terminal','dim','contrast'];
   return in_array($v, $allowed, true) ? $v : 'default';
 };
 $sanitize_highlight_mode = static function($v) {
@@ -410,8 +410,8 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
           <div class="lv-r-label">Log background color</div>
           <div class="lv-r-field">
             <div class="lv-color-row">
-              <input type="color" id="lvToolBgColorPicker" value="<?php echo htmlspecialchars($tool_bg_default ?: '#0b0f14'); ?>">
-              <input type="text" id="lvToolBgColorHex" value="<?php echo htmlspecialchars($tool_bg_default); ?>" placeholder="#0b0f14">
+              <input type="color" id="lvToolBgColorPicker" value="<?php echo htmlspecialchars($tool_bg_default ?: '#1b1b1b'); ?>">
+              <input type="text" id="lvToolBgColorHex" value="<?php echo htmlspecialchars($tool_bg_default); ?>" placeholder="#1b1b1b">
               <input type="hidden" name="TOOL_LOG_BG_COLOR" id="lvToolBgColorHidden" value="<?php echo htmlspecialchars($tool_bg_default); ?>">
               <span class="lv-color-preview" id="lvToolBgPreview">Preview</span>
             </div>
@@ -760,8 +760,8 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
           <div class="lv-r-label">Log background color</div>
           <div class="lv-r-field">
             <div class="lv-color-row">
-              <input type="color" id="lvBgColorPicker" value="<?php echo htmlspecialchars($bg_default ?: '#0b0f14'); ?>">
-              <input type="text" id="lvBgColorHex" value="<?php echo htmlspecialchars($bg_default); ?>" placeholder="#0b0f14">
+              <input type="color" id="lvBgColorPicker" value="<?php echo htmlspecialchars($bg_default ?: '#1b1b1b'); ?>">
+              <input type="text" id="lvBgColorHex" value="<?php echo htmlspecialchars($bg_default); ?>" placeholder="#1b1b1b">
               <input type="hidden" name="LOG_BG_COLOR" id="lvBgColorHidden" value="<?php echo htmlspecialchars($bg_default); ?>">
               <span class="lv-color-preview" id="lvBgPreview">Preview</span>
             </div>
@@ -1140,7 +1140,7 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
         function applyColor(val, userInitiated){
           const normalized = normalizeHex(val);
           const _light = _lv_isLight();
-          const display = normalized || (_light ? '#ffffff' : '#0b0f14');
+          const display = normalized || (_light ? '#ffffff' : '#1b1b1b');
           picker.value = display; hex.value = display;
           preview.style.background = display;
           preview.style.borderColor = _light ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
@@ -1154,8 +1154,9 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
           } else { if (!hidden.value) hidden.value = ''; }
         }
         picker.addEventListener('input', () => applyColor(picker.value, true));
-        hex.addEventListener('input', () => { var n = normalizeHex(hex.value); if (n) applyColor(n, true); });
-        applyColor(hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#0b0f14'), false);
+        hex.addEventListener('change', () => { var n = normalizeHex(hex.value); if (n) applyColor(n, true); else hex.value = hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); });
+        hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); var n = normalizeHex(hex.value); if (n) applyColor(n, true); else hex.value = hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); } });
+        applyColor(hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'), false);
       }
 
       // Tool color picker
@@ -1187,7 +1188,8 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
           } else { if (!toolHidden.value) toolHidden.value = ''; }
         }
         toolPicker.addEventListener('input', () => applyColorTool(toolPicker.value, true));
-        toolHex.addEventListener('input', () => { var n = normalizeHex(toolHex.value); if (n) applyColorTool(n, true); });
+        toolHex.addEventListener('change', () => { var n = normalizeHex(toolHex.value); if (n) applyColorTool(n, true); else toolHex.value = toolHidden.value || toolPicker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); });
+        toolHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); var n = normalizeHex(toolHex.value); if (n) applyColorTool(n, true); else toolHex.value = toolHidden.value || toolPicker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); } });
         applyColorTool(toolHidden.value || toolPicker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'), false);
       }
     })();
@@ -1357,12 +1359,15 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
         var chk = (checked && !disabled) ? ' checked' : '';
         var disAttr = disabled ? ' disabled' : '';
         return '<div class="lv-source-row' + dis + '">' +
-          '<input type="checkbox" class="lv-source-check" data-key="' + key + '"' + chk + disAttr + '>' +
-          '<div><span class="lv-source-name">' + name + '</span>' +
-            (extraInfo ? '<br><span class="lv-source-path">' + extraInfo + '</span>' : '') +
+          '<div class="lv-source-label">' +
+            '<input type="checkbox" class="lv-source-check" data-key="' + key + '"' + chk + disAttr + '>' +
+            '<span class="lv-source-name">' + name + '</span>' +
           '</div>' +
-          (statusHtml || '') +
-          '<span class="lv-source-size">' + lvFormatSize(size) + '</span>' +
+          '<div class="lv-source-field">' +
+            (extraInfo ? '<span class="lv-source-path">' + extraInfo + '</span>' : '') +
+            (statusHtml || '') +
+            '<span class="lv-source-size">' + lvFormatSize(size) + '</span>' +
+          '</div>' +
         '</div>';
       }
 

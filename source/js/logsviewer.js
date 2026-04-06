@@ -175,6 +175,7 @@ function logsviewer_showLog(entry) {
     logsviewer_activeLogTotalLines = entry.total_lines || 0;
     logsviewer_lastShown = { category: entry.category || logsviewer_activeCategory || null, source: entry.name || entry.display_name || null };
     logsviewer_renderLog(logDisplay, logsviewer_activeLogContent, logsviewer_activeLogTotalLines);
+    logsviewer_updateToastRight(entry, logsviewer_lastBadgeCounts);
     logsviewer_updateSelectedToast();
     logsviewer_layoutToasts();
 
@@ -207,6 +208,78 @@ function logsviewer_showLog(entry) {
 
 let logsviewer_forceLoginUntil = 0; // temporary override to show login toast even when Syntax toast is active
 let logsviewer_perfToastTimer   = null; // auto-dismiss timer for Large log toast
+let logsviewer_perfToastSetThisRender = false;
+
+// Right toast slot: tracking for diff indicators
+let logsviewer_prevTotalLines = null;
+let logsviewer_prevErrorCount = null;
+let logsviewer_prevCriticalCount = null;
+let logsviewer_lastBadgeCounts = null;
+let logsviewer_toastRightSource = null;
+
+function logsviewer_formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function logsviewer_updateToastRight(entry, badgeCounts) {
+    var right = document.getElementById('logsviewer-toast-right');
+    if (!right) return;
+
+    var sourceKey = String(entry && entry.source || '') + '|' + String(entry && entry.name || '');
+    if (sourceKey !== logsviewer_toastRightSource) {
+        logsviewer_prevTotalLines = null;
+        logsviewer_prevErrorCount = null;
+        logsviewer_prevCriticalCount = null;
+        logsviewer_toastRightSource = sourceKey;
+        logsviewer_perfToastDismissed = false;
+    }
+
+    var parts = [];
+    var totalLines = Number(entry && entry.total_lines || 0);
+    var fileSize = Number(entry && entry.file_size || 0);
+    var errCount = Number(badgeCounts && badgeCounts.error || 0);
+    var critCount = Number(badgeCounts && badgeCounts.critical || 0);
+
+    // New lines diff (only if we have a previous value and it increased)
+    if (logsviewer_prevTotalLines !== null && totalLines > logsviewer_prevTotalLines) {
+        var diff = totalLines - logsviewer_prevTotalLines;
+        parts.push('<span class="lv-toast-newlines">+' + diff + ' new lines</span>');
+    }
+
+    // New errors diff
+    if (logsviewer_prevErrorCount !== null && errCount > logsviewer_prevErrorCount) {
+        var errDiff = errCount - logsviewer_prevErrorCount;
+        if (parts.length) parts.push('<span class="lv-toast-sep"></span>');
+        parts.push('<span class="lv-toast-newerrors">+' + errDiff + ' err</span>');
+    }
+
+    // New critical diff
+    if (logsviewer_prevCriticalCount !== null && critCount > logsviewer_prevCriticalCount) {
+        var critDiff = critCount - logsviewer_prevCriticalCount;
+        if (parts.length) parts.push('<span class="lv-toast-sep"></span>');
+        parts.push('<span class="lv-toast-newcritical">+' + critDiff + ' crit</span>');
+    }
+
+    // File size (always visible)
+    if (fileSize > 0) {
+        if (parts.length) parts.push('<span class="lv-toast-sep"></span>');
+        parts.push('<span class="lv-toast-size">' + logsviewer_formatFileSize(fileSize) + '</span>');
+    }
+
+    // Update tracking state
+    logsviewer_prevTotalLines = totalLines;
+    logsviewer_prevErrorCount = errCount;
+    logsviewer_prevCriticalCount = critCount;
+
+    right.innerHTML = parts.join('');
+
+    // Make the panel visible if it has content
+    var panel = document.querySelector('.logsviewer-toast-panel');
+    if (panel && parts.length) panel.style.display = '';
+}
 
 function logsviewer_showLoginToast(message){
 
@@ -1020,11 +1093,13 @@ function logsviewer_layoutToasts(){
         return;
     }
 
-    // Nothing to show -> hide the panel
+    // Nothing to show on the left -> hide left toasts but keep panel if right slot has content
     if (perfToast.length) perfToast.hide();
     if (loginToast.length) loginToast.hide();
     if (searchToast.length) searchToast.hide();
-    if(panel.length) panel.hide();
+    var rightSlot = document.getElementById('logsviewer-toast-right');
+    var rightHasContent = rightSlot && rightSlot.innerHTML.trim() !== '';
+    if(panel.length) { if (rightHasContent) panel.show(); else panel.hide(); }
 }
 
 
@@ -1518,6 +1593,9 @@ function logsviewer_startPerfFlash(el, flashes){
 }
 
 
+let logsviewer_lastPerfMessage = null;
+let logsviewer_perfToastDismissed = false;
+
 function logsviewer_showPerfToast(message){
   try{
     const line = $('#logsviewer-toast-line');
@@ -1536,9 +1614,25 @@ function logsviewer_showPerfToast(message){
     if(!message){
       el.textContent = '';
       el.style.display = 'none';
+      logsviewer_lastPerfMessage = null;
       if (logsviewer_perfToastTimer) { clearTimeout(logsviewer_perfToastTimer); logsviewer_perfToastTimer = null; }
       return;
     }
+
+    // If already dismissed for this log, don't show again until source changes
+    if (logsviewer_perfToastDismissed && message === logsviewer_lastPerfMessage) {
+      logsviewer_perfToastSetThisRender = true;
+      return;
+    }
+
+    // If the same message is being set again by a poll cycle, don't restart the timer
+    if (message === logsviewer_lastPerfMessage && logsviewer_perfToastTimer) {
+      logsviewer_perfToastSetThisRender = true;
+      return;
+    }
+    logsviewer_lastPerfMessage = message;
+    logsviewer_perfToastSetThisRender = true;
+    logsviewer_perfToastDismissed = false;
 
     el.textContent = message;
     el.style.display = '';
@@ -1559,6 +1653,7 @@ function logsviewer_showPerfToast(message){
     if (logsviewer_perfToastTimer) { clearTimeout(logsviewer_perfToastTimer); }
     logsviewer_perfToastTimer = setTimeout(function() {
         logsviewer_perfToastTimer = null;
+        logsviewer_perfToastDismissed = true;
         el.textContent = '';
         el.style.display = 'none';
         el.dataset.lvFlashDone = '0';
@@ -1687,10 +1782,9 @@ function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
     }
     logsviewer_lastRenderKey = renderKey;
 
-    // Always clear the perf toast at start of every render — it will only be
-    // re-set below if THIS specific log actually exceeds the threshold.
-    // Without this, a "Large log" from a previous log lingers when switching.
-    logsviewer_showPerfToast(null);
+    // Track whether a perf toast is set during this render cycle.
+    // If not, we clear it at the end (handles source switching).
+    logsviewer_perfToastSetThisRender = false;
 
     // Tail first (performance: render limit)
     let base = logsviewer_tailText(rawText || '', logsviewer_cfg.tailLines || 0);
@@ -1816,12 +1910,21 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
 
     // ── Fix #5: Count levels on RAW text (before HTML spans inflate string) ──
     var badgeCounts = logsviewer_cfg.showBadges ? logsviewer_countLevels(filtered) : null;
+    // Also count for right toast slot even if badges are hidden
+    if (!badgeCounts) badgeCounts = logsviewer_countLevels(filtered);
+    logsviewer_lastBadgeCounts = badgeCounts;
 
     // Highlight levels (optional)
     filtered = logsviewer_highlightLevels(filtered);
 
     // Search highlight LAST — uses tag-aware regex so it doesn't corrupt existing HTML spans
     filtered = logsviewer_applySearchHighlight(filtered);
+
+    // Deferred perf toast clear: if no perf toast was set during this render cycle,
+    // clear it now (handles switching to a smaller log)
+    if (!logsviewer_perfToastSetThisRender) {
+        logsviewer_showPerfToast(null);
+    }
 
     // Batch DOM writes in one rAF to avoid layout thrashing
     requestAnimationFrame(function() {
@@ -2143,6 +2246,13 @@ function logsviewer_applyConfig() {
         logPanel.style.setProperty('--logsviewer-log-bg', bgColor || (logsviewer_isLightTheme() ? '#ffffff' : '#1b1b1b'));
     }
 
+    // Sync toast background with the manual bg color (dark theme only, default preset only).
+    // When a theme preset is active, the toast keeps its own CSS default.
+    if (!logsviewer_isLightTheme() && preset === 'default' && bgColor) {
+        var _toastEl = document.querySelector('.logsviewer-toast-panel');
+        if (_toastEl) _toastEl.style.background = bgColor;
+    }
+
     // Backwards-compat cleanup (in case an older version set it globally)
     document.documentElement.style.removeProperty('--logsviewer-log-bg');
 
@@ -2316,8 +2426,29 @@ $(function() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
     if (config.pauseOnHover) {
-        $(document).on('mouseenter', '#logsviewer-container', function(){ logsviewer_pauseHoverActive = true; });
-        $(document).on('mouseleave', '#logsviewer-container', function(){ logsviewer_pauseHoverActive = false; });
+        $(document).on('mouseenter', '#logsviewer-container', function(){
+            logsviewer_pauseHoverActive = true;
+            var right = document.getElementById('logsviewer-toast-right');
+            if (right && config.pauseOnHover) {
+                var existing = right.querySelector('.lv-toast-paused');
+                if (!existing) {
+                    var sep = right.children.length ? '<span class="lv-toast-sep"></span>' : '';
+                    right.insertAdjacentHTML('afterbegin', '<span class="lv-toast-paused">Paused</span>' + sep);
+                }
+            }
+        });
+        $(document).on('mouseleave', '#logsviewer-container', function(){
+            logsviewer_pauseHoverActive = false;
+            var right = document.getElementById('logsviewer-toast-right');
+            if (right) {
+                var paused = right.querySelector('.lv-toast-paused');
+                if (paused) {
+                    var nextSep = paused.nextElementSibling;
+                    if (nextSep && nextSep.classList.contains('lv-toast-sep')) nextSep.remove();
+                    paused.remove();
+                }
+            }
+        });
     }
 
     // Compact view handling (existing)

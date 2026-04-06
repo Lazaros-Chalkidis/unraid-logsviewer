@@ -91,7 +91,7 @@
         function applyColor(val, userInitiated){
           const normalized = normalizeHex(val);
           const _light = _lv_isLight();
-          const display = normalized || (_light ? '#ffffff' : '#0b0f14');
+          const display = normalized || (_light ? '#ffffff' : '#1b1b1b');
 
           // Update visible controls / preview
           picker.value = display;
@@ -133,13 +133,22 @@
         }
 
         picker.addEventListener('input', () => applyColor(picker.value, true));
-        hex.addEventListener('input', () => {
+        hex.addEventListener('change', () => {
           const n = normalizeHex(hex.value);
           if (n) applyColor(n, true);
+          else { hex.value = hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); }
+        });
+        hex.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const n = normalizeHex(hex.value);
+            if (n) applyColor(n, true);
+            else { hex.value = hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); }
+          }
         });
 
         // Initial sync (do NOT mark dirty)
-        applyColor(hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#0b0f14'), false);
+        applyColor(hidden.value || picker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'), false);
       }
 
       // TOOL TAB color picker handler (identical logic)
@@ -208,9 +217,18 @@
         }
 
         toolPicker.addEventListener('input', () => applyColorTool(toolPicker.value, true));
-        toolHex.addEventListener('input', () => {
+        toolHex.addEventListener('change', () => {
           const n = normalizeHex(toolHex.value);
           if (n) applyColorTool(n, true);
+          else { toolHex.value = toolHidden.value || toolPicker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); }
+        });
+        toolHex.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const n = normalizeHex(toolHex.value);
+            if (n) applyColorTool(n, true);
+            else { toolHex.value = toolHidden.value || toolPicker.value || (_lv_isLight() ? '#ffffff' : '#1b1b1b'); }
+          }
         });
 
         // Initial sync
@@ -529,12 +547,15 @@
         var chk = checked ? ' checked' : '';
         var disAttr = disabled ? ' disabled' : '';
         return '<div class="lv-source-row' + dis + '">' +
-          '<input type="checkbox" class="lv-source-check" data-key="' + key + '"' + chk + disAttr + '>' +
-          '<div><span class="lv-source-name">' + name + '</span>' +
-            (extraInfo ? '<br><span class="lv-source-path">' + extraInfo + '</span>' : '') +
+          '<div class="lv-source-label">' +
+            '<input type="checkbox" class="lv-source-check" data-key="' + key + '"' + chk + disAttr + '>' +
+            '<span class="lv-source-name">' + name + '</span>' +
           '</div>' +
-          (statusHtml || '') +
-          '<span class="lv-source-size">' + lvFormatSize(size) + '</span>' +
+          '<div class="lv-source-field">' +
+            (extraInfo ? '<span class="lv-source-path">' + extraInfo + '</span>' : '') +
+            (statusHtml || '') +
+            '<span class="lv-source-size">' + lvFormatSize(size) + '</span>' +
+          '</div>' +
         '</div>';
       }
 

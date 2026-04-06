@@ -278,7 +278,7 @@ HTML;
 
 $render_log_panel = static function(string $log_placeholder, string $last_update_label, bool $showToast = true): string {
     $toastHtml = $showToast
-        ? '<div class="logsviewer-toast-panel" aria-label="Notifications"><div id="logsviewer-toast-line" class="logsviewer-toast-line"></div></div>'
+        ? '<div class="logsviewer-toast-panel" aria-label="Notifications"><div id="logsviewer-toast-line" class="logsviewer-toast-line"></div><div id="logsviewer-toast-right" class="logsviewer-toast-right"></div></div>'
         : '';
     return <<<HTML
 <div class="logsviewer-body logsviewer-collapsible">
