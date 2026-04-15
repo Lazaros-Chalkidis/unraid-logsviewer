@@ -1,5 +1,7 @@
 /* ==========================================================================
    LOGS VIEWER — Widget CSS
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
    Shared by Dashboard widget, Tool page and Settings page.
    tool.css and settings.css layer on top with page-specific overrides.
    ========================================================================== */
@@ -343,7 +345,6 @@
 }
 .lv-drop-dot--running{ background:#2ecc71; }
 .lv-drop-dot--stopped{ background:#e74c3c; }
-.lv-drop-dot--unknown{ background:#666; }
 .logsviewer-cat-dropdown li.lv-item--active .lv-drop-dot{ box-shadow:0 0 0 2px rgba(55,138,221,0.5); }
 
 /* Native select: transparent overlay for mobile tap target */
@@ -372,7 +373,6 @@
   border-color:var(--lv-c-border-strong); color:var(--logsviewer-text-primary);
 }
 .logsviewer-tabrow-ctrl__label{ pointer-events:none; font-weight:500; }
-.logsviewer-tabrow-ctrl__value{ pointer-events:none; color:var(--lv-c-text-muted); font-weight:400; }
 .logsviewer-tabrow-ctrl__caret{ font-size:0.73em; opacity:0.35; pointer-events:none; }
 
 /* Hidden select overlay for Syntax/Filter controls */
@@ -460,7 +460,6 @@
   color:var(--logsviewer-text-primary); cursor:pointer;
 }
 .logsviewer-search button:hover{ border-color:var(--logsviewer-tab-hover-border); background-color:var(--logsviewer-tab-hover-bg); }
-.logsviewer-search .logsviewer-search-count{ font-size:.9em; opacity:.8; white-space:nowrap; }
 
 /* Search in header */
 .logsviewer-search--header{ margin-left:0; justify-content:flex-end; flex-wrap:nowrap; min-width:0; overflow:hidden; }
@@ -562,17 +561,6 @@
   100%{ opacity:0.2; }
 }
 
-/* Error toast (manual refresh failures) */
-.logsviewer-error-toast{
-  position:sticky; top:0.25rem; right:0.55rem; margin-left:auto; z-index:6;
-  width:fit-content; max-width:300px; padding:0.5rem 0.75rem;
-  border-radius:0.5rem; font-size:0.9em; font-weight:600; line-height:1.3;
-  color:#fff; background:rgba(220,38,38,0.95); border:1px solid rgba(239,68,68,0.8);
-  backdrop-filter:blur(4px); display:none; pointer-events:auto;
-  box-shadow:0 4px 12px rgba(220,38,38,0.4); cursor:pointer;
-}
-.logsviewer-error-toast:hover{ background:rgba(239,68,68,0.95); }
-
 
 /* ── 8. FOOTER ────────────────────────────────────────────────────────────── */
 
@@ -587,23 +575,23 @@
 
 /* Proportion strip (full width, top of footer) */
 .logsviewer-proportion-strip{
-  display:flex; height:3.2px; overflow:hidden; width:100%;
+  display:flex; height:3.2px; overflow:hidden; width:100%; margin-bottom:4px;
 }
 .logsviewer-proportion-strip__seg{ transition:flex 0.3s ease; }
 .logsviewer-proportion-strip__seg--ok{ background:var(--lv-c-bg-hover); flex:1; }
 .logsviewer-proportion-strip__seg--info{ background:rgba(30,144,255,0.45); }
 .logsviewer-proportion-strip__seg--warn{ background:rgba(239,159,39,0.65); }
-.logsviewer-proportion-strip__seg--error{ background:rgba(226,75,74,0.65); }
+.logsviewer-proportion-strip__seg--error{ background:rgba(229,98,42,0.65); }
 .logsviewer-proportion-strip__seg--critical{ background:rgba(163,45,45,0.5); }
 
 /* Footer row: lines left, badges center, clock right */
 .logsviewer-footer__row{
-  display:flex; align-items:center; padding:0.5rem 0.7rem; gap:0.4rem;
+  display:flex; align-items:center; padding:0.5rem 0.7rem; gap:0.4rem; margin-bottom:4px;
 }
 
 /* Total lines meta */
 .logsviewer-title-meta{
-  display:inline-flex; align-items:center; gap:0.25rem;
+  display:inline-flex; align-items:center; gap:0.45rem;
   font-size:0.93rem; font-weight:600;
   color:var(--logsviewer-text-secondary); user-select:none;
   flex-shrink:0;
@@ -640,12 +628,12 @@
 }
 .logsviewer-badge--info{ background:rgba(55,138,221,0.08); color:#378ADD; border-color:rgba(55,138,221,0.15); }
 .logsviewer-badge--warning{ background:rgba(239,159,39,0.08); color:#EF9F27; border-color:rgba(239,159,39,0.15); }
-.logsviewer-badge--error{ background:rgba(255,140,0,0.08); color:#ff8c00; border-color:rgba(255,140,0,0.15); }
+.logsviewer-badge--error{ background:rgba(229,98,42,0.08); color:#E5622A; border-color:rgba(229,98,42,0.15); }
 .logsviewer-badge--critical{ background:rgba(220,50,50,0.08); color:#D43A3A; border-color:rgba(220,50,50,0.15); }
 .logsviewer-badge:hover{ transform:translateY(-1px); }
 .logsviewer-badge--info:hover{ background:rgba(55,138,221,0.15); border-color:rgba(55,138,221,0.3); }
 .logsviewer-badge--warning:hover{ background:rgba(239,159,39,0.15); border-color:rgba(239,159,39,0.3); }
-.logsviewer-badge--error:hover{ background:rgba(255,140,0,0.15); border-color:rgba(255,140,0,0.3); }
+.logsviewer-badge--error:hover{ background:rgba(229,98,42,0.15); border-color:rgba(229,98,42,0.3); }
 .logsviewer-badge--critical:hover{ background:rgba(220,50,50,0.15); border-color:rgba(220,50,50,0.3); }
 .logsviewer-badge:active{ transform:translateY(1px); }
 .logsviewer-badge:focus-visible{ outline:2px solid var(--logsviewer-tab-focus-ring); outline-offset:2px; }
@@ -654,22 +642,21 @@
 .logsviewer-badge.logsviewer-badge--selected{ opacity:1 !important; }
 .logsviewer-badge--info.logsviewer-badge--selected{ background:rgba(55,138,221,0.25) !important; border-color:rgba(55,138,221,0.5) !important; color:#5aadff !important; }
 .logsviewer-badge--warning.logsviewer-badge--selected{ background:rgba(239,159,39,0.25) !important; border-color:rgba(239,159,39,0.5) !important; color:#f5b84a !important; }
-.logsviewer-badge--error.logsviewer-badge--selected{ background:rgba(255,140,0,0.25) !important; border-color:rgba(255,140,0,0.5) !important; color:#ffa033 !important; }
+.logsviewer-badge--error.logsviewer-badge--selected{ background:rgba(229,98,42,0.25) !important; border-color:rgba(229,98,42,0.5) !important; color:#F07A3E !important; }
 .logsviewer-badge--critical.logsviewer-badge--selected{ background:rgba(220,50,50,0.25) !important; border-color:rgba(220,50,50,0.5) !important; color:#e05555 !important; }
 
 .logsviewer-badge-label{ color:inherit; font-weight:500; opacity:0.85; }
 .logsviewer-badge-count{ font-variant-numeric:tabular-nums; font-weight:700; }
 .logsviewer-count--info{ color:#378ADD; }
 .logsviewer-count--warning{ color:#EF9F27; }
-.logsviewer-count--error{ color:#ff8c00; }
+.logsviewer-count--error{ color:#E5622A; }
 .logsviewer-count--critical{ color:#D43A3A; }
 
 /* Timestamp (clock icon + time) */
 .logsviewer-timestamp-container{
-  display:flex; gap:0.2rem; align-items:center; white-space:nowrap;
+  display:flex; gap:0.45rem; align-items:center; white-space:nowrap;
   font-size:0.9rem; flex-shrink:0;
 }
-.logsviewer-timestamp-label{ display:none; }
 .logsviewer-ts-icon{ color:var(--lv-c-text-muted); flex-shrink:0; opacity:0.7; }
 #logsviewer-timestamp{ font-variant-numeric:tabular-nums; color:var(--lv-c-text); }
 
@@ -702,11 +689,11 @@
 .hljs .logsviewer-lvl-emergency,
 .hljs .logsviewer-lvl-fatal,
 .hljs .logsviewer-lvl-panic{ color:#800020 !important; font-weight:700 !important; }
-.logsviewer-lvl-info *,
-.logsviewer-lvl-warn *,
-.logsviewer-lvl-warning *,
-.logsviewer-lvl-error *,
-.logsviewer-lvl-critical *{ color:inherit !important; }
+.logsviewer-lvl-info span,
+.logsviewer-lvl-warn span,
+.logsviewer-lvl-warning span,
+.logsviewer-lvl-error span,
+.logsviewer-lvl-critical span{ color:inherit !important; }
 .logsviewer-hdr{ color:#aaa !important; }
 .lv-light .logsviewer-hdr{ color:#777 !important; }
 
@@ -729,65 +716,6 @@
 .logsviewer-compact-indicator--running{ color:#4ade80; border-color:var(--logsviewer-tab-running-border); }
 .logsviewer-compact-indicator--running::before{ background-color:var(--logsviewer-success-border,#2f6f2a); }
 
-
-/* ── 11. LEGACY TABS (script-tab) ─────────────────────────────────────────── */
-
-.logsviewer-tabs{ width:100%; display:flex; flex-wrap:wrap; align-items:flex-end; gap:0; margin:0 !important; padding:0 !important; }
-.logsviewer-body--legacy .logsviewer-tabs{ gap:0; }
-.logsviewer-tabs:empty{ display:none; }
-
-.logsviewer-tabs .script-tab{
-  appearance:none !important; -webkit-appearance:none !important;
-  margin:0 !important; border-radius:0.5rem !important; box-shadow:none !important; outline:none !important;
-  text-decoration:none !important; position:relative !important; z-index:0 !important;
-  display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:0.28rem !important;
-  max-width:100% !important; overflow:hidden !important;
-  min-height:2.64rem !important; white-space:nowrap !important; text-overflow:ellipsis !important;
-  font-size:0.98rem !important; font-weight:600 !important; line-height:1.1 !important;
-  cursor:pointer !important;
-  transition:background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease !important;
-  color:var(--logsviewer-text-primary) !important; padding:0.6rem 1rem !important;
-  border:1px solid var(--logsviewer-tab-border,#3c3c3c) !important; border-bottom:1px solid var(--logsviewer-tab-border,#3c3c3c) !important;
-  background-color:var(--logsviewer-tab-bg,#2c2c2c) !important; background-image:none !important;
-}
-.logsviewer-body--legacy .script-tab{ font-size:0.72rem !important; min-height:2.28rem !important; padding:0.52rem 0.84rem !important; }
-.logsviewer-tabs .script-tab.script-tab--running{
-  background-color:var(--logsviewer-tab-bg,#2c2c2c) !important; color:#4ade80 !important;
-  border-top:3px solid var(--success-border,#2f6f2a) !important;
-  border-left:1px solid var(--logsviewer-tab-border,#3c3c3c) !important;
-  border-right:1px solid var(--logsviewer-tab-border,#3c3c3c) !important;
-  border-bottom:none !important; padding-top:calc(0.6rem - 2px) !important; border-radius:0 !important;
-}
-.logsviewer-body--legacy .script-tab.script-tab--running{ padding-top:calc(0.52rem - 2px) !important; }
-.logsviewer-tabs .script-tab.selected-script,
-.logsviewer-tabs .script-tab[aria-pressed="true"],
-.logsviewer-tabs .script-tab[aria-selected="true"]{
-  background-color:var(--logsviewer-tab-bg,#2c2c2c) !important; color:var(--logsviewer-text-primary) !important;
-  border-top:1px solid var(--logsviewer-tab-border,#3c3c3c) !important;
-  border-left:1px solid var(--logsviewer-tab-border,#3c3c3c) !important;
-  border-right:1px solid var(--logsviewer-tab-border,#3c3c3c) !important;
-  border-bottom:none !important; border-radius:0.5rem 0.5rem 0 0 !important;
-  position:relative !important; z-index:1 !important;
-}
-.logsviewer-tabs .script-tab.selected-script::after,
-.logsviewer-tabs .script-tab[aria-pressed="true"]::after,
-.logsviewer-tabs .script-tab[aria-selected="true"]::after{
-  content:'' !important; position:absolute !important; left:2.7rem !important; right:2.7rem !important; bottom:0 !important; height:1px !important; background:var(--lv-c-text) !important;
-}
-.logsviewer-tabs .script-tab:not(.selected-script):not([aria-pressed="true"]):not([aria-selected="true"])::after{
-  content:'' !important; position:absolute !important; left:2.7rem !important; right:2.7rem !important; bottom:0 !important; height:1px !important;
-  background:linear-gradient(to right,rgb(229,48,41),rgb(254,136,48)) !important; opacity:0 !important; transition:opacity .25s ease !important;
-}
-.logsviewer-tabs .script-tab:not(.selected-script):not([aria-pressed="true"]):not([aria-selected="true"]):hover::after{ opacity:1 !important; }
-.logsviewer-tabs .script-tab:not(.selected-script):hover,
-.logsviewer-tabs .script-tab:not([aria-pressed="true"]):hover{
-  border-color:var(--logsviewer-tab-hover-border) !important; background-color:var(--logsviewer-tab-hover-bg) !important;
-  color:var(--logsviewer-text-primary) !important; border-bottom-color:transparent !important; border-radius:0 !important;
-}
-.logsviewer-body--legacy .logsviewer-tabs .script-tab:not(.selected-script):hover,
-.logsviewer-body--legacy .logsviewer-tabs .script-tab:not([aria-pressed="true"]):hover{ border-bottom-color:transparent !important; }
-.logsviewer-tabs .script-tab:focus-visible{ outline:2px solid var(--logsviewer-border) !important; outline-offset:2px !important; }
-.logsviewer-tabs .script-tab:disabled{ opacity:0.5 !important; cursor:not-allowed !important; border-bottom:none !important; background-color:var(--logsviewer-tab-bg,#2c2c2c) !important; border-radius:0 !important; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    RESPONSIVE: TABLET & MOBILE

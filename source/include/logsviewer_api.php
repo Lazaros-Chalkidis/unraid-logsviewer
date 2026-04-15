@@ -1,4 +1,5 @@
 <?php
+// LogsViewer for Unraid - Copyright (C) 2026 Lazaros Chalkidis - License: GPLv3
 declare(strict_types=1);
 
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
@@ -20,6 +21,7 @@ final class LogsViewerEndpoint
 
     private const SYSTEM_LOGS = [
         'syslog'          => '/var/log/syslog',
+        'syslog-previous' => '/boot/logs/syslog-previous',
         'dmesg'           => '/var/log/dmesg',
         'graphql-api.log' => '/var/log/graphql-api.log',
         'nginx-error'     => '/var/log/nginx/error.log',
@@ -29,6 +31,7 @@ final class LogsViewerEndpoint
 
     private const SYSTEM_LOG_NAMES = [
         'syslog'          => 'Syslog',
+        'syslog-previous' => 'Syslog Previous',
         'dmesg'           => 'Dmesg',
         'graphql-api.log' => 'GraphQL API',
         'nginx-error'     => 'Nginx Errors',
@@ -43,9 +46,20 @@ final class LogsViewerEndpoint
         }
     }
 
-    // ── Cached runtime state (avoid duplicate shell calls per request) ────
+    // ── Cached runtime state (avoid duplicate calls per request) ────────
     private ?array $_dockerStatesCache = null;
     private ?array $_vmStatesCache = null;
+    private ?array $_cfgCache = null;
+    private bool $_migrationDone = false;
+
+    /** Cached config: read once per request instead of 6x */
+    private function getCfg(): array
+    {
+        if ($this->_cfgCache === null) {
+            $this->_cfgCache = parse_plugin_cfg('logsviewer', true);
+        }
+        return $this->_cfgCache;
+    }
 
     private function getDockerStates(): array
     {
@@ -157,6 +171,16 @@ final class LogsViewerEndpoint
 
     public function run(): void
     {
+        // Download bypass: direct browser request, no AJAX header required
+        $action = (string)($_GET['action'] ?? '');
+        if ($action === 'download_backup') {
+            $this->enforceLocalOrigin();
+            $this->verifyNonce();
+            $this->enforceRateLimit();
+            $this->replyDownloadBackup();
+            return;
+        }
+
         $this->enforceAjaxGet();
 
         // Nonce refresh must bypass nonce verification (the old one has expired)
@@ -176,6 +200,10 @@ final class LogsViewerEndpoint
             'get_docker_log'        => fn() => $this->replyDockerLog(),
             'get_vm_list'           => fn() => $this->replyVmList(),
             'get_vm_log'            => fn() => $this->replyVmLog(),
+            'list_backups'          => fn() => $this->replyListBackups(),
+            'get_alert_rules'       => fn() => $this->replyAlertRules(),
+            'get_alert_history'     => fn() => $this->replyAlertHistory(),
+            'clear_alert_history'   => fn() => $this->replyClearAlertHistory(),
         ];
 
         if (!isset($routes[$action])) {
@@ -187,10 +215,15 @@ final class LogsViewerEndpoint
 
     // ── Context helpers ────────────────────────────────────────────────────
 
+    private ?string $_contextCache = null;
+
     private function getContext(): string
     {
-        $c = (string)($_GET['context'] ?? 'dash');
-        return ($c === 'tool') ? 'tool' : 'dash';
+        if ($this->_contextCache === null) {
+            $c = (string)($_GET['context'] ?? 'dash');
+            $this->_contextCache = ($c === 'tool') ? 'tool' : 'dash';
+        }
+        return $this->_contextCache;
     }
 
     private function isToolContext(): bool
@@ -203,6 +236,8 @@ final class LogsViewerEndpoint
     /** One-time migration from legacy global keys → DASH_* keys */
     private function migrateDashIfNeeded(array &$cfg): void
     {
+        if ($this->_migrationDone) return;
+        $this->_migrationDone = true;
         if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') === '1') return;
         if (array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) return;
 
@@ -266,7 +301,7 @@ final class LogsViewerEndpoint
 
     private function replyDiscoverSources(): void
     {
-        $cfg     = parse_plugin_cfg('logsviewer', true);
+        $cfg     = $this->getCfg();
         $context = $this->getContext();
         if ($context === 'dash') $this->migrateDashIfNeeded($cfg);
 
@@ -329,6 +364,18 @@ final class LogsViewerEndpoint
         $output = @shell_exec('docker ps -a --format "{{.Names}}\t{{.State}}\t{{.ID}}" 2>/dev/null');
         if (empty($output)) return [];
 
+        // Batch: get all log paths in one shell call (instead of N separate docker inspect calls)
+        $logPaths = [];
+        $pathsRaw = @shell_exec('docker inspect --format="{{.Name}}\t{{.LogPath}}" $(docker ps -aq) 2>/dev/null');
+        if ($pathsRaw) {
+            foreach (array_filter(explode("\n", trim($pathsRaw))) as $pLine) {
+                $pp = explode("\t", $pLine);
+                if (count($pp) >= 2) {
+                    $logPaths[ltrim(trim($pp[0]), '/')] = trim($pp[1]);
+                }
+            }
+        }
+
         $containers = [];
         foreach (array_filter(explode("\n", trim($output))) as $line) {
             $parts = explode("\t", $line);
@@ -336,7 +383,7 @@ final class LogsViewerEndpoint
             $name    = trim($parts[0]);
             $state   = trim($parts[1]);
             $id      = trim($parts[2]);
-            $logPath = trim((string)@shell_exec('docker inspect --format=\'{{.LogPath}}\' ' . escapeshellarg($name) . ' 2>/dev/null'));
+            $logPath = $logPaths[$name] ?? '';
             $containers[] = [
                 'name'     => $name,
                 'status'   => $state,
@@ -367,7 +414,7 @@ final class LogsViewerEndpoint
             $this->json(['error' => 'Container not found'], 404);
         }
 
-        $cfg      = parse_plugin_cfg('logsviewer', true);
+        $cfg      = $this->getCfg();
         $maxLines = $this->getMaxLines($cfg);
         $rawLog   = $this->forceValidUtf8((string)@shell_exec(
             'docker logs --tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1'
@@ -428,7 +475,7 @@ final class LogsViewerEndpoint
 
         $vState = $this->getVmStates()[$vmName] ?? 'unknown';
 
-        $cfg      = parse_plugin_cfg('logsviewer', true);
+        $cfg      = $this->getCfg();
         $maxLines = $this->getMaxLines($cfg);
         $logPath  = $this->safeVmLogPath($vmName);
 
@@ -466,7 +513,7 @@ final class LogsViewerEndpoint
 
     private function replyStates(): void
     {
-        $cfg     = parse_plugin_cfg('logsviewer', true);
+        $cfg     = $this->getCfg();
         $cacheMs = $this->computeMicroCacheMs($cfg);
 
         if ($cacheMs > 0) {
@@ -683,6 +730,112 @@ final class LogsViewerEndpoint
         return $rows;
     }
 
+    // ── Backup: List available backups ────────────────────────────────────
+
+    private function replyListBackups(): void
+    {
+        $cfg         = $this->getCfg();
+        $storagePath = (string)($cfg['BACKUP_STORAGE'] ?? '');
+
+        if ($storagePath === '' || !is_dir($storagePath)) {
+            $this->json(['backups' => []]);
+        }
+
+        $backupDir = rtrim($storagePath, '/');
+        $backups = [];
+        foreach (glob($backupDir . '/*.zip') as $file) {
+            $name = basename($file, '.zip');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $name)) continue;
+
+            // Peek inside zip for summary
+            $contents = ['system' => 0, 'docker' => 0, 'vms' => 0];
+            $za = new \ZipArchive();
+            if ($za->open($file) === true) {
+                for ($i = 0; $i < $za->numFiles; $i++) {
+                    $entry = $za->getNameIndex($i);
+                    if (str_starts_with($entry, 'system/') && !str_ends_with($entry, '/')) $contents['system']++;
+                    elseif (str_starts_with($entry, 'docker/') && !str_ends_with($entry, '/')) $contents['docker']++;
+                    elseif (str_starts_with($entry, 'vms/') && !str_ends_with($entry, '/')) $contents['vms']++;
+                }
+                $za->close();
+            }
+
+            $backups[] = [
+                'date'     => $name,
+                'size'     => (int)@filesize($file),
+                'contents' => $contents,
+            ];
+        }
+
+        usort($backups, fn($a, $b) => strcmp($b['date'], $a['date']));
+        $this->json(['backups' => $backups]);
+    }
+
+    // ── Backup: Download a backup zip ─────────────────────────────────────
+
+    private function replyDownloadBackup(): void
+    {
+        $date = (string)($_GET['date'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            http_response_code(400);
+            exit('Invalid date');
+        }
+
+        $cfg         = $this->getCfg();
+        $storagePath = (string)($cfg['BACKUP_STORAGE'] ?? '');
+        if ($storagePath === '' || !is_dir($storagePath)) {
+            http_response_code(404);
+            exit('Storage not configured');
+        }
+
+        $backupDir = rtrim($storagePath, '/');
+        $file      = $backupDir . '/' . $date . '.zip';
+
+        // Security: verify resolved path stays in backup dir
+        $real = @realpath($file);
+        if ($real === false || !is_file($real) || strncmp($real, $backupDir, strlen($backupDir)) !== 0) {
+            http_response_code(404);
+            exit('Backup not found');
+        }
+
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="logsviewer-' . $date . '.zip"');
+        header('Content-Length: ' . filesize($real));
+        header('Cache-Control: no-cache');
+        readfile($real);
+        exit;
+    }
+
+    // ── Alerts: Get rules ─────────────────────────────────────────────────
+
+    private function replyAlertRules(): void
+    {
+        $path = '/boot/config/plugins/logsviewer/alerts-rules.json';
+        $rules = is_file($path) ? @json_decode((string)@file_get_contents($path), true) : [];
+        $this->json(['rules' => is_array($rules) ? $rules : []]);
+    }
+
+    // ── Alerts: Get history ───────────────────────────────────────────────
+
+    private function replyAlertHistory(): void
+    {
+        $path = '/boot/config/plugins/logsviewer/alerts-history.json';
+        $history = is_file($path) ? @json_decode((string)@file_get_contents($path), true) : [];
+        $this->json(['history' => is_array($history) ? $history : []]);
+    }
+
+    // ── Alerts: Clear history ─────────────────────────────────────────────
+
+    private function replyClearAlertHistory(): void
+    {
+        $path = '/boot/config/plugins/logsviewer/alerts-history.json';
+        @file_put_contents($path, '[]', LOCK_EX);
+        // Also clear cooldowns so alerts can re-trigger
+        $cdPath = '/tmp/logsviewer_cache/alert_cooldowns.json';
+        if (is_file($cdPath)) @file_put_contents($cdPath, '{}', LOCK_EX);
+        $this->json(['cleared' => true]);
+    }
+
     // ── HTTP helpers ───────────────────────────────────────────────────────
 
     private function enforceAjaxGet(): void
@@ -858,11 +1011,17 @@ final class LogsViewerEndpoint
         return null;
     }
 
+    // Cache function availability checks (called 5+ times per request)
+    private static ?bool $_hasMbCheck = null;
+    private static ?bool $_hasMbConvert = null;
+
     private function forceValidUtf8(string $s): string
     {
         if ($s === '') return $s;
-        if (function_exists('mb_check_encoding') && mb_check_encoding($s, 'UTF-8')) return $s;
-        if (function_exists('mb_convert_encoding')) return mb_convert_encoding($s, 'UTF-8', 'UTF-8');
+        if (self::$_hasMbCheck === null) self::$_hasMbCheck = function_exists('mb_check_encoding');
+        if (self::$_hasMbCheck && mb_check_encoding($s, 'UTF-8')) return $s;
+        if (self::$_hasMbConvert === null) self::$_hasMbConvert = function_exists('mb_convert_encoding');
+        if (self::$_hasMbConvert) return mb_convert_encoding($s, 'UTF-8', 'UTF-8');
         if (function_exists('iconv')) {
             $out = @iconv('UTF-8', 'UTF-8//IGNORE', $s);
             if ($out !== false && $out !== null) return (string)$out;

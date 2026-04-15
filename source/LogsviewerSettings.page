@@ -1,20 +1,21 @@
 Menu="Utilities"
-Icon="logsviewermain.png"
+Icon="img/logsviewermain.png"
 Title="Logs Viewer Settings"
 ---
 <?php
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
-require_once '/usr/local/emhttp/plugins/logsviewer/logsviewer_api.php';
+require_once '/usr/local/emhttp/plugins/logsviewer/include/logsviewer_api.php';
 
 $plugin_name = 'logsviewer';
 $cfg_file = "/boot/config/plugins/{$plugin_name}/{$plugin_name}.cfg";
 
 // Fixed allowlist (only these logs)
-$available_scripts = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error', 'phplog', 'libvirt'];
+$available_scripts = ['syslog', 'syslog-previous', 'dmesg', 'graphql-api.log', 'nginx-error', 'phplog', 'libvirt'];
 
 // Display name mapping
 $script_display_names = [
   'syslog' => 'Syslog',
+  'syslog-previous' => 'Syslog Previous',
   'dmesg' => 'Dmesg',
   'graphql-api.log' => 'GraphQL API',
   'nginx-error' => 'Nginx Errors',
@@ -63,7 +64,7 @@ $sanitize_version = static function($v) {
 };
 $sanitize_theme = static function($v) {
   $v = strtolower(trim((string)$v));
-  $allowed = ['default','terminal','dim','contrast'];
+  $allowed = ['default','terminal','dim','contrast','midnight','ocean','monokai'];
   return in_array($v, $allowed, true) ? $v : 'default';
 };
 $sanitize_highlight_mode = static function($v) {
@@ -212,15 +213,28 @@ if (isset($_POST['#apply'])) {
     'ENABLED_DOCKER_CONTAINERS'  => $_POST['ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['ENABLED_DOCKER_CONTAINERS'] ?? ''),
     'ENABLED_VMS'                => $_POST['ENABLED_VMS'] ?? ($cfg_existing['ENABLED_VMS'] ?? ''),
 
+    // Backup settings
+    'BACKUP_ENABLED'                  => $yn($_POST['BACKUP_ENABLED'] ?? ($cfg_existing['BACKUP_ENABLED'] ?? '0')),
+    'BACKUP_RETENTION'                => in_array($_POST['BACKUP_RETENTION'] ?? '', ['1','2','3','4','5','6'], true) ? $_POST['BACKUP_RETENTION'] : ($cfg_existing['BACKUP_RETENTION'] ?? '3'),
+    'BACKUP_STORAGE'                  => (strncmp($_POST['BACKUP_STORAGE'] ?? '', '/mnt/user/', 10) === 0 && !preg_match('/\.\./', $_POST['BACKUP_STORAGE'])) ? rtrim($_POST['BACKUP_STORAGE'], '/') : ($cfg_existing['BACKUP_STORAGE'] ?? '/mnt/user/appdata/Logs-Viewer-Backup'),
+    'BACKUP_SCHEDULE'                 => in_array($_POST['BACKUP_SCHEDULE'] ?? '', ['0','2','4','6','23'], true) ? $_POST['BACKUP_SCHEDULE'] : ($cfg_existing['BACKUP_SCHEDULE'] ?? '23'),
+    'BACKUP_ENABLED_SYSTEM_LOGS'      => $_POST['BACKUP_ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['BACKUP_ENABLED_SYSTEM_LOGS'] ?? ''),
+    'BACKUP_ENABLED_DOCKER_CONTAINERS'=> $_POST['BACKUP_ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['BACKUP_ENABLED_DOCKER_CONTAINERS'] ?? ''),
+    'BACKUP_ENABLED_VMS'              => $_POST['BACKUP_ENABLED_VMS'] ?? ($cfg_existing['BACKUP_ENABLED_VMS'] ?? ''),
+
+    // Alerts settings
+    'ALERTS_ENABLED'                  => $yn($_POST['ALERTS_ENABLED'] ?? ($cfg_existing['ALERTS_ENABLED'] ?? '0')),
+    'ALERTS_INTERVAL'                 => in_array($_POST['ALERTS_INTERVAL'] ?? '', ['1','2','5'], true) ? $_POST['ALERTS_INTERVAL'] : ($cfg_existing['ALERTS_INTERVAL'] ?? '2'),
+
     // UI state (survives AJAX POST + GET reload cycle)
-    'LV_ACTIVE_TAB'              => in_array($_POST['lv_active_tab'] ?? '', ['dash','tool'], true) ? $_POST['lv_active_tab'] : ($cfg_existing['LV_ACTIVE_TAB'] ?? 'dash'),
+    'LV_ACTIVE_TAB'              => in_array($_POST['lv_active_tab'] ?? '', ['dash','tool','backup','alerts'], true) ? $_POST['lv_active_tab'] : ($cfg_existing['LV_ACTIVE_TAB'] ?? 'dash'),
   ];
 
   // Normalize a few options safely
   $allowed_fonts = ['system','monospace','jetbrains','fira','sourcecodepro','ibmplex'];
   if (!in_array($new_cfg['LOG_FONT_FAMILY'], $allowed_fonts, true)) $new_cfg['LOG_FONT_FAMILY'] = 'system';
 
-  $allowed_presets = ['default','terminal','dim','contrast'];
+  $allowed_presets = ['default','terminal','dim','contrast','midnight','ocean','monokai'];
   if (!in_array($new_cfg['THEME_PRESET'], $allowed_presets, true)) $new_cfg['THEME_PRESET'] = 'default';
 
   $allowed_hm = ['full','keywords'];
@@ -260,6 +274,65 @@ if (isset($_POST['#apply'])) {
     $ini .= "{$key}=\"{$value}\"\n";
   }
   file_put_contents($cfg_file, $ini);
+
+  // Cron management - Unraid uses /etc/cron.d/root for all entries
+  $cronRoot = '/etc/cron.d/root';
+  $cronFlash = '/boot/config/plugins/logsviewer/logsviewer-cron.conf';
+  $cronContent = is_file($cronRoot) ? (string)@file_get_contents($cronRoot) : '';
+
+  // Remove existing logsviewer lines
+  $cronContent = preg_replace('/# LogsViewer backup schedule:\n.*logsviewer-backup\.sh.*\n?/', '', $cronContent);
+  $cronContent = preg_replace('/# LogsViewer alerts schedule:\n.*logsviewer-alerts\.sh.*\n?/', '', $cronContent);
+  $cronContent = rtrim($cronContent) . "\n";
+
+  $flashLines = '';
+
+  // Backup cron
+  if (($new_cfg['BACKUP_ENABLED'] ?? '0') === '1') {
+    $schedHour = (int)($new_cfg['BACKUP_SCHEDULE'] ?? 23);
+    $schedMin  = ($schedHour === 23) ? 59 : 0;
+    $backupLine = "# LogsViewer backup schedule:\n{$schedMin} {$schedHour} * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-backup.sh >/dev/null 2>&1\n";
+    $cronContent .= $backupLine;
+    $flashLines .= $backupLine;
+    // Create backup dir + block Samba access via permissions
+    $backupPath = (string)($new_cfg['BACKUP_STORAGE'] ?? '');
+    if ($backupPath !== '' && strncmp($backupPath, '/mnt/user/', 10) === 0) {
+      @mkdir($backupPath, 0700, true);
+      if (is_dir($backupPath)) @chmod($backupPath, 0700);
+    }
+  }
+
+  // Alerts cron
+  if (($new_cfg['ALERTS_ENABLED'] ?? '0') === '1') {
+    $alertInterval = (int)($new_cfg['ALERTS_INTERVAL'] ?? 5);
+    if ($alertInterval < 1) $alertInterval = 5;
+    $alertLine = "# LogsViewer alerts schedule:\n*/{$alertInterval} * * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-alerts.sh >/dev/null 2>&1\n";
+    $cronContent .= $alertLine;
+    $flashLines .= $alertLine;
+  }
+
+  @file_put_contents($cronRoot, $cronContent);
+  @exec('crontab /etc/cron.d/root 2>/dev/null');
+  // Persist to flash for boot restore
+  if ($flashLines !== '') {
+    @file_put_contents($cronFlash, $flashLines);
+  } else {
+    if (is_file($cronFlash)) @unlink($cronFlash);
+  }
+  // Cleanup old separate cron files
+  foreach (['/etc/cron.d/logsviewer-backup','/etc/cron.d/logsviewer-alerts','/boot/config/plugins/logsviewer/logsviewer-backup.cron','/boot/config/plugins/logsviewer/logsviewer-alerts.cron'] as $_old) {
+    if (is_file($_old)) @unlink($_old);
+  }
+
+  // Save alert rules JSON (only when alerts tab is active to prevent stale data overwrite)
+  $activeTab = $_POST['lv_active_tab'] ?? 'dash';
+  $alertRulesRaw = (string)($_POST['ALERT_RULES_JSON'] ?? '');
+  if ($activeTab === 'alerts' && $alertRulesRaw !== '') {
+    $alertRules = @json_decode($alertRulesRaw, true);
+    if (is_array($alertRules)) {
+      @file_put_contents('/boot/config/plugins/logsviewer/alerts-rules.json', json_encode($alertRules, JSON_PRETTY_PRINT));
+    }
+  }
 
   $cfg = $new_cfg;
 } else {
@@ -316,7 +389,7 @@ $lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';
 
 // Active tab persistence: POST (during save) → config file (on GET reload)
 $active_tab = $_POST['lv_active_tab'] ?? ($cfg['LV_ACTIVE_TAB'] ?? 'dash');
-if (!in_array($active_tab, ['dash', 'tool', 'dash'], true)) $active_tab = 'dash';
+if (!in_array($active_tab, ['dash', 'tool', 'backup', 'alerts'], true)) $active_tab = 'dash';
 // Toggle switch helper
 $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = 'Disabled') {
   $v = ($cfg[$name] ?? $default) === '1';
@@ -343,6 +416,12 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
     </div>
     <div class="lv-tab<?php echo ($active_tab === 'tool') ? ' active' : ''; ?>" id="lvTabTool" role="button" tabindex="0">
       <span class="lv-tabicon">▦</span> Tool Page
+    </div>
+    <div class="lv-tab<?php echo ($active_tab === 'backup') ? ' active' : ''; ?>" id="lvTabBackup" role="button" tabindex="0">
+      <span class="lv-tabicon">▦</span> Backup Logs
+    </div>
+    <div class="lv-tab<?php echo ($active_tab === 'alerts') ? ' active' : ''; ?>" id="lvTabAlerts" role="button" tabindex="0">
+      <span class="lv-tabicon">▦</span> Alerts
     </div>
   </div>
 
@@ -423,7 +502,7 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
           <div class="lv-r-field">
             <select name="TOOL_THEME_PRESET" class="lv-select">
               <?php $tp = $cfg['TOOL_THEME_PRESET'] ?? 'default';
-                foreach(['default'=>'Default - Current','terminal'=>'Terminal','dim'=>'Dim','contrast'=>'High Contrast'] as $v=>$l) echo '<option value="'.$v.'"'.($tp===$v?' selected':'').'>'.$l.'</option>'; ?>
+                foreach(['default'=>'Default - Current','terminal'=>'Terminal','dim'=>'Dim','contrast'=>'High Contrast','midnight'=>'Midnight','ocean'=>'Ocean','monokai'=>'Monokai'] as $v=>$l) echo '<option value="'.$v.'"'.($tp===$v?' selected':'').'>'.$l.'</option>'; ?>
             </select>
             <span class="lv-r-desc">Overall look and feel</span>
           </div>
@@ -671,17 +750,244 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
   </div><!-- /lvToolPanel -->
 
 
+  <div id="lvBackupPanel" style="<?php echo ($active_tab === 'backup') ? '' : 'display:none;'; ?>">
+
+    <!-- General -->
+    <div class="lv-sec">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>General</span>
+        <span class="lv-pill">Backup settings</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-r">
+          <div class="lv-r-label">Enable log backups</div>
+          <div class="lv-r-field">
+            <?php echo $lv_tog('BACKUP_ENABLED', $cfg, '0'); ?>
+            <span class="lv-r-desc">Daily automatic backup of selected logs</span>
+          </div>
+        </div>
+        <div class="lv-r">
+          <div class="lv-r-label">Retention period</div>
+          <div class="lv-r-field">
+            <select name="BACKUP_RETENTION" class="lv-select">
+              <?php $br = $cfg['BACKUP_RETENTION'] ?? '3';
+                foreach(['1'=>'1 Month','2'=>'2 Months','3'=>'3 Months - Default','4'=>'4 Months','5'=>'5 Months','6'=>'6 Months'] as $v=>$l) echo '<option value="'.$v.'"'.($br===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+            </select>
+            <span class="lv-r-desc">Auto-delete backups older than this</span>
+          </div>
+        </div>
+        <div class="lv-r">
+          <div class="lv-r-label">Storage location</div>
+          <div class="lv-r-field">
+            <div>
+              <input type="text" name="BACKUP_STORAGE" id="lvBackupStorage" class="lv-select" style="min-width:180px; width:100%; max-width:400px;" value="<?php echo htmlspecialchars($cfg['BACKUP_STORAGE'] ?? '/mnt/user/appdata/Logs-Viewer-Backup'); ?>" placeholder="/mnt/user/appdata/Logs-Viewer-Backup">
+              <span class="lv-r-desc">Must be under /mnt/user/</span>
+            </div>
+          </div>
+        </div>
+        <div class="lv-r">
+          <div class="lv-r-label">Backup schedule</div>
+          <div class="lv-r-field">
+            <select name="BACKUP_SCHEDULE" class="lv-select">
+              <?php $bs = $cfg['BACKUP_SCHEDULE'] ?? '23';
+                foreach(['23'=>'23:59 - Default','0'=>'00:00','2'=>'02:00','4'=>'04:00','6'=>'06:00'] as $v=>$l) echo '<option value="'.$v.'"'.($bs===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+            </select>
+            <span class="lv-r-desc">Daily cron time</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backup Sources -->
+    <div class="lv-sec closed">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>Backup sources</span>
+        <span class="lv-pill">Select logs</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-sources-wrap">
+
+          <div class="lv-sub-card" id="lvBackupSystemCard">
+            <div class="lv-sub-card-hd" onclick="this.parentElement.classList.toggle('collapsed')">System Logs</div>
+            <div class="lv-sub-card-bd" id="lvBackupSystemWrap">
+              <div id="lvBackupSystemLogsList" class="lv-sources-list">
+                <div class="lv-sources-loading">Scanning system logs...</div>
+              </div>
+              <div class="lv-sources-note"><i class="fa fa-info-circle"></i> Greyed-out items have no entries (0 B).</div>
+              <div id="lvBackupSystemActions" class="lv-source-actions" style="display:none;">
+                <button type="button" id="lvBackupSystemSelectAll" class="lv-action-btn">Select All</button>
+                <button type="button" id="lvBackupSystemDeselectAll" class="lv-action-btn">Deselect All</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="lv-sub-card collapsed" id="lvBackupDockerCard">
+            <div class="lv-sub-card-hd" onclick="this.parentElement.classList.toggle('collapsed')">Docker Logs</div>
+            <div class="lv-sub-card-bd" id="lvBackupDockerWrap">
+              <div id="lvBackupDockerLogsList" class="lv-sources-list">
+                <div class="lv-sources-loading">Scanning Docker containers...</div>
+              </div>
+              <div id="lvBackupDockerActions" class="lv-source-actions" style="display:none;">
+                <button type="button" id="lvBackupDockerSelectAll" class="lv-action-btn">Select All</button>
+                <button type="button" id="lvBackupDockerDeselectAll" class="lv-action-btn">Deselect All</button>
+                <button type="button" id="lvBackupDockerScan" class="lv-scan-btn" title="Scan for containers"><i class="fa fa-refresh"></i> Scan</button>
+              </div>
+              <div id="lvBackupDockerUnavailable" class="lv-source-unavailable" style="display:none;">
+                <i class="fa fa-info-circle"></i> Docker is not installed or not running.
+              </div>
+            </div>
+          </div>
+
+          <div class="lv-sub-card collapsed" id="lvBackupVmCard">
+            <div class="lv-sub-card-hd" onclick="this.parentElement.classList.toggle('collapsed')">VM Logs</div>
+            <div class="lv-sub-card-bd" id="lvBackupVmWrap">
+              <div id="lvBackupVmLogsList" class="lv-sources-list">
+                <div class="lv-sources-loading">Scanning VMs...</div>
+              </div>
+              <div id="lvBackupVmActions" class="lv-source-actions" style="display:none;">
+                <button type="button" id="lvBackupVmSelectAll" class="lv-action-btn">Select All</button>
+                <button type="button" id="lvBackupVmDeselectAll" class="lv-action-btn">Deselect All</button>
+                <button type="button" id="lvBackupVmScan" class="lv-scan-btn" title="Scan for VMs"><i class="fa fa-refresh"></i> Scan</button>
+              </div>
+              <div id="lvBackupVmUnavailable" class="lv-source-unavailable" style="display:none;">
+                <i class="fa fa-info-circle"></i> No VMs found on this system.
+              </div>
+            </div>
+          </div>
+
+          <input type="hidden" name="BACKUP_ENABLED_SYSTEM_LOGS" id="lvBackupEnabledSystemLogs" value="<?php echo htmlspecialchars($cfg['BACKUP_ENABLED_SYSTEM_LOGS'] ?? ''); ?>">
+          <input type="hidden" name="BACKUP_ENABLED_DOCKER_CONTAINERS" id="lvBackupEnabledDockerContainers" value="<?php echo htmlspecialchars($cfg['BACKUP_ENABLED_DOCKER_CONTAINERS'] ?? ''); ?>">
+          <input type="hidden" name="BACKUP_ENABLED_VMS" id="lvBackupEnabledVms" value="<?php echo htmlspecialchars($cfg['BACKUP_ENABLED_VMS'] ?? ''); ?>">
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Backup Calendar -->
+    <div class="lv-sec closed">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>Backup calendar</span>
+        <span class="lv-pill">Download</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-sources-wrap">
+          <div class="lv-cal">
+            <div class="lv-cal-nav">
+              <button type="button" class="lv-action-btn" id="lvCalPrev">&#9664;</button>
+              <span class="lv-cal-month" id="lvCalMonth"></span>
+              <button type="button" class="lv-action-btn" id="lvCalNext">&#9654;</button>
+            </div>
+            <div class="lv-cal-grid" id="lvCalGrid">
+              <div class="lv-cal-hd">Mon</div><div class="lv-cal-hd">Tue</div><div class="lv-cal-hd">Wed</div><div class="lv-cal-hd">Thu</div><div class="lv-cal-hd">Fri</div><div class="lv-cal-hd">Sat</div><div class="lv-cal-hd">Sun</div>
+            </div>
+            <div class="lv-cal-legend">
+              <span><span class="lv-cal-dot lv-cal-dot--avail"></span>Backup available</span>
+              <span><span class="lv-cal-dot lv-cal-dot--today"></span>Today</span>
+            </div>
+            <div id="lvCalDownload" class="lv-cal-dl" style="display:none;">
+              <div class="lv-cal-dl-info">
+                <div class="lv-cal-dl-name" id="lvCalDlName"></div>
+                <div class="lv-cal-dl-meta" id="lvCalDlMeta"></div>
+              </div>
+              <a id="lvCalDlBtn" class="lv-action-btn lv-cal-dl-btn" href="#" download>Download</a>
+            </div>
+            <div id="lvCalEmpty" class="lv-sources-loading" style="display:none; margin-top:10px;">No backups found. Enable backups and configure storage to start.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /lvBackupPanel -->
+
+
+  <div id="lvAlertsPanel" style="<?php echo ($active_tab === 'alerts') ? '' : 'display:none;'; ?>">
+
+    <!-- General -->
+    <div class="lv-sec">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>General</span>
+        <span class="lv-pill">Alert settings</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-r">
+          <div class="lv-r-label">Enable alerts</div>
+          <div class="lv-r-field">
+            <?php echo $lv_tog('ALERTS_ENABLED', $cfg, '0'); ?>
+            <span class="lv-r-desc">Scan logs and send Unraid notifications</span>
+          </div>
+        </div>
+        <div class="lv-r">
+          <div class="lv-r-label">Scan interval</div>
+          <div class="lv-r-field">
+            <select name="ALERTS_INTERVAL" class="lv-select">
+              <?php $ai = $cfg['ALERTS_INTERVAL'] ?? '2';
+                foreach(['1'=>'Every 1 minute','2'=>'Every 2 minutes - Default','5'=>'Every 5 minutes'] as $v=>$l) echo '<option value="'.$v.'"'.($ai===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+            </select>
+            <span class="lv-r-desc">How often to check for matches</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert Rules -->
+    <div class="lv-sec closed">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>Alert rules</span>
+        <span class="lv-pill">Rules editor</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-sources-wrap">
+          <div id="lvAlertRulesList" class="lv-alert-rules-list">
+            <div class="lv-sources-loading">Loading rules...</div>
+          </div>
+          <div class="lv-alert-rules-actions">
+            <button type="button" id="lvAlertAddRule" class="lv-action-btn"><i class="fa fa-plus"></i> Add Rule</button>
+            <button type="button" id="lvAlertAddPresets" class="lv-action-btn"><i class="fa fa-magic"></i> Add Common Rules</button>
+          </div>
+          <input type="hidden" name="ALERT_RULES_JSON" id="lvAlertRulesJson" value="">
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert History -->
+    <div class="lv-sec closed">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>Alert history</span>
+        <span class="lv-pill">Recent alerts</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-sources-wrap">
+          <div id="lvAlertHistoryList" class="lv-alert-history-list">
+            <div class="lv-sources-loading">Loading history...</div>
+          </div>
+          <div class="lv-alert-history-actions">
+            <button type="button" id="lvAlertRefreshHistory" class="lv-action-btn"><i class="fa fa-refresh"></i> Refresh</button>
+            <button type="button" id="lvAlertClearHistory" class="lv-action-btn"><i class="fa fa-trash"></i> Clear History</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /lvAlertsPanel -->
+
+
     <!-- Credits Modal (harmonized with new design) -->
     <div id="lvCreditsModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
       <div class="lv-credits-modal-box">
         <div class="lv-credits-body">
           <div class="lv-credits-logo">
-            <img src="/plugins/logsviewer/logsviewerplugin.png" alt="Logsviewer">
+            <img src="/plugins/logsviewer/img/logsviewerplugin.png" alt="Logsviewer">
           </div>
           <div class="lv-credits-title">Logs Viewer</div>
           <table class="lv-credits-table">
             <tr>
-              <td><img src="/plugins/logsviewer/avatar.png" alt="" class="lv-credits-avatar"></td>
+              <td><img src="/plugins/logsviewer/img/avatar.png" alt="" class="lv-credits-avatar"></td>
               <td style="font-weight:600; text-align:left;">Lazaros Chalkidis</td>
               <td style="opacity:0.72; text-align:left;">Development</td>
             </tr>
@@ -693,6 +999,39 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
         </div>
         <div class="lv-credits-footer">
           <button type="button" id="lvCreditsOkBtn" class="lv-credits-ok-btn">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reset Confirmation Modal -->
+    <div id="lvResetModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
+      <div class="lv-reset-modal-box">
+        <div class="lv-reset-body">
+          <div class="lv-reset-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--lv-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="lv-reset-title">Settings reset</div>
+          <div class="lv-reset-msg">All settings have been restored to their default values. Click <span class="lv-reset-accent">Apply</span> to save.</div>
+        </div>
+        <div class="lv-reset-footer">
+          <button type="button" id="lvResetOkBtn" class="lv-reset-ok-btn">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clear History Confirmation Modal -->
+    <div id="lvClearHistoryModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
+      <div class="lv-reset-modal-box">
+        <div class="lv-reset-body">
+          <div class="lv-reset-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="lv-reset-title">Clear alert history?</div>
+          <div class="lv-reset-msg">This will permanently delete all alert history entries. This action cannot be undone.</div>
+        </div>
+        <div class="lv-reset-footer" style="display:flex; gap:10px; justify-content:center;">
+          <button type="button" id="lvClearHistoryCancelBtn" class="lv-reset-ok-btn" style="background:transparent; border:1px solid var(--lv-c-border-row); color:var(--lv-c-text-mid);">Cancel</button>
+          <button type="button" id="lvClearHistoryConfirmBtn" class="lv-reset-ok-btn" style="background:#dc2626;">Clear</button>
         </div>
       </div>
     </div>
@@ -773,7 +1112,7 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
           <div class="lv-r-field">
             <select name="THEME_PRESET" class="lv-select">
               <?php $tp = $cfg['THEME_PRESET'] ?? 'default';
-                foreach(['default'=>'Default - Current','terminal'=>'Terminal','dim'=>'Dim','contrast'=>'High Contrast'] as $v=>$l) echo '<option value="'.$v.'"'.($tp===$v?' selected':'').'>'.$l.'</option>'; ?>
+                foreach(['default'=>'Default - Current','terminal'=>'Terminal','dim'=>'Dim','contrast'=>'High Contrast','midnight'=>'Midnight','ocean'=>'Ocean','monokai'=>'Monokai'] as $v=>$l) echo '<option value="'.$v.'"'.($tp===$v?' selected':'').'>'.$l.'</option>'; ?>
             </select>
             <span class="lv-r-desc">Overall look and feel</span>
           </div>
@@ -1270,11 +1609,34 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
         var tabTool = document.getElementById('lvTabTool');
         return tabTool && tabTool.classList.contains('active');
       }
+      function isBackupTabActive() {
+        var tabBackup = document.getElementById('lvTabBackup');
+        return tabBackup && tabBackup.classList.contains('active');
+      }
+      function isAlertsTabActive() {
+        var tabAlerts = document.getElementById('lvTabAlerts');
+        return tabAlerts && tabAlerts.classList.contains('active');
+      }
 
       resetBtn.addEventListener('click', function() {
         var form = document.querySelector('form[name="scriptlogs_settings"]');
         if (!form) return;
-        if (isToolTabActive()) {
+        if (isAlertsTabActive()) {
+          var cb = form.querySelector('input[type="checkbox"][name="ALERTS_ENABLED"]'); if (cb) cb.checked = false;
+          var sel = form.querySelector('select[name="ALERTS_INTERVAL"]'); if (sel) sel.value = '2';
+          if (typeof _lvAlertRules !== 'undefined') {
+            _lvAlertRules = [];
+            _lvAlertRulesLoaded = true;
+            if (typeof lvRenderAllRules === 'function') lvRenderAllRules();
+            if (typeof lvSerializeRules === 'function') lvSerializeRules();
+          }
+        } else if (isBackupTabActive()) {
+          var cb = form.querySelector('input[type="checkbox"][name="BACKUP_ENABLED"]'); if (cb) cb.checked = false;
+          var ret = form.querySelector('select[name="BACKUP_RETENTION"]'); if (ret) ret.value = '3';
+          var st = form.querySelector('input[name="BACKUP_STORAGE"]'); if (st) st.value = '/mnt/user/appdata/Logs-Viewer-Backup';
+          var sc = form.querySelector('select[name="BACKUP_SCHEDULE"]'); if (sc) sc.value = '23';
+          try { $('#lvBackupEnabledSystemLogs').val(''); $('#lvBackupEnabledDockerContainers').val(''); $('#lvBackupEnabledVms').val(''); if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Backup'); } catch(_){}
+        } else if (isToolTabActive()) {
           resetFieldsFromDefaults(form, toolDefaults, { picker:'lvToolBgColorPicker', hex:'lvToolBgColorHex', hidden:'lvToolBgColorHidden', preview:'lvToolBgPreview' });
           try { $('#lvToolEnabledSystemLogs').val('syslog,dmesg,graphql-api.log,nginx-error'); $('#lvToolEnabledDockerContainers').val(''); $('#lvToolEnabledVms').val(''); } catch(_){}
           if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Tool', function(){ enableApplyAndMarkDirty(form); });
@@ -1285,28 +1647,38 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
         }
         try {
           if (isToolTabActive()) { localStorage.removeItem('logsviewer_panel_height_tool'); localStorage.removeItem('logsviewer_autoscroll_tool'); localStorage.removeItem('logsviewer_syntax_v4_tool'); localStorage.setItem('logsviewer_panel_height_reset_tool','1'); }
-          else { localStorage.removeItem('logsviewer_panel_height_dash'); localStorage.removeItem('logsviewer_autoscroll_dash'); localStorage.removeItem('logsviewer_syntax_v4_dash'); localStorage.setItem('logsviewer_panel_height_reset_dash','1'); }
+          else if (!isBackupTabActive() && !isAlertsTabActive()) { localStorage.removeItem('logsviewer_panel_height_dash'); localStorage.removeItem('logsviewer_autoscroll_dash'); localStorage.removeItem('logsviewer_syntax_v4_dash'); localStorage.setItem('logsviewer_panel_height_reset_dash','1'); }
         } catch(_){}
         enableApplyAndMarkDirty(form);
-        alert(<?php echo json_encode(_('Settings have been reset to default values. Click "Apply" to save these changes.')); ?>);
+        lvShowResetModal();
       });
 
       // Tab switching
       (function(){
         var tabDash = document.getElementById('lvTabDashboard');
         var tabTool = document.getElementById('lvTabTool');
+        var tabBackup = document.getElementById('lvTabBackup');
+        var tabAlerts = document.getElementById('lvTabAlerts');
         var dashPanel = document.getElementById('lvDashboardPanel');
         var toolPanel = document.getElementById('lvToolPanel');
+        var backupPanel = document.getElementById('lvBackupPanel');
+        var alertsPanel = document.getElementById('lvAlertsPanel');
         var resetDefaultsBtn = document.getElementById('lvResetDefaults');
 
         function setActive(which){
           tabDash.classList.toggle('active', which === 'dash');
           tabTool.classList.toggle('active', which === 'tool');
+          if (tabBackup) tabBackup.classList.toggle('active', which === 'backup');
+          if (tabAlerts) tabAlerts.classList.toggle('active', which === 'alerts');
           dashPanel.style.display = (which === 'dash') ? '' : 'none';
           toolPanel.style.display = (which === 'tool') ? '' : 'none';
+          if (backupPanel) backupPanel.style.display = (which === 'backup') ? '' : 'none';
+          if (alertsPanel) alertsPanel.style.display = (which === 'alerts') ? '' : 'none';
           if (resetDefaultsBtn) resetDefaultsBtn.style.display = '';
           if (which === 'dash' && !dashPanel._sourcesLoaded) { dashPanel._sourcesLoaded = true; lvLoadSourcesScoped('Dash'); }
           if (which === 'tool' && !toolPanel._sourcesLoaded) { toolPanel._sourcesLoaded = true; lvLoadSourcesScoped('Tool'); }
+          if (which === 'backup' && backupPanel && !backupPanel._sourcesLoaded) { backupPanel._sourcesLoaded = true; lvLoadSourcesScoped('Backup'); lvLoadBackupCalendar(); }
+          if (which === 'alerts' && alertsPanel && !alertsPanel._loaded) { alertsPanel._loaded = true; lvLoadAlertRules(); lvLoadAlertHistory(); }
           try { sessionStorage.setItem('logsviewer_active_tab', which); } catch(e) {}
           var tabInput = document.getElementById('lvActiveTabInput');
           if (tabInput) tabInput.value = which;
@@ -1315,14 +1687,16 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
         function onKey(e, which){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActive(which); } }
         if (tabDash) { tabDash.addEventListener('click', () => setActive('dash')); tabDash.addEventListener('keydown', (e)=>onKey(e,'dash')); }
         if (tabTool) { tabTool.addEventListener('click', () => setActive('tool')); tabTool.addEventListener('keydown', (e)=>onKey(e,'tool')); }
+        if (tabBackup) { tabBackup.addEventListener('click', () => setActive('backup')); tabBackup.addEventListener('keydown', (e)=>onKey(e,'backup')); }
+        if (tabAlerts) { tabAlerts.addEventListener('click', () => setActive('alerts')); tabAlerts.addEventListener('keydown', (e)=>onKey(e,'alerts')); }
         try {
           var hash = (window.location.hash || '').replace('#', '');
           var postTab = (document.getElementById('lvActiveTabInput') || {}).value || 'dash';
           var savedTab = ''; try { savedTab = sessionStorage.getItem('logsviewer_active_tab') || ''; } catch(e){}
           var target = 'dash';
-          if (hash === 'tool' || hash === 'dash' || hash === 'dashboard') { target = (hash === 'dashboard') ? 'dash' : hash; }
-          else if (postTab === 'tool' || postTab === 'dash') { target = postTab; }
-          else if (savedTab === 'tool' || savedTab === 'dash') { target = savedTab; }
+          if (['tool','dash','dashboard','backup','alerts'].indexOf(hash) !== -1) { target = (hash === 'dashboard') ? 'dash' : hash; }
+          else if (['tool','dash','backup','alerts'].indexOf(postTab) !== -1) { target = postTab; }
+          else if (['tool','dash','backup','alerts'].indexOf(savedTab) !== -1) { target = savedTab; }
           setActive(target);
         } catch(e) {}
       })();
@@ -1331,7 +1705,7 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
       (function(){
         function getCurrentTab() {
           var tabInput = document.getElementById('lvActiveTabInput');
-          if (tabInput && (tabInput.value === 'tool' || tabInput.value === 'dash')) return tabInput.value;
+          if (tabInput && ['tool','dash','backup','alerts'].indexOf(tabInput.value) !== -1) return tabInput.value;
           try { return sessionStorage.getItem('logsviewer_active_tab') || 'dash'; } catch(e) {} return 'dash';
         }
         function syncAll() {
@@ -1390,7 +1764,7 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
         var dkSet  = lvCsvToSet($('#lv' + scope + 'EnabledDockerContainers').val());
         var vmSet  = lvCsvToSet($('#lv' + scope + 'EnabledVms').val());
         $.ajax({
-          url: '/plugins/logsviewer/logsviewer_api.php',
+          url: '/plugins/logsviewer/include/logsviewer_api.php',
           data: { action: 'discover_sources', _lvt: window.lvToken || '' },
           dataType: 'json', timeout: 15000,
           headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -1398,6 +1772,7 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
             var sysHtml = '';
             if (data.system && data.system.sources) {
               data.system.sources.forEach(function(s) {
+                if (scope === 'Backup' && s.key === 'syslog-previous') return;
                 var checked = !!sysSet[s.key];
                 var isZero = (parseInt(s.size, 10) || 0) === 0;
                 sysHtml += lvRenderSourceRow(s.key, s.name, s.path, s.size, checked, (!s.exists || isZero), '');
@@ -1478,6 +1853,402 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
       $('#lvToolVmDeselectAll').on('click', function(){ $('#lvToolVmLogsList .lv-source-check:not(:disabled)').prop('checked',false); lvSyncScopedInputs('Tool'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       $('#lvToolDockerScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Tool',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
       $('#lvToolVmScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Tool',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
+
+      // Backup Sources checkbox changes
+      $(document).on('change', '#lvBackupSystemLogsList .lv-source-check, #lvBackupDockerLogsList .lv-source-check, #lvBackupVmLogsList .lv-source-check', function() {
+        lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f&&typeof enableApplyAndMarkDirty==='function') enableApplyAndMarkDirty(f);
+      });
+
+      // Backup Sources buttons
+      $('#lvBackupDockerSelectAll').on('click', function(){ $('#lvBackupDockerLogsList .lv-source-check').prop('checked',true); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
+      $('#lvBackupDockerDeselectAll').on('click', function(){ $('#lvBackupDockerLogsList .lv-source-check').prop('checked',false); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
+      $('#lvBackupSystemSelectAll').on('click', function(){ $('#lvBackupSystemLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
+      $('#lvBackupSystemDeselectAll').on('click', function(){ $('#lvBackupSystemLogsList .lv-source-check:not(:disabled)').prop('checked',false); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
+      $('#lvBackupVmSelectAll').on('click', function(){ $('#lvBackupVmLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
+      $('#lvBackupVmDeselectAll').on('click', function(){ $('#lvBackupVmLogsList .lv-source-check:not(:disabled)').prop('checked',false); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
+      $('#lvBackupDockerScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Backup',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
+      $('#lvBackupVmScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Backup',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
+
+      // Backup: Calendar
+      var _lvCalYear, _lvCalMonth, _lvCalBackups = [];
+
+      function lvLoadBackupCalendar() {
+        $.ajax({
+          url: '/plugins/logsviewer/include/logsviewer_api.php',
+          data: { action: 'list_backups', _lvt: window.lvToken || '' },
+          dataType: 'json', timeout: 10000,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          success: function(data) {
+            _lvCalBackups = (data.backups || []);
+            var now = new Date();
+            _lvCalYear = now.getFullYear();
+            _lvCalMonth = now.getMonth();
+            lvRenderCalendar();
+            if (!_lvCalBackups.length) {
+              $('#lvCalEmpty').show();
+            } else {
+              $('#lvCalEmpty').hide();
+            }
+          },
+          error: function() {
+            $('#lvCalEmpty').text('Failed to load backups.').show();
+          }
+        });
+      }
+
+      function lvRenderCalendar() {
+        var grid = document.getElementById('lvCalGrid');
+        var monthLabel = document.getElementById('lvCalMonth');
+        if (!grid || !monthLabel) return;
+
+        var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        monthLabel.textContent = months[_lvCalMonth] + ' ' + _lvCalYear;
+
+        // Remove old day cells (keep 7 header cells)
+        while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+
+        var firstDay = new Date(_lvCalYear, _lvCalMonth, 1).getDay();
+        var startOffset = (firstDay === 0) ? 6 : firstDay - 1; // Monday-based
+        var daysInMonth = new Date(_lvCalYear, _lvCalMonth + 1, 0).getDate();
+        var today = new Date();
+        var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+
+        // Build set of available dates
+        var availSet = {};
+        _lvCalBackups.forEach(function(b) { availSet[b.date] = b; });
+
+        // Empty cells for offset
+        for (var i = 0; i < startOffset; i++) {
+          var empty = document.createElement('div');
+          empty.className = 'lv-cal-day lv-cal-day--empty';
+          grid.appendChild(empty);
+        }
+
+        for (var d = 1; d <= daysInMonth; d++) {
+          var dateStr = _lvCalYear + '-' + String(_lvCalMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+          var cell = document.createElement('div');
+          cell.className = 'lv-cal-day';
+          cell.textContent = d;
+          cell.setAttribute('data-date', dateStr);
+
+          if (dateStr === todayStr) cell.classList.add('lv-cal-day--today');
+          if (dateStr > todayStr) cell.classList.add('lv-cal-day--future');
+          if (availSet[dateStr]) {
+            cell.classList.add('lv-cal-day--has');
+            cell.addEventListener('click', (function(ds) {
+              return function() {
+                grid.querySelectorAll('.lv-cal-day--sel').forEach(function(el) { el.classList.remove('lv-cal-day--sel'); });
+                this.classList.add('lv-cal-day--sel');
+                lvShowDownload(ds);
+              };
+            })(dateStr));
+          }
+          grid.appendChild(cell);
+        }
+      }
+
+      function lvShowDownload(dateStr) {
+        var dlPanel = document.getElementById('lvCalDownload');
+        var dlName = document.getElementById('lvCalDlName');
+        var dlMeta = document.getElementById('lvCalDlMeta');
+        var dlBtn = document.getElementById('lvCalDlBtn');
+        if (!dlPanel) return;
+
+        var backup = null;
+        _lvCalBackups.forEach(function(b) { if (b.date === dateStr) backup = b; });
+        if (!backup) { dlPanel.style.display = 'none'; return; }
+
+        dlName.textContent = 'logsviewer-' + backup.date + '.zip';
+        var parts = [];
+        if (backup.contents.system > 0) parts.push('System (' + backup.contents.system + ')');
+        if (backup.contents.docker > 0) parts.push('Docker (' + backup.contents.docker + ')');
+        if (backup.contents.vms > 0) parts.push('VMs (' + backup.contents.vms + ')');
+        dlMeta.textContent = (parts.length ? parts.join(' + ') : 'Empty') + '  ' + lvFormatSize(backup.size);
+
+        dlBtn.href = '/plugins/logsviewer/include/logsviewer_api.php?action=download_backup&date=' + encodeURIComponent(backup.date) + '&_lvt=' + encodeURIComponent(window.lvToken || '');
+        dlPanel.style.display = 'flex';
+      }
+
+      // Calendar navigation
+      $('#lvCalPrev').on('click', function() {
+        _lvCalMonth--;
+        if (_lvCalMonth < 0) { _lvCalMonth = 11; _lvCalYear--; }
+        lvRenderCalendar();
+      });
+      $('#lvCalNext').on('click', function() {
+        var now = new Date();
+        if (_lvCalYear > now.getFullYear() || (_lvCalYear === now.getFullYear() && _lvCalMonth >= now.getMonth())) return;
+        _lvCalMonth++;
+        if (_lvCalMonth > 11) { _lvCalMonth = 0; _lvCalYear++; }
+        lvRenderCalendar();
+      });
+
+      // ═══════════ ALERTS ═══════════
+
+      var _lvAlertRules = [];
+      var _lvAlertRulesLoaded = false;
+
+      var _lvAlertPresets = [
+        { name: 'Failed Login', pattern: 'Failed password|authentication failure|Unsuccessful login', is_regex: true, severity: 'warning', sources: ['syslog'], cooldown: '0' },
+        { name: 'Disk Error', pattern: 'disk error|I/O error|sector error|SMART error', is_regex: true, severity: 'critical', sources: ['syslog', 'dmesg'], cooldown: '300' },
+        { name: 'Out of Memory', pattern: 'Out of memory|oom-killer|OOM', is_regex: true, severity: 'critical', sources: ['syslog', 'dmesg'], cooldown: '900' },
+        { name: 'Kernel Panic', pattern: 'kernel panic|BUG:|Oops:', is_regex: true, severity: 'critical', sources: ['syslog', 'dmesg'], cooldown: '0' },
+        { name: 'Array Error', pattern: 'md/unraid.*error|array.*error|parity.*error', is_regex: true, severity: 'critical', sources: ['syslog'], cooldown: '300' },
+        { name: 'Docker Crash', pattern: 'container died|OOMKilled|exit code', is_regex: true, severity: 'warning', sources: ['docker'], cooldown: '300' }
+      ];
+
+      var _lvCooldownOptions = [
+        { value: '0', label: 'None (every match)' },
+        { value: '300', label: '5 minutes' },
+        { value: '900', label: '15 minutes' },
+        { value: '1800', label: '30 minutes' },
+        { value: '3600', label: '1 hour' },
+        { value: '21600', label: '6 hours' },
+        { value: '86400', label: '24 hours' }
+      ];
+
+      function lvGenRuleId() { return 'rule_' + Date.now() + '_' + Math.floor(Math.random() * 1000); }
+
+      function lvEscAttr(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+
+      function lvRenderAlertRule(rule, index) {
+        var sevOpts = ['info','warning','critical'].map(function(s) {
+          return '<option value="' + s + '"' + (rule.severity === s ? ' selected' : '') + '>' + s.charAt(0).toUpperCase() + s.slice(1) + '</option>';
+        }).join('');
+        var cdOpts = _lvCooldownOptions.map(function(o) {
+          return '<option value="' + o.value + '"' + (String(rule.cooldown) === o.value ? ' selected' : '') + '>' + o.label + '</option>';
+        }).join('');
+        var checked = (rule.enabled !== false) ? ' checked' : '';
+        var regexChecked = rule.is_regex ? ' checked' : '';
+
+        return '<div class="lv-alert-rule" data-index="' + index + '">' +
+          '<div class="lv-alert-rule-hd">' +
+            '<input type="checkbox" class="lv-source-check lv-alert-rule-enabled" title="Enable/Disable"' + checked + '>' +
+            '<input type="text" class="lv-alert-rule-name" value="' + lvEscAttr(rule.name) + '" placeholder="Rule name">' +
+            '<button type="button" class="lv-action-btn lv-alert-rule-remove" title="Remove rule"><i class="fa fa-trash"></i></button>' +
+          '</div>' +
+          '<div class="lv-alert-rule-bd">' +
+            '<div class="lv-alert-rule-row">' +
+              '<span class="lv-alert-rule-lbl">Pattern</span>' +
+              '<input type="text" class="lv-alert-rule-pattern" value="' + lvEscAttr(rule.pattern) + '" placeholder="Text or regex pattern">' +
+              '<label class="lv-alert-rule-regex" title="Use regex"><input type="checkbox" class="lv-alert-rule-is-regex"' + regexChecked + '> Regex</label>' +
+            '</div>' +
+            '<div class="lv-alert-rule-row">' +
+              '<span class="lv-alert-rule-lbl">Severity</span>' +
+              '<select class="lv-alert-rule-severity lv-select">' + sevOpts + '</select>' +
+              '<span class="lv-alert-rule-lbl" style="margin-left:12px">Cooldown</span>' +
+              '<select class="lv-alert-rule-cooldown lv-select">' + cdOpts + '</select>' +
+            '</div>' +
+            '<div class="lv-alert-rule-row">' +
+              '<span class="lv-alert-rule-lbl">Sources</span>' +
+              '<div class="lv-alert-rule-sources">' + lvRenderSourceCheckboxes(rule.sources || []) + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      function lvRenderSourceCheckboxes(selected) {
+        var sysLogs = ['syslog','dmesg','graphql-api.log','nginx-error','phplog','libvirt'];
+        var sysNames = { syslog:'Syslog', dmesg:'Dmesg', 'graphql-api.log':'GraphQL API', 'nginx-error':'Nginx Errors', phplog:'PHP Log', libvirt:'Libvirt' };
+        var html = '';
+        sysLogs.forEach(function(key) {
+          var chk = (selected.indexOf(key) !== -1) ? ' checked' : '';
+          html += '<label class="lv-alert-src-chk"><input type="checkbox" value="' + key + '"' + chk + '> ' + (sysNames[key] || key) + '</label>';
+        });
+        var dkChk = (selected.indexOf('docker') !== -1) ? ' checked' : '';
+        html += '<label class="lv-alert-src-chk lv-alert-src-sep"><input type="checkbox" value="docker"' + dkChk + '> Docker (all containers)</label>';
+        return html;
+      }
+
+      function lvSerializeRules() {
+        var rules = [];
+        $('#lvAlertRulesList .lv-alert-rule').each(function() {
+          var $r = $(this);
+          var sources = [];
+          $r.find('.lv-alert-rule-sources input:checked').each(function() { sources.push($(this).val()); });
+          rules.push({
+            id: $r.data('rule-id') || lvGenRuleId(),
+            name: $r.find('.lv-alert-rule-name').val(),
+            pattern: $r.find('.lv-alert-rule-pattern').val(),
+            is_regex: $r.find('.lv-alert-rule-is-regex').is(':checked'),
+            severity: $r.find('.lv-alert-rule-severity').val(),
+            sources: sources,
+            cooldown: $r.find('.lv-alert-rule-cooldown').val(),
+            enabled: $r.find('.lv-alert-rule-enabled').is(':checked')
+          });
+        });
+        _lvAlertRules = rules;
+        if (_lvAlertRulesLoaded) {
+          $('#lvAlertRulesJson').val(JSON.stringify(rules));
+        }
+      }
+
+      function lvLoadAlertRules() {
+        _lvAlertRulesLoaded = false;
+        $('#lvAlertAddRule, #lvAlertAddPresets').prop('disabled', true).addClass('disabled');
+        $.ajax({
+          url: '/plugins/logsviewer/include/logsviewer_api.php',
+          data: { action: 'get_alert_rules', _lvt: window.lvToken || '' },
+          dataType: 'json', timeout: 10000,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          success: function(data) {
+            _lvAlertRules = data.rules || [];
+            _lvAlertRulesLoaded = true;
+            lvRenderAllRules();
+            $('#lvAlertAddRule, #lvAlertAddPresets').prop('disabled', false).removeClass('disabled');
+          },
+          error: function() {
+            _lvAlertRulesLoaded = true;
+            _lvAlertRules = [];
+            $('#lvAlertRulesList').html('<div class="lv-sources-loading" style="color:#e74c3c;">Failed to load rules. You can still add new rules below.</div>');
+            $('#lvAlertAddRule, #lvAlertAddPresets').prop('disabled', false).removeClass('disabled');
+          }
+        });
+      }
+
+      function lvRenderAllRules() {
+        var html = '';
+        if (_lvAlertRules.length === 0) {
+          html = '<div class="lv-sources-loading">No alert rules configured. Click "Add Rule" or "Add Common Rules" to get started.</div>';
+        } else {
+          _lvAlertRules.forEach(function(rule, i) {
+            html += lvRenderAlertRule(rule, i);
+          });
+        }
+        $('#lvAlertRulesList').html(html);
+        // Store rule IDs
+        $('#lvAlertRulesList .lv-alert-rule').each(function(i) {
+          $(this).data('rule-id', _lvAlertRules[i].id || lvGenRuleId());
+        });
+        lvSerializeRules();
+      }
+
+      // Add rule
+      $('#lvAlertAddRule').on('click', function() {
+        if (!_lvAlertRulesLoaded) return;
+        _lvAlertRules.push({ id: lvGenRuleId(), name: '', pattern: '', is_regex: false, severity: 'warning', sources: ['syslog'], cooldown: '3600', enabled: true });
+        lvRenderAllRules();
+        var f = document.forms['scriptlogs_settings']; if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
+      });
+
+      // Add preset rules
+      $('#lvAlertAddPresets').on('click', function() {
+        if (!_lvAlertRulesLoaded) return;
+        var existingNames = {};
+        _lvAlertRules.forEach(function(r) { existingNames[r.name] = true; });
+        var added = 0;
+        _lvAlertPresets.forEach(function(preset) {
+          if (!existingNames[preset.name]) {
+            var rule = JSON.parse(JSON.stringify(preset));
+            rule.id = lvGenRuleId();
+            rule.enabled = true;
+            _lvAlertRules.push(rule);
+            added++;
+          }
+        });
+        if (added > 0) {
+          lvRenderAllRules();
+          var f = document.forms['scriptlogs_settings']; if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
+        }
+      });
+
+      // Remove rule
+      $(document).on('click', '.lv-alert-rule-remove', function() {
+        var idx = $(this).closest('.lv-alert-rule').data('index');
+        _lvAlertRules.splice(idx, 1);
+        lvRenderAllRules();
+        var f = document.forms['scriptlogs_settings']; if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
+      });
+
+      // Rule field changes trigger serialize + dirty
+      $(document).on('change input', '.lv-alert-rule input, .lv-alert-rule select', function() {
+        lvSerializeRules();
+        var f = document.forms['scriptlogs_settings']; if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
+      });
+
+      // Alert History
+      function lvLoadAlertHistory() {
+        $.ajax({
+          url: '/plugins/logsviewer/include/logsviewer_api.php',
+          data: { action: 'get_alert_history', _lvt: window.lvToken || '' },
+          dataType: 'json', timeout: 10000,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          success: function(data) {
+            var items = data.history || [];
+            if (items.length === 0) {
+              $('#lvAlertHistoryList').html('<div class="lv-sources-loading">No alerts triggered yet.</div>');
+              return;
+            }
+            var html = '';
+            items.slice(0, 100).forEach(function(a) {
+              var sevClass = 'lv-alert-sev--' + (a.severity || 'info');
+              html += '<div class="lv-alert-history-row">' +
+                '<span class="lv-alert-history-time">' + (a.timestamp || '') + '</span>' +
+                '<span class="lv-alert-history-badge ' + sevClass + '">' + (a.severity || 'info') + '</span>' +
+                '<span class="lv-alert-history-name">' + (a.rule || '') + '</span>' +
+                '<span class="lv-alert-history-src">' + (a.source || '') + '</span>' +
+                '<div class="lv-alert-history-line">' + $('<span>').text(a.matched_line || '').html() + '</div>' +
+              '</div>';
+            });
+            $('#lvAlertHistoryList').html(html);
+          },
+          error: function() {
+            $('#lvAlertHistoryList').html('<div class="lv-sources-loading" style="color:#e74c3c;">Failed to load history.</div>');
+          }
+        });
+      }
+
+      $('#lvAlertRefreshHistory').on('click', function() { lvLoadAlertHistory(); });
+
+      $('#lvAlertClearHistory').on('click', function() {
+        var modal = document.getElementById('lvClearHistoryModal');
+        if (modal) { modal.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+      });
+
+      // Clear History confirmation modal logic
+      (function(){
+        var modal = document.getElementById('lvClearHistoryModal');
+        if (!modal) return;
+        function closeModal() { modal.style.display = 'none'; document.body.style.overflow = ''; }
+        document.getElementById('lvClearHistoryCancelBtn').addEventListener('click', closeModal);
+        modal.addEventListener('click', function(e){ if (e.target === modal) closeModal(); });
+        document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
+        document.getElementById('lvClearHistoryConfirmBtn').addEventListener('click', function(){
+          closeModal();
+          $.ajax({
+            url: '/plugins/logsviewer/include/logsviewer_api.php',
+            data: { action: 'clear_alert_history', _lvt: window.lvToken || '' },
+            dataType: 'json', timeout: 10000,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            success: function() { lvLoadAlertHistory(); }
+          });
+        });
+      })();
+
+      // Serialize rules on form submit
+      var alertForm = document.querySelector('form[name="scriptlogs_settings"]');
+      if (alertForm) {
+        alertForm.addEventListener('submit', function() { lvSerializeRules(); });
+      }
+
+      // Reset confirmation modal
+      function lvShowResetModal() {
+        var modal = document.getElementById('lvResetModal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+      }
+      (function(){
+        var modal = document.getElementById('lvResetModal');
+        var okBtn = document.getElementById('lvResetOkBtn');
+        if (!modal) return;
+        function close() { modal.style.display = 'none'; document.body.style.overflow = ''; }
+        if (okBtn) okBtn.addEventListener('click', close);
+        modal.addEventListener('click', function(e){ if (e.target === modal) close(); });
+        document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.style.display === 'flex') close(); });
+      })();
 
       // Credits modal
       (function(){

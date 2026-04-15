@@ -1,6 +1,14 @@
 
 # Logs Viewer
 
+## 2026.04.15
+
+### New Features
+- Syslog Previous added as a selectable system log source in Dashboard and Tool page
+- Three new theme presets: Midnight, Ocean and Monokai
+- Log Backups: scheduled daily compressed backups of all enabled sources (system, Docker, VMs) with retention control, calendar view and one-click ZIP download
+- Alert system: pattern-based rules that scan logs at configurable intervals and send notifications through Unraid's notification system, with built-in presets and alert history
+
 ## 2026.04.06
 
 ### Fixed

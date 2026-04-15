@@ -2,24 +2,32 @@
 <!DOCTYPE PLUGIN [
  <!ENTITY name "logsviewer">
  <!ENTITY author "Lazaros Chalkidis">
- <!ENTITY version "2026.04.06">
+ <!ENTITY version "2026.04.15">
  <!ENTITY branch "main">
  <!ENTITY gitURL "https://github.com/Lazaros-Chalkidis/unraid-logsviewer">
  <!ENTITY pluginURL "&gitURL;/releases/download/&version;/&name;-&version;.txz">
  <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
- <!ENTITY md5 "b01f971851b1300a6d22278ab8e4e474">
+ <!ENTITY md5 "06c6b80384d2075c4a6127b056eddcda">
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="img/logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
-Real time log viewer. Dashboard widget and dedicated Tools page in one plugin. System, Docker and VM logs in one place with live auto refresh, severity badges, search, filtering, syntax highlighting and export.
+Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page - Log Backups and System Alerts. Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.
 </DESCRIPTION>
 
 <CHANGES>
 
 # Logs Viewer
+
+## 2026.04.15
+
+### New Features
+- Syslog Previous added as a selectable system log source in Dashboard and Tool page
+- Three new theme presets: Midnight, Ocean and Monokai
+- Log Backups: scheduled daily compressed backups of all enabled sources (system, Docker, VMs) with retention control, calendar view and one-click ZIP download
+- Alert system: pattern-based rules that scan logs at configurable intervals and send notifications through Unraid's notification system, with built-in presets and alert history
 
 ## 2026.04.06
 
@@ -192,6 +200,14 @@ Real time log viewer. Dashboard widget and dedicated Tools page in one plugin. S
 chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
+find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
+find /usr/local/emhttp/plugins/&name; -name '*.page' -exec chmod 755 {} \;
+
+# Restore LogsViewer cron entries from flash
+if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
+  cat /boot/config/plugins/&name;/logsviewer-cron.conf >> /etc/cron.d/root
+  crontab /etc/cron.d/root 2>/dev/null
+fi
 
 echo ""
 echo "----------------------------------------------------"
@@ -204,9 +220,14 @@ echo ""
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
+# Clean up backup directory before removing config
+BPATH=$(grep '^BACKUP_STORAGE=' /boot/config/plugins/&name;/&name;.cfg 2>/dev/null | cut -d'"' -f2)
+case "$BPATH" in /mnt/user/*) rm -rf "$BPATH" ;; esac
+
 removepkg &name;-&version;
 rm -rf /usr/local/emhttp/plugins/&name;
 rm -rf /boot/config/plugins/&name;
+sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
 
 echo ""
 echo "----------------------------------------------------"

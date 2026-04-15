@@ -1,27 +1,28 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    Logs Viewer Widget JS
    Drives polling and UI updates in the dashboard widget and Tool page.
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
    Configuration is injected via window.logsviewerConfig from Logsviewer.page.
 
    TABLE OF CONTENTS
-   ─────────────────
     1. STATE & CONFIG ........... Global variables, DOM refs, config object
     2. THEME .................... Light/dark detection
     3. DATA CORE ................ Source lookup, data merge
     4. LOG DISPLAY .............. Show log entry in panel
     5. TOAST SYSTEM ............. Login, selected, perf, search toasts + layout
     6. NAVIGATION ............... Category switching, tab activation, fetch
-    7. API ...................... URL building, nonce refresh, compact indicators
+    7. API & UTILITIES .......... URL building, nonce refresh, compact indicators
     8. FILTER & BADGES .......... Filter dropdown, badge counts, proportion strip
     9. TEXT UTILITIES ........... Tail, escape, line count
    10. SEARCH ................... Search UI, hit collection, highlighting
-   11. LOG RENDERING ............ Level highlights, line counting
+   11. LOG LEVEL HIGHLIGHTING ... Level highlights, line counting
    12. SYNTAX ENGINE ............ Highlight.js + Prism loading and application
    13. SECURITY ................. Hash, HTML sanitizer
-   14. MAIN RENDER .............. renderLog (core render pipeline)
+   14. MAIN RENDER PIPELINE ..... renderLog (core render pipeline)
    15. UI CONTROLS .............. Autoscroll, export, filename
    16. THEMING .................. Presets, font family application
-   17. INITIALIZATION ........... applyConfig, manual refresh, error toast
+   17. INITIALIZATION ........... applyConfig, manual refresh
    18. EVENT HANDLERS ........... jQuery ready, click/change/keyboard bindings
    ══════════════════════════════════════════════════════════════════════════════ */
 /* global $ */
@@ -30,6 +31,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    1. STATE & CONFIG
    ═══════════════════════════════════════════════════════════════════════════ */
+
 let logsviewer_cfg = {};
 let logsviewer_searchState = { term: '', hits: [], idx: -1 };
 let logsviewer_pauseHoverActive = false;
@@ -38,11 +40,14 @@ let logsviewer_systemFetchCounter = 0;     // throttle background system fetch (
 
 // Cached DOM references — populated on first use, cleared on re-init
 const logsviewer_dom = {
-    get logs()      { return this._logs      || (this._logs      = document.getElementById('logsviewer-logs')); },
-    get container() { return this._container || (this._container = document.getElementById('logsviewer-container')); },
-    get autoscroll(){ return this._autoscroll|| (this._autoscroll= document.getElementById('logsviewer-autoscroll')); },
-    get timestamp() { return this._timestamp || (this._timestamp = document.getElementById('logsviewer-timestamp')); },
-    clear() { this._logs = this._container = this._autoscroll = this._timestamp = null; }
+    get logs()       { return this._logs       || (this._logs       = document.getElementById('logsviewer-logs')); },
+    get container()  { return this._container  || (this._container  = document.getElementById('logsviewer-container')); },
+    get autoscroll() { return this._autoscroll || (this._autoscroll = document.getElementById('logsviewer-autoscroll')); },
+    get timestamp()  { return this._timestamp  || (this._timestamp  = document.getElementById('logsviewer-timestamp')); },
+    get toastLine()  { return this._toastLine  || (this._toastLine  = document.getElementById('logsviewer-toast-line')); },
+    get toastRight() { return this._toastRight || (this._toastRight = document.getElementById('logsviewer-toast-right')); },
+    get totalLines() { return this._totalLines || (this._totalLines = document.getElementById('logsviewer-total-lines')); },
+    clear() { this._logs = this._container = this._autoscroll = this._timestamp = this._toastLine = this._toastRight = this._totalLines = null; }
 };
 
 // v4: Category state
@@ -80,24 +85,29 @@ const LV_RE_FILTER = {
     auth:     /\b(?:auth|authentication|login|logout|oidc|token|jwt|sso)\b/i,
 };
 
-// Light theme detection -- PHP injects .lv-light; JS luminance backup
+
 /* ═══════════════════════════════════════════════════════════════════════════
    2. THEME
    ═══════════════════════════════════════════════════════════════════════════ */
 
+// Light theme detection -- PHP injects .lv-light; JS luminance backup
+let logsviewer_lightThemeCache = null;
 function logsviewer_isLightTheme() {
+    if (logsviewer_lightThemeCache !== null) return logsviewer_lightThemeCache;
     // Primary: check PHP-injected class
     var el = document.querySelector('.logsviewer-body, .logsviewer-tool-wrapper');
-    if (el && el.classList.contains('lv-light')) return true;
+    if (el && el.classList.contains('lv-light')) { logsviewer_lightThemeCache = true; return true; }
     // Backup: check body background luminance
     try {
         var bg = getComputedStyle(document.body).backgroundColor;
         var m = bg.match(/(\d+)/g);
         if (m && m.length >= 3) {
             var lum = (0.299 * +m[0] + 0.587 * +m[1] + 0.114 * +m[2]) / 255;
-            return lum > 0.5;
+            logsviewer_lightThemeCache = (lum > 0.5);
+            return logsviewer_lightThemeCache;
         }
     } catch (_) {}
+    logsviewer_lightThemeCache = false;
     return false;
 }
 
@@ -110,11 +120,12 @@ function logsviewer_detectTheme() {
 }
 
 // Login event toast de-dupe (avoid repeating on each poll)
+let logsviewer_lastLoginEventId = null;
+
+
 /* ═══════════════════════════════════════════════════════════════════════════
    3. DATA CORE
    ═══════════════════════════════════════════════════════════════════════════ */
-
-let logsviewer_lastLoginEventId = null;
 
 /**
  * Get the currently selected source name from the active category dropdown.
@@ -160,13 +171,14 @@ function logsviewer_mergeSourceData(category, scripts, singleSource) {
     }
 }
 
-/**
- * Display a specific log entry in the log panel.
- */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    4. LOG DISPLAY
    ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Display a specific log entry in the log panel.
+ */
 
 function logsviewer_showLog(entry) {
     var logDisplay = $(logsviewer_dom.logs);
@@ -193,7 +205,6 @@ function logsviewer_showLog(entry) {
     if (logsviewer_cfg.searchEnabled && String(logsviewer_searchState.term || '').trim()) {
         var count = logsviewer_countMatches(logsviewer_activeLogContent, logsviewer_searchState.term);
         logsviewer_updateSearchToast(count);
-        logsviewer_collectSearchHits();
 
         // When user stops typing, restore Syntax toast and re-flash (2x) once.
         logsviewer_searchTypingTimer = setTimeout(() => {
@@ -225,7 +236,7 @@ function logsviewer_formatFileSize(bytes) {
 }
 
 function logsviewer_updateToastRight(entry, badgeCounts) {
-    var right = document.getElementById('logsviewer-toast-right');
+    var right = logsviewer_dom.toastRight;
     if (!right) return;
 
     var sourceKey = String(entry && entry.source || '') + '|' + String(entry && entry.name || '');
@@ -281,14 +292,15 @@ function logsviewer_updateToastRight(entry, badgeCounts) {
     if (panel && parts.length) panel.style.display = '';
 }
 
-function logsviewer_showLoginToast(message){
 
 /* ═══════════════════════════════════════════════════════════════════════════
    5. TOAST SYSTEM
    ═══════════════════════════════════════════════════════════════════════════ */
 
+function logsviewer_showLoginToast(message){
+
   try{
-    const line = $('#logsviewer-toast-line');
+    const line = $(logsviewer_dom.toastLine);
     if(!line.length) return;
 
     let el = document.getElementById('logsviewer-login-toast');
@@ -445,47 +457,10 @@ function logsviewer_checkLoginToast(rawText){
     }catch(_){ }
 }
 
-/**
- * Activate category (highlight tab + refresh data) WITHOUT auto-opening the last viewed log.
- * Used when the user clicks a tab just to open its dropdown.
- */
-function logsviewer_activateCategory(category) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    6. NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
-
-    logsviewer_activeCategory = category;
-
-    // Highlight active tab
-    $('.logsviewer-cat-btn').removeClass('logsviewer-cat-btn--active');
-    $('.logsviewer-cat-btn[data-category="' + category + '"]').addClass('logsviewer-cat-btn--active');
-
-    // Fetch fresh data (no auto-display)
-    logsviewer_fetchCategory(category, null, { autoShow: false });
-}
-
-/**
- * Switch active category, highlight tab, and fetch data.
- */
-function logsviewer_switchCategory(category) {
-    logsviewer_activeCategory = category;
-
-    // Highlight active tab
-    $('.logsviewer-cat-btn').removeClass('logsviewer-cat-btn--active');
-    $('.logsviewer-cat-btn[data-category="' + category + '"]').addClass('logsviewer-cat-btn--active');
-
-    // If we have cached data for this category, show it immediately
-    var data = logsviewer_categoryData[category];
-    if (data && data.length > 0) {
-        var sourceName = $('.logsviewer-cat-btn[data-category="' + category + '"]').attr('data-selected') || '';
-        var entry = logsviewer_findLogData(category, sourceName);
-        if (entry) logsviewer_showLog(entry);
-    }
-
-    // Fetch fresh data
-    logsviewer_fetchCategory(category);
-}
 
 /**
  * Fetch logs for a category and update the display.
@@ -641,18 +616,19 @@ function logsviewer_fetchCategory(category, callback, opts) {
         });
 }
 
-// Context-aware localStorage key: prevents Dashboard/Tool bleed
+
 /* ═══════════════════════════════════════════════════════════════════════════
    7. API & UTILITIES
    ═══════════════════════════════════════════════════════════════════════════ */
 
+// Context-aware localStorage key: prevents Dashboard/Tool bleed
 function logsviewer_storageKey(base) {
     const ctx = (logsviewer_cfg && logsviewer_cfg.apiContext) || 'dashboard';
     return base + '_' + ctx;
 }
 
 function logsviewer_apiUrl(action, extraParams) {
-    let url = '/plugins/logsviewer/logsviewer_api.php?action=' + encodeURIComponent(action);
+    let url = '/plugins/logsviewer/include/logsviewer_api.php?action=' + encodeURIComponent(action);
     if (logsviewer_cfg.apiContext) {
         url += '&context=' + encodeURIComponent(logsviewer_cfg.apiContext);
     }
@@ -675,7 +651,7 @@ function logsviewer_refreshNonce(callback) {
     if (logsviewer_nonceRefreshing) return;
     logsviewer_nonceRefreshing = true;
 
-    var url = '/plugins/logsviewer/logsviewer_api.php?action=refresh_nonce';
+    var url = '/plugins/logsviewer/include/logsviewer_api.php?action=refresh_nonce';
     if (logsviewer_cfg.apiContext) {
         url += '&context=' + encodeURIComponent(logsviewer_cfg.apiContext);
     }
@@ -727,10 +703,10 @@ function logsviewer_updateCompactIndicators(scripts) {
     }
 }
 
-function logsviewer_cssEscape(s) {
-    if (window.CSS && typeof CSS.escape === 'function') return CSS.escape(String(s));
-    return String(s).replace(/["\\]/g, '\\$&');
-}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   8. FILTER & BADGES
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_getFilterValue() {
     const sel = $('#logsviewer-filter-select');
@@ -738,10 +714,6 @@ function logsviewer_getFilterValue() {
 }
 
 function logsviewer_setFilterValue(filterValue) {
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   8. FILTER & BADGES
-   ═══════════════════════════════════════════════════════════════════════════ */
 
     const sel = $('#logsviewer-filter-select');
     if (!sel.length) return;
@@ -808,24 +780,15 @@ function logsviewer_updateBadges(counts) {
     ];
 
     badges.forEach(b => {
-        const $el = $(b.id);
-        if (!$el.length) return;
+        const el = logsviewer_dom['_badge_' + b.key] || (logsviewer_dom['_badge_' + b.key] = document.querySelector(b.id));
+        if (!el) return;
 
         const v = Number(counts[b.key] || 0);
 
-        $el.html(
-            `<span class="logsviewer-badge-label">${b.label}</span>` +
-            ` <span class="logsviewer-badge-count ${b.numClass}">${v}</span>`
-        );
-
-        $el.toggleClass('is-zero', v === 0);
-
-        $el.attr('data-filter', b.filter);
-        $el.attr('role', 'button');
-        $el.attr('tabindex', '0');
-
-        $el.attr('title', `Set filter: ${b.filter} (${b.label} = ${v})`);
-        $el.attr('aria-label', `Set filter ${b.filter}. ${b.label} ${v}`);
+        el.innerHTML = `<span class="logsviewer-badge-label">${b.label}</span> <span class="logsviewer-badge-count ${b.numClass}">${v}</span>`;
+        el.classList.toggle('is-zero', v === 0);
+        el.dataset.filter = b.filter;
+        el.title = `Set filter: ${b.filter} (${b.label} = ${v})`;
     });
 
     // Update proportion strip segments
@@ -840,11 +803,11 @@ function logsviewer_updateProportionStrip(counts) {
     var total = i + w + e + c;
     if (total <= 0) total = 1; // avoid division by zero
 
-    var si = document.getElementById('logsviewer-strip-info');
-    var sw = document.getElementById('logsviewer-strip-warn');
-    var se = document.getElementById('logsviewer-strip-error');
-    var sc = document.getElementById('logsviewer-strip-crit');
-    var so = document.getElementById('logsviewer-strip-ok');
+    var si = logsviewer_dom._stripI || (logsviewer_dom._stripI = document.getElementById('logsviewer-strip-info'));
+    var sw = logsviewer_dom._stripW || (logsviewer_dom._stripW = document.getElementById('logsviewer-strip-warn'));
+    var se = logsviewer_dom._stripE || (logsviewer_dom._stripE = document.getElementById('logsviewer-strip-error'));
+    var sc = logsviewer_dom._stripC || (logsviewer_dom._stripC = document.getElementById('logsviewer-strip-crit'));
+    var so = logsviewer_dom._stripO || (logsviewer_dom._stripO = document.getElementById('logsviewer-strip-ok'));
     if (!si || !sw || !se || !sc) return;
 
     // Scale: colored segments proportional, remaining space is neutral
@@ -856,6 +819,11 @@ function logsviewer_updateProportionStrip(counts) {
     sc.style.flex = String(Math.max(c > 0 ? 0.5 : 0, c));
     if (so) so.style.flex = String(okFlex);
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   9. TEXT UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_tailText(text, n) {
     const N = Number(n) || 0;
@@ -872,10 +840,10 @@ function logsviewer_tailText(text, n) {
     return raw.substring(pos + 1);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   9. TEXT UTILITIES
-   ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   10. SEARCH
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_escapeRegExp(s) {
     return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -891,13 +859,12 @@ function logsviewer_countMatches(raw, term) {
         return m ? m.length : 0;
     } catch (e) {
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   10. SEARCH
-   ═══════════════════════════════════════════════════════════════════════════ */
-
         return 0;
     }
 }
+
+// Pre-compiled regex for splitting HTML tags from text content
+const LV_RE_TAG_SPLIT = /(<[^>]+>)|([^<]+)/g;
 
 function logsviewer_applySearchHighlight(text) {
     if (!logsviewer_cfg.searchEnabled) return String(text || '');
@@ -912,7 +879,8 @@ function logsviewer_applySearchHighlight(text) {
 
     const re = new RegExp(logsviewer_escapeRegExp(term), 'gi');
     // Only replace in text nodes (outside HTML tags) to avoid corrupting existing markup
-    return String(text || '').replace(/(<[^>]+>)|([^<]+)/g, function(match, tag, txt) {
+    LV_RE_TAG_SPLIT.lastIndex = 0;
+    return String(text || '').replace(LV_RE_TAG_SPLIT, function(match, tag, txt) {
         if (tag) return tag; // Leave HTML tags untouched
         return txt.replace(re, (m) => `<span class="${cls}">${m}</span>`);
     });
@@ -965,7 +933,7 @@ function logsviewer_searchPrev() {
 
 function logsviewer_ensureSearchToast() {
     if ($('#logsviewer-search-toast').length) return;
-    const line = $('#logsviewer-toast-line');
+    const line = $(logsviewer_dom.toastLine);
     if (!line.length) return;
     line.append('<div id="logsviewer-search-toast" class="logsviewer-search-toast" aria-live="polite"></div>');
 }
@@ -997,8 +965,17 @@ function logsviewer_updateSearchToast(count) {
 let logsviewer_searchTyping = false;
 let logsviewer_searchTypingTimer = null;
 
+let logsviewer_layoutToastsRaf = null;
 function logsviewer_layoutToasts(){
-    const line = $('#logsviewer-toast-line');
+    // Batch multiple calls per frame (called 11+ times per cycle)
+    if (logsviewer_layoutToastsRaf) return;
+    logsviewer_layoutToastsRaf = requestAnimationFrame(function(){
+        logsviewer_layoutToastsRaf = null;
+        logsviewer_layoutToastsImpl();
+    });
+}
+function logsviewer_layoutToastsImpl(){
+    const line = $(logsviewer_dom.toastLine);
     // If toast panel was not rendered (showToast=false in PHP), nothing to do
     if(!line.length) return;
 
@@ -1097,7 +1074,7 @@ function logsviewer_layoutToasts(){
     if (perfToast.length) perfToast.hide();
     if (loginToast.length) loginToast.hide();
     if (searchToast.length) searchToast.hide();
-    var rightSlot = document.getElementById('logsviewer-toast-right');
+    var rightSlot = logsviewer_dom.toastRight;
     var rightHasContent = rightSlot && rightSlot.innerHTML.trim() !== '';
     if(panel.length) { if (rightHasContent) panel.show(); else panel.hide(); }
 }
@@ -1225,14 +1202,14 @@ function logsviewer_countLines(text) {
 var logsviewer_lastTotalLines = -1;
 
 function logsviewer_setTotalLinesValue(n) {
-    const out = document.getElementById('logsviewer-total-lines');
+    const out = logsviewer_dom.totalLines;
     if (!out) return;
     var val = Math.max(0, Number(n) || 0);
     out.textContent = String(val);
 
     // Flash pulse dot when new lines arrive
     if (logsviewer_lastTotalLines >= 0 && val > logsviewer_lastTotalLines) {
-        var pulse = document.querySelector('.logsviewer-pulse');
+        var pulse = logsviewer_dom._pulse || (logsviewer_dom._pulse = document.querySelector('.logsviewer-pulse'));
         if (pulse) {
             pulse.classList.remove('logsviewer-pulse--flash');
             // Force reflow to restart animation
@@ -1246,6 +1223,11 @@ function logsviewer_setTotalLinesValue(n) {
 let logsviewer_hljsLoaded = false;
 let logsviewer_currentSyntax = 'plaintext';
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   12. SYNTAX ENGINE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 function logsviewer_loadHighlightJs(callback) {
     // Load Highlight.js from CDN (stable path). Guard against double-load.
     if (logsviewer_hljsLoaded || window.hljs) {
@@ -1258,10 +1240,6 @@ function logsviewer_loadHighlightJs(callback) {
     if (!document.querySelector('link[data-logsviewer-hljs-css]')) {
         const cssLink = document.createElement('link');
         cssLink.rel = 'stylesheet';
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   12. SYNTAX ENGINE (Highlight.js + Prism)
-   ═══════════════════════════════════════════════════════════════════════════ */
 
         cssLink.href = '/plugins/logsviewer/vendor/hljs/' + (logsviewer_isLightTheme() ? 'github' : 'github-dark') + '.min.css';
         cssLink.setAttribute('data-logsviewer-hljs-css', '1');
@@ -1298,7 +1276,6 @@ function logsviewer_loadHighlightJs(callback) {
     };
     document.head.appendChild(script);
 }
-
 
 
 // Prism.js (CDN) — assets loader (vNext). Not used yet; safe to keep as no-op.
@@ -1369,34 +1346,6 @@ function logsviewer_setSyntaxSelection(syntax) {
     } catch (e) {}
 }
 
-function logsviewer_applySyntaxHighlight(logDisplay) {
-    const syntax = logsviewer_currentSyntax;
-    
-    if (syntax === 'plaintext' || !window.hljs) {
-        // Remove any previous syntax highlighting
-        logDisplay.removeClass('hljs');
-        return;
-    }
-
-    // Get the current HTML (already has level highlighting)
-    const content = logDisplay.text();
-    
-    // Create a temporary code element for highlighting
-    const tempCode = document.createElement('code');
-    tempCode.className = `language-${syntax}`;
-    tempCode.textContent = content;
-
-    // Apply Highlight.js
-    try {
-        window.hljs.highlightElement(tempCode);
-        // Replace the log display with highlighted content
-        logDisplay.html(tempCode.innerHTML);
-        logDisplay.addClass('hljs');
-    } catch (e) {
-        console.warn('Syntax highlighting failed:', e);
-    }
-}
-
 function logsviewer_applySyntaxHighlightToText(text, syntax) {
     if (!window.hljs || syntax === 'plaintext') {
         return text;
@@ -1415,6 +1364,11 @@ function logsviewer_applySyntaxHighlightToText(text, syntax) {
     }
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   13. SECURITY
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 /**
  * Decode HTML entities to plain text.
  * Uses textarea (never parsed as HTML) to safely decode entities from
@@ -1422,10 +1376,12 @@ function logsviewer_applySyntaxHighlightToText(text, syntax) {
  * syntax engines that expect raw text and do their own HTML encoding.
  * SECURITY: textarea.innerHTML never executes scripts or loads resources.
  */
+// Reusable textarea for entity decoding (avoid creating DOM element per call)
+let logsviewer_entityDecoder = null;
 function logsviewer_decodeHtmlEntities(text) {
-    var el = document.createElement('textarea');
-    el.innerHTML = String(text || '');
-    return el.value;
+    if (!logsviewer_entityDecoder) logsviewer_entityDecoder = document.createElement('textarea');
+    logsviewer_entityDecoder.innerHTML = String(text || '');
+    return logsviewer_entityDecoder.value;
 }
 
 // Prism helpers (beta engine)
@@ -1598,7 +1554,7 @@ let logsviewer_perfToastDismissed = false;
 
 function logsviewer_showPerfToast(message){
   try{
-    const line = $('#logsviewer-toast-line');
+    const line = $(logsviewer_dom.toastLine);
     if(!line.length) return;
 
     let el = document.getElementById('logsviewer-perf-toast');
@@ -1735,41 +1691,46 @@ function logsviewer_quickHash(str) {
 }
 
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   13. SECURITY
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 // XSS defense-in-depth: whitelist-sanitize HTML before innerHTML write.
 // Only <span class="..."> and </span> tags are allowed (produced by hljs, Prism,
 // level highlighting, and search highlighting). Everything else is escaped.
 // Also double-escapes ALL &lt; / &gt; entities so dangerous content always
 // displays visibly as "&lt;script&gt;" instead of "<script>".
+// Pre-compiled regexes for sanitizeHTML (called every render cycle)
+const LV_RE_SANITIZE_TAGS = /<\/?(?!span[\s>\/])[a-zA-Z][^>]*>/g;
+const LV_RE_SANITIZE_SPAN = /<span\s+([^>]*)>/gi;
+const LV_RE_SANITIZE_CLASS_DQ = /class\s*=\s*"([^"]*)"/i;
+const LV_RE_SANITIZE_CLASS_SQ = /class\s*=\s*'([^']*)'/i;
+const LV_RE_SANITIZE_CLASSVAL = /[^a-zA-Z0-9\s_-]/g;
+
 function logsviewer_sanitizeHTML(html) {
     // 1. Replace any raw HTML tag that is NOT <span> / </span>
-    html = html.replace(/<\/?(?!span[\s>\/])[a-zA-Z][^>]*>/g, function(tag) {
+    LV_RE_SANITIZE_TAGS.lastIndex = 0;
+    html = html.replace(LV_RE_SANITIZE_TAGS, function(tag) {
         return tag.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     });
 
     // 2. Strip dangerous attributes from span tags (keep only class)
-    //    Blocks: onclick, onmouseover, onerror, style, href, src, etc.
-    html = html.replace(/<span\s+([^>]*)>/gi, function(match, attrs) {
-        var classMatch = attrs.match(/class\s*=\s*"([^"]*)"/i) || attrs.match(/class\s*=\s*'([^']*)'/i);
+    LV_RE_SANITIZE_SPAN.lastIndex = 0;
+    html = html.replace(LV_RE_SANITIZE_SPAN, function(match, attrs) {
+        var classMatch = attrs.match(LV_RE_SANITIZE_CLASS_DQ) || attrs.match(LV_RE_SANITIZE_CLASS_SQ);
         if (classMatch) {
-            // Validate class value: only allow alphanumeric, hyphens, underscores, spaces
-            var safeClass = classMatch[1].replace(/[^a-zA-Z0-9\s_-]/g, '');
+            var safeClass = classMatch[1].replace(LV_RE_SANITIZE_CLASSVAL, '');
             return '<span class="' + safeClass + '">';
         }
         return '<span>';
     });
 
-    // 3. Double-escape ALL entity-encoded angle brackets.
-    //    At this point, every &lt; and &gt; in the string is escaped user content
-    //    (legitimate highlighter/level/search tags use real < >).
-    //    &lt;script&gt; → &amp;lt;script&amp;gt;  (user sees: &lt;script&gt;)
+    // 3. Double-escape entity-encoded angle brackets
     html = html.replace(/&lt;/g, '&amp;lt;').replace(/&gt;/g, '&amp;gt;');
 
     return html;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   14. MAIN RENDER PIPELINE
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
     const filter = logsviewer_getFilterValue();
@@ -1789,10 +1750,6 @@ function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
     // Tail first (performance: render limit)
     let base = logsviewer_tailText(rawText || '', logsviewer_cfg.tailLines || 0);
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   14. MAIN RENDER PIPELINE
-   ═══════════════════════════════════════════════════════════════════════════ */
 
     // Sanitize syslog date padding: RFC 3164 pads single-digit days with a space
     // e.g. "Feb  8 04:00:08" → "Feb 8 04:00:08"
@@ -1909,9 +1866,8 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
 }
 
     // ── Fix #5: Count levels on RAW text (before HTML spans inflate string) ──
-    var badgeCounts = logsviewer_cfg.showBadges ? logsviewer_countLevels(filtered) : null;
-    // Also count for right toast slot even if badges are hidden
-    if (!badgeCounts) badgeCounts = logsviewer_countLevels(filtered);
+    // Count levels once (used for badges + right toast slot)
+    var badgeCounts = logsviewer_countLevels(filtered);
     logsviewer_lastBadgeCounts = badgeCounts;
 
     // Highlight levels (optional)
@@ -1959,6 +1915,11 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     });
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   15. UI CONTROLS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 function logsviewer_applyAutoscrollUiState(isOn) {
     const title = $('.logsviewer-autoscroll-title');
     if (!title.length) return;
@@ -1979,10 +1940,6 @@ function logsviewer_sanitizeFilename(name) {
         .trim()
         .replace(/\s+/g, '_')
         .replace(/[\/\\?%*:|"<>]/g, '-')
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   15. UI CONTROLS (autoscroll, export)
-   ═══════════════════════════════════════════════════════════════════════════ */
 
         .slice(0, 80) || 'log';
 }
@@ -2096,6 +2053,11 @@ function logsviewer_exportCurrentLog() {
     logsviewer_downloadTextFile(text, `${base}.${ext}`, 'text/plain;charset=utf-8');
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   16. THEMING
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 function logsviewer_applyThemePreset(target, preset) {
     // IMPORTANT:
     // Theme presets should ONLY affect the log display skin (log panel), not the tabs/buttons.
@@ -2118,10 +2080,6 @@ function logsviewer_applyThemePreset(target, preset) {
     const set = (k, v) => target.style.setProperty(k, v);
 
     // Log-panel-only palette (scoped to #logsviewer-container)
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   16. THEMING
-   ═══════════════════════════════════════════════════════════════════════════ */
 
     const _light = logsviewer_isLightTheme();
     if (p === 'terminal') {
@@ -2148,6 +2106,30 @@ function logsviewer_applyThemePreset(target, preset) {
         set('--logsviewer-text-primary',     _light ? '#000000' : '#ffffff');
         set('--logsviewer-text-secondary',   _light ? '#222'    : '#e0e0e0');
         set('--logsviewer-text-muted',       _light ? '#555'    : '#b0b0b0');
+    } else if (p === 'midnight') {
+        set('--logsviewer-log-bg',           _light ? '#eef0f7' : '#0e1225');
+        set('--logsviewer-border',           _light ? '#b0b8d4' : '#1e2a4a');
+        set('--logsviewer-tab-border',       _light ? '#b0b8d4' : '#1e2a4a');
+        set('--logsviewer-tab-hover-border', _light ? '#8890b0' : '#2e3d6a');
+        set('--logsviewer-text-primary',     _light ? '#1a1e3a' : '#c8cde8');
+        set('--logsviewer-text-secondary',   _light ? '#3a4070' : '#8b92c0');
+        set('--logsviewer-text-muted',       _light ? '#6a6e96' : '#5c6290');
+    } else if (p === 'ocean') {
+        set('--logsviewer-log-bg',           _light ? '#ecf5f5' : '#0c1a1e');
+        set('--logsviewer-border',           _light ? '#a0c8c8' : '#1a3a3f');
+        set('--logsviewer-tab-border',       _light ? '#a0c8c8' : '#1a3a3f');
+        set('--logsviewer-tab-hover-border', _light ? '#78aaaa' : '#285558');
+        set('--logsviewer-text-primary',     _light ? '#122a2e' : '#c4dfe2');
+        set('--logsviewer-text-secondary',   _light ? '#2e5458' : '#7eb8be');
+        set('--logsviewer-text-muted',       _light ? '#5d8488' : '#4e8a90');
+    } else if (p === 'monokai') {
+        set('--logsviewer-log-bg',           _light ? '#f7f3ee' : '#1c1810');
+        set('--logsviewer-border',           _light ? '#d4c8b0' : '#3a3020');
+        set('--logsviewer-tab-border',       _light ? '#d4c8b0' : '#3a3020');
+        set('--logsviewer-tab-hover-border', _light ? '#b8a880' : '#544430');
+        set('--logsviewer-text-primary',     _light ? '#2e2816' : '#e8dcc8');
+        set('--logsviewer-text-secondary',   _light ? '#5a4e30' : '#b8a880');
+        set('--logsviewer-text-muted',       _light ? '#8a7e60' : '#7a6e50');
     }
 }
 
@@ -2204,6 +2186,11 @@ function logsviewer_applyFontFamily(root, familyKey) {
     root.style.setProperty('--logsviewer-font-weight', cfg.weight || '400');
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   17. INITIALIZATION
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 function logsviewer_applyConfig() {
     // Two separate bodies exist on the dashboard tile:
     // 1) Tabs body (UI)
@@ -2226,10 +2213,6 @@ function logsviewer_applyConfig() {
         el.style.removeProperty('--logsviewer-log-bg');
     });
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   17. INITIALIZATION
-   ═══════════════════════════════════════════════════════════════════════════ */
 
     // Theme preset (log panel only)
     logsviewer_applyThemePreset(logPanel, logsviewer_cfg.themePreset);
@@ -2331,25 +2314,6 @@ function logsviewer_manualRefresh() {
     }, { skipHash: true, source: logsviewer_getActiveSource() || null });
 }
 
-function logsviewer_showErrorToast(message) {
-    // Create or update error toast
-    let toast = $('#logsviewer-error-toast');
-    if (!toast.length) {
-        const container = $(logsviewer_dom.container);
-        if (!container.length) return;
-        
-        toast = $('<div id="logsviewer-error-toast" class="logsviewer-error-toast" aria-live="assertive"></div>');
-        container.prepend(toast);
-    }
-    
-    toast.text(message).fadeIn(200);
-    
-    // Auto-hide after 3 seconds
-    setTimeout(function() {
-        toast.fadeOut(300);
-    }, 3000);
-}
-
 function logsviewer_status() {
     var config = logsviewer_cfg || {};
 
@@ -2395,6 +2359,11 @@ function logsviewer_status() {
     }catch(_){ }
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   18. EVENT HANDLERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 $(function() {
     logsviewer_cfg = window.logsviewerConfig || {};
     const config = logsviewer_cfg;
@@ -2421,14 +2390,10 @@ $(function() {
 
     // Pause on hover (optional)
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   18. EVENT HANDLERS (jQuery ready)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
     if (config.pauseOnHover) {
         $(document).on('mouseenter', '#logsviewer-container', function(){
             logsviewer_pauseHoverActive = true;
-            var right = document.getElementById('logsviewer-toast-right');
+            var right = logsviewer_dom.toastRight;
             if (right && config.pauseOnHover) {
                 var existing = right.querySelector('.lv-toast-paused');
                 if (!existing) {
@@ -2439,7 +2404,7 @@ $(function() {
         });
         $(document).on('mouseleave', '#logsviewer-container', function(){
             logsviewer_pauseHoverActive = false;
-            var right = document.getElementById('logsviewer-toast-right');
+            var right = logsviewer_dom.toastRight;
             if (right) {
                 var paused = right.querySelector('.lv-toast-paused');
                 if (paused) {

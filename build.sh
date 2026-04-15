@@ -1,6 +1,7 @@
 #!/bin/bash
 # --- Configuration ---
 PLUGIN_NAME="logsviewer"
+# Copyright (C) 2026 Lazaros Chalkidis - License: GPLv3
 AUTHOR="Lazaros Chalkidis"
 GITHUB_USER="Lazaros-Chalkidis"
 GIT_URL="https://github.com/Lazaros-Chalkidis/unraid-logsviewer"
@@ -72,6 +73,9 @@ METAEOF
 # Set correct permissions before packaging
 find "${PLUGIN_DEST_PATH}" -type d -exec chmod 755 {} \;
 find "${PLUGIN_DEST_PATH}" -type f -exec chmod 644 {} \;
+# Page and shell files must be executable
+find "${PLUGIN_DEST_PATH}" -name '*.page' -exec chmod 755 {} \;
+find "${PLUGIN_DEST_PATH}" -name '*.sh' -exec chmod 755 {} \;
 
 # Create .txz archive
 FILENAME="${PLUGIN_NAME}-${VERSION}"
@@ -88,8 +92,15 @@ fi
 echo "✅ Package created: $(du -h ${PACKAGE_PATH} | cut -f1)"
 
 # Compute MD5 for PLG integrity check
-PACKAGE_MD5=$(md5sum "${PACKAGE_PATH}" | cut -d' ' -f1)
-echo "🔐 MD5: ${PACKAGE_MD5}"
+if command -v md5sum &>/dev/null; then
+    PACKAGE_MD5="$(md5sum "${PACKAGE_PATH}" | cut -d' ' -f1)"
+elif command -v md5 &>/dev/null; then
+    PACKAGE_MD5="$(md5 -q "${PACKAGE_PATH}")"
+else
+    echo "Warning: md5sum/md5 not found, MD5 will be empty in PLG"
+    PACKAGE_MD5=""
+fi
+echo "MD5: ${PACKAGE_MD5}"
 
 # --- Helper: base64 without line breaks (portable-ish) ---
 b64_nolf() {
@@ -118,11 +129,12 @@ if [[ "$LOCAL_INSTALL" == "local" ]]; then
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="img/logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
-Real time log viewer. Dashboard widget and dedicated Tools page in one plugin. System, Docker and VM logs in one place with live auto refresh, severity badges, search, filtering, syntax highlighting and export.
+Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page - Log Backups and System Alerts. Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.
 </DESCRIPTION>
+
 
 <CHANGES>
 ${CHANGES_BLOCK}
@@ -162,6 +174,14 @@ upgradepkg --install-new /boot/config/plugins/&name;/&name;-&version;.txz
 chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
+find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
+find /usr/local/emhttp/plugins/&name; -name '*.page' -exec chmod 755 {} \;
+
+# Restore LogsViewer cron entries from flash
+if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
+  cat /boot/config/plugins/&name;/logsviewer-cron.conf >> /etc/cron.d/root
+  crontab /etc/cron.d/root 2>/dev/null
+fi
 
 echo ""
 echo "----------------------------------------------------"
@@ -174,9 +194,14 @@ echo ""
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
+# Clean up backup directory before removing config
+BPATH=\$(grep '^BACKUP_STORAGE=' /boot/config/plugins/&name;/&name;.cfg 2>/dev/null | cut -d'"' -f2)
+case "\$BPATH" in /mnt/user/*) rm -rf "\$BPATH" ;; esac
+
 removepkg &name;-&version;
 rm -rf /usr/local/emhttp/plugins/&name;
 rm -rf /boot/config/plugins/&name;
+sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
 
 echo ""
 echo "----------------------------------------------------"
@@ -205,10 +230,10 @@ else
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
+<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="img/logsviewerplugin.png" min="7.2.0" support="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/">
 
 <DESCRIPTION>
-Real time log viewer. Dashboard widget and dedicated Tools page in one plugin. System, Docker and VM logs in one place with live auto refresh, severity badges, search, filtering, syntax highlighting and export.
+Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page - Log Backups and System Alerts. Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.
 </DESCRIPTION>
 
 <CHANGES>
@@ -236,6 +261,14 @@ ${CHANGES_BLOCK}
 chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
+find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
+find /usr/local/emhttp/plugins/&name; -name '*.page' -exec chmod 755 {} \;
+
+# Restore LogsViewer cron entries from flash
+if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
+  cat /boot/config/plugins/&name;/logsviewer-cron.conf >> /etc/cron.d/root
+  crontab /etc/cron.d/root 2>/dev/null
+fi
 
 echo ""
 echo "----------------------------------------------------"
@@ -248,9 +281,14 @@ echo ""
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
+# Clean up backup directory before removing config
+BPATH=\$(grep '^BACKUP_STORAGE=' /boot/config/plugins/&name;/&name;.cfg 2>/dev/null | cut -d'"' -f2)
+case "\$BPATH" in /mnt/user/*) rm -rf "\$BPATH" ;; esac
+
 removepkg &name;-&version;
 rm -rf /usr/local/emhttp/plugins/&name;
 rm -rf /boot/config/plugins/&name;
+sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
 
 echo ""
 echo "----------------------------------------------------"

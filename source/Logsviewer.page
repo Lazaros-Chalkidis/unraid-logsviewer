@@ -1,8 +1,8 @@
 Menu="Dashboard:0"
-Icon="logsviewerplugin.png"
+Icon="img/logsviewerplugin.png"
 ---
 <?php
-require_once '/usr/local/emhttp/plugins/logsviewer/logsviewer_api.php';
+require_once '/usr/local/emhttp/plugins/logsviewer/include/logsviewer_api.php';
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
 $cfg = parse_plugin_cfg('logsviewer', true);
@@ -81,7 +81,7 @@ if (!empty($enabledVms)) {
 
 // System log display names
 $systemLogNames = [
-    'syslog' => 'Syslog', 'dmesg' => 'Dmesg', 'graphql-api.log' => 'GraphQL API',
+    'syslog' => 'Syslog', 'syslog-previous' => 'Syslog Previous', 'dmesg' => 'Dmesg', 'graphql-api.log' => 'GraphQL API',
     'nginx-error' => 'Nginx Errors', 'phplog' => 'PHP Log', 'libvirt' => 'Libvirt',
 ];
 
@@ -384,7 +384,7 @@ $render_header = static function(
 <span class="tile-header logsviewer-header">
     <span class="tile-header-left logsviewer-header__left">
         <div class="logsviewer-header__top">
-            <img src="/plugins/logsviewer/logsviewermain.png" class="logsviewer-header__icon" alt="Logs Viewer" style="width:32px;height:32px;object-fit:contain;">
+            <img src="/plugins/logsviewer/img/logsviewermain.png" class="logsviewer-header__icon" alt="Logs Viewer" style="width:32px;height:32px;object-fit:contain;">
             <h3 class="tile-header-main logsviewer-header__title">{$tile_title}</h3>
         </div>
         {$autoscroll_html}

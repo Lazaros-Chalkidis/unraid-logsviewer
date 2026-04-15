@@ -1,5 +1,7 @@
 /* ==========================================================================
    LOGS VIEWER - Settings Page Styles (Redesigned)
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
    /plugins/logsviewer/css/settings.css
    ========================================================================== */
 
@@ -782,6 +784,7 @@
   width: 440px;
   max-width: 94vw;
   height: 370px;
+  max-height: 85vh;
   background: var(--lv-panel-bg);
   color: var(--lv-c-text);
   border: 1px solid var(--lv-c-border);
@@ -866,6 +869,69 @@
   box-shadow: 0 8px 40px rgba(0,0,0,.25);
 }
 .lv-light .lv-credits-footer {
+  background: #f4f5f7;
+  border-top-color: rgba(0,0,0,.10);
+}
+
+/* -- RESET CONFIRMATION MODAL ---------------------------------------------- */
+
+.lv-reset-modal-box {
+  width: 380px;
+  max-width: 94vw;
+  background: var(--lv-panel-bg);
+  color: var(--lv-c-text);
+  border: 1px solid var(--lv-c-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.lv-reset-body {
+  padding: 2rem 2rem 1.4rem;
+  text-align: center;
+}
+.lv-reset-icon {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(76,175,80,0.12);
+  border: 1.5px solid rgba(76,175,80,0.30);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 1rem;
+}
+.lv-reset-title {
+  font-size: 15px; font-weight: 600;
+  margin-bottom: 0.6rem;
+  color: var(--lv-c-text);
+}
+.lv-reset-msg {
+  font-size: 13px; line-height: 1.5;
+  color: var(--lv-c-text-muted);
+}
+.lv-reset-accent { color: var(--lv-accent); font-weight: 500; }
+.lv-reset-footer {
+  padding: 0.65rem;
+  text-align: center;
+  border-top: 1px solid var(--lv-c-border);
+  background: var(--lv-footer-bg);
+}
+.lv-reset-ok-btn {
+  background: var(--lv-accent) !important;
+  border: 1px solid var(--lv-accent) !important;
+  color: #fff !important;
+  padding: 0.3rem 1.4rem !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  letter-spacing: 0.04em !important;
+  transition: background-color .2s !important;
+}
+.lv-reset-ok-btn:hover {
+  background: #d56a35 !important;
+  border-color: #d56a35 !important;
+}
+.lv-light .lv-reset-modal-box {
+  background: #fff;
+  color: rgba(0,0,0,.85);
+}
+.lv-light .lv-reset-footer {
   background: #f4f5f7;
   border-top-color: rgba(0,0,0,.10);
 }
@@ -966,4 +1032,198 @@
   .lv-sec-hd > span:first-child { font-size: 10px !important; }
   .lv-r-label { font-size: 10px !important; }
   .lv-select { font-size: 11px !important; }
+}
+
+/* -- ALERT RULES EDITOR ------------------------------------------------- */
+
+.lv-alert-rules-list { display: flex; flex-direction: column; gap: 8px; }
+.lv-alert-rules-actions, .lv-alert-history-actions {
+  display: flex; gap: 6px; padding: 10px 0 2px; flex-wrap: wrap;
+}
+
+.lv-alert-rule {
+  border: 1px solid var(--lv-c-border);
+  border-radius: 8px; overflow: hidden;
+  background: var(--lv-c-bg-faint);
+}
+.lv-alert-rule:hover { border-color: var(--lv-c-border-strong); }
+
+.lv-alert-rule-hd {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--lv-sec-hd-bg);
+  border-bottom: 1px solid var(--lv-c-border);
+}
+.lv-alert-rule-name {
+  flex: 1; min-width: 0;
+  background: var(--lv-ctrl-bg); border: 1px solid var(--lv-ctrl-border);
+  border-radius: 4px; padding: 4px 8px;
+  color: var(--lv-c-text); font-size: 12.5px; font-weight: 600;
+}
+.lv-alert-rule-name:focus { border-color: var(--lv-accent); outline: none; }
+.lv-alert-rule-remove { flex-shrink: 0; }
+
+.lv-alert-rule-bd { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.lv-alert-rule-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.lv-alert-rule-lbl {
+  font-size: 11.5px; font-weight: 500; color: var(--lv-c-text-muted);
+  min-width: 55px; flex-shrink: 0;
+}
+.lv-alert-rule-pattern {
+  flex: 1; min-width: 120px;
+  background: var(--lv-ctrl-bg); border: 1px solid var(--lv-ctrl-border);
+  border-radius: 4px; padding: 4px 8px;
+  color: var(--lv-c-text); font-size: 12px; font-family: monospace;
+}
+.lv-alert-rule-pattern:focus { border-color: var(--lv-accent); outline: none; }
+
+.lv-alert-rule-regex {
+  font-size: 11px; color: var(--lv-c-text-muted);
+  display: flex; align-items: center; gap: 3px; flex-shrink: 0;
+  cursor: default;
+}
+.lv-alert-rule-regex input { width: 13px; height: 13px; accent-color: var(--lv-accent); }
+
+.lv-alert-rule-severity, .lv-alert-rule-cooldown { min-width: 120px; font-size: 12px !important; }
+
+.lv-alert-rule-sources {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+}
+.lv-alert-src-chk {
+  font-size: 11.5px; color: var(--lv-c-text-mid);
+  display: flex; align-items: center; gap: 3px;
+  cursor: default; white-space: nowrap;
+}
+.lv-alert-src-chk input { width: 13px; height: 13px; accent-color: #3b82f6; }
+.lv-alert-src-sep { margin-top: 4px; padding-top: 5px; border-top: 1px solid var(--lv-c-border-row); flex-basis: 100%; }
+
+/* -- ALERT HISTORY ------------------------------------------------------ */
+
+.lv-alert-history-list { display: flex; flex-direction: column; gap: 0; }
+
+.lv-alert-history-row {
+  display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--lv-c-border-row);
+  font-size: 12px;
+}
+.lv-alert-history-row:nth-child(odd) { background: var(--lv-row-odd); }
+.lv-alert-history-row:nth-child(even) { background: var(--lv-row-even); }
+.lv-alert-history-row:last-child { border-bottom: none; }
+
+.lv-alert-history-time {
+  font-size: 11px; color: var(--lv-c-text-muted); font-family: monospace;
+  min-width: 130px; flex-shrink: 0;
+}
+.lv-alert-history-badge {
+  font-size: 10px; font-weight: 500; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 3px;
+  flex-shrink: 0; letter-spacing: 0.03em;
+}
+.lv-alert-sev--info { background: rgba(55,138,221,0.12); color: #378ADD; }
+.lv-alert-sev--warning { background: rgba(239,159,39,0.12); color: #EF9F27; }
+.lv-alert-sev--critical { background: rgba(220,50,50,0.12); color: #D43A3A; }
+
+.lv-alert-history-name { font-weight: 600; color: var(--lv-c-text); flex-shrink: 0; }
+.lv-alert-history-src { color: var(--lv-c-text-muted); flex-shrink: 0; }
+.lv-alert-history-line {
+  width: 100%; font-family: monospace; font-size: 11px;
+  color: var(--lv-c-text-mid); word-break: break-all;
+  padding: 4px 0 0;
+}
+
+@media (max-width: 560px) {
+  .lv-alert-rule-row { flex-direction: column; align-items: stretch; }
+  .lv-alert-rule-lbl { min-width: auto; }
+  .lv-alert-rule-severity, .lv-alert-rule-cooldown { min-width: auto; width: 100%; }
+  .lv-alert-history-time { min-width: auto; }
+}
+
+/* -- BACKUP CALENDAR --------------------------------------------------- */
+
+.lv-cal { padding: 8px 4px; }
+
+.lv-cal-nav {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-bottom: 12px;
+}
+.lv-cal-month {
+  font-size: 13px; font-weight: 600; min-width: 130px; text-align: center;
+  color: var(--lv-c-text);
+}
+
+.lv-cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+}
+.lv-cal-hd {
+  font-size: 10px; font-weight: 500; text-align: center; padding: 4px 0;
+  color: var(--lv-c-text-muted);
+}
+.lv-cal-day {
+  text-align: center; padding: 6px 2px; font-size: 11.5px;
+  border-radius: 5px; cursor: default;
+  color: var(--lv-c-text-muted);
+}
+.lv-cal-day--empty { visibility: hidden; }
+.lv-cal-day--today { color: var(--lv-accent); font-weight: 600; }
+.lv-cal-day--future { opacity: 0.2; }
+.lv-cal-day--has {
+  background: rgba(76,175,80,0.12); color: var(--lv-c-text);
+  border: 0.5px solid rgba(76,175,80,0.25); cursor: pointer;
+}
+.lv-cal-day--has:hover {
+  background: rgba(76,175,80,0.22); border-color: rgba(76,175,80,0.4);
+}
+.lv-cal-day--sel {
+  background: rgba(76,175,80,0.30) !important;
+  border-color: rgba(76,175,80,0.6) !important;
+  color: #fff !important; font-weight: 600;
+}
+
+.lv-cal-legend {
+  display: flex; gap: 14px; margin-top: 10px;
+  font-size: 11px; color: var(--lv-c-text-muted);
+}
+.lv-cal-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 3px; margin-right: 4px; vertical-align: middle;
+}
+.lv-cal-dot--avail { background: rgba(76,175,80,0.35); }
+.lv-cal-dot--today { background: var(--lv-accent); }
+
+.lv-cal-dl {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  padding: 10px 14px; border-radius: 8px;
+  background: var(--lv-c-bg-subtle);
+  border: 1px solid var(--lv-c-border);
+}
+.lv-cal-dl-info { flex: 1; min-width: 0; }
+.lv-cal-dl-name { font-size: 12.5px; font-weight: 600; color: var(--lv-c-text); }
+.lv-cal-dl-meta { font-size: 11px; color: var(--lv-c-text-muted); margin-top: 2px; }
+.lv-cal-dl-btn {
+  background: rgba(76,175,80,0.12) !important;
+  color: var(--lv-green) !important;
+  border-color: rgba(76,175,80,0.35) !important;
+  text-decoration: none; white-space: nowrap;
+}
+.lv-cal-dl-btn:hover {
+  background: rgba(76,175,80,0.22) !important;
+  border-color: rgba(76,175,80,0.5) !important;
+}
+
+@media (max-width: 480px) {
+  .lv-cal-day { font-size: 10px; padding: 4px 1px; }
+  .lv-cal-dl { flex-direction: column; align-items: stretch; gap: 6px; }
+  .lv-cal-dl-btn { text-align: center; }
+  .lv-alert-src-chk { padding: 4px 2px; min-height: 32px; }
+  .lv-alert-src-chk input { width: 16px; height: 16px; }
+}
+
+@media (max-width: 360px) {
+  .lv-cal-day { font-size: 9px; padding: 3px 0; }
+  .lv-cal-hd { font-size: 8px; }
+  .lv-cal-month { font-size: 11px; min-width: 100px; }
 }
