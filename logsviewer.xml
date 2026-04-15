@@ -10,7 +10,7 @@
   </Description>
   <Project>https://github.com/Lazaros-Chalkidis/unraid-logsviewer</Project>
   <Support>https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/</Support>
-  <Icon>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/source/logsviewerplugin.png</Icon>
+  <Icon>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/source/img/logsviewerplugin.png</Icon>
   <License>GPL v3</License>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on-docker.png</Screenshot>

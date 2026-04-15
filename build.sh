@@ -73,8 +73,7 @@ METAEOF
 # Set correct permissions before packaging
 find "${PLUGIN_DEST_PATH}" -type d -exec chmod 755 {} \;
 find "${PLUGIN_DEST_PATH}" -type f -exec chmod 644 {} \;
-# Page and shell files must be executable
-find "${PLUGIN_DEST_PATH}" -name '*.page' -exec chmod 755 {} \;
+# Shell files must be executable
 find "${PLUGIN_DEST_PATH}" -name '*.sh' -exec chmod 755 {} \;
 
 # Create .txz archive
@@ -175,7 +174,6 @@ chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
 find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
-find /usr/local/emhttp/plugins/&name; -name '*.page' -exec chmod 755 {} \;
 
 # Restore LogsViewer cron entries from flash
 if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
@@ -262,7 +260,6 @@ chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
 find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
-find /usr/local/emhttp/plugins/&name; -name '*.page' -exec chmod 755 {} \;
 
 # Restore LogsViewer cron entries from flash
 if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then

@@ -1,6 +1,11 @@
 
 # Logs Viewer
 
+## 2026.04.16
+
+### Fixed
+- Fixed file permissions (.page files 644, .sh files 755)
+
 ## 2026.04.15
 
 ### New Features
