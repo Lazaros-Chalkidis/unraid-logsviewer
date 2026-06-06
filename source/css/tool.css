@@ -1,132 +1,253 @@
 /* ==========================================================================
-   LOGS VIEWER — Tool Page Overrides
+   LOGS VIEWER -- Tool Page Styles (Shell + Common Components)
    Copyright (C) 2026 Lazaros Chalkidis
    License: GPLv3
-   Layers on top of widget.css. Scoped to .logsviewer-tool-wrapper.
+   /plugins/logsviewer/css/tool.css
+
+   Mirrors the StreamViewer (svt-*) framework with lvt-* namespace and
+   LogsViewer's orange accent. Shell-level styles only; per-tab styles live
+   in tool-logs.css / tool-saved.css / tool-pinned.css.
+
+   SECTIONS
+    1. CSS Custom Properties
+    2. Layout (wrapper width)
+    3. Tabs (folder-style)
+    4. Panel + States
+    5. Page Header
+    6. Shared Components (select)
+    7. Loading + Placeholder + Error
+    8. Light Theme Overrides
    ========================================================================== */
 
-/* ── 1. FOUC PREVENTION ───────────────────────────────────────────────────── */
-.logsviewer-tool-wrapper{ visibility:visible !important; }
+/* ── 1. CSS CUSTOM PROPERTIES ─────────────────────────────────────────── */
+:root {
+  --lvt-bg:             #1a1a1a;
+  --lvt-surface:        #242424;
+  --lvt-surface2:       #2e2e2e;
+  --lvt-border:         rgba(255,255,255,.10);
+  --lvt-border-strong:  rgba(255,255,255,.18);
+  --lvt-border-subtle:  rgba(255,255,255,.06);
+  --lvt-text:           rgba(255,255,255,.85);
+  --lvt-text-mid:       rgba(255,255,255,.65);
+  --lvt-text-dim:       rgba(255,255,255,.45);
+  --lvt-text-muted:     rgba(255,255,255,.30);
+  --lvt-accent:         #f47d42;
+  --lvt-accent-dim:     rgba(244,125,66,.12);
+  --lvt-accent-border:  rgba(244,125,66,.55);
+  --lvt-radius:         6px;
+  --lvt-bg-subtle:      rgba(255,255,255,.04);
 
-/* ── 2. WRAPPER LAYOUT & RESPONSIVE WIDTHS ───────────────────────────────── */
-.logsviewer-tool-wrapper{
-  max-width:1400px; width:60%;
-  margin:2rem auto; padding:0 1rem;
-  box-sizing:border-box; overflow-x:hidden;
-}
-@media (max-width:1400px){ .logsviewer-tool-wrapper{ width:75%; } }
-@media (max-width:1024px){ .logsviewer-tool-wrapper{ width:90%; } }
-@media (max-width:768px) { .logsviewer-tool-wrapper{ width:95%; } }
+  /* Semantic button colors (mirror the Settings footer Apply/Reset/Done
+     pattern). Green = confirm/create/run, accent orange = destructive,
+     neutral = dismiss/inactive. Used by the Tool page button system. */
+  --lvt-btn-green:        #4caf50;
+  --lvt-btn-green-bg:     rgba(76,175,80,.10);
+  --lvt-btn-green-border: rgba(76,175,80,.30);
+  --lvt-btn-green-hover:  rgba(76,175,80,.20);
+  --lvt-btn-orange-bg:     rgba(244,125,66,.12);
+  --lvt-btn-orange-border: rgba(244,125,66,.30);
+  --lvt-btn-orange-hover:  rgba(244,125,66,.20);
 
-/* ── 3. PANEL CARD ────────────────────────────────────────────────────────── */
-.logsviewer-tool-panel{
-  background:var(--lv-c-panel-bg);
-  border:1px solid var(--lv-c-border);
-  border-radius:8px; overflow:hidden;
-  box-shadow:0 2px 8px rgba(0,0,0,0.3);
-}
+  /* Severity colors (used by log content, tiles, charts) */
+  --lvt-sev-info:       #378ADD;
+  --lvt-sev-warn:       #EF9F27;
+  --lvt-sev-error:      #D43A3A;
+  --lvt-sev-critical:   #B83232;
+  --lvt-sev-success:    #4caf50;
 
-/* ── 4. HEADER ────────────────────────────────────────────────────────────── */
-
-/* Tool page needs explicit flex (no Unraid tile framework) */
-.logsviewer-tool-wrapper .logsviewer-header{
-  display:flex !important; justify-content:space-between;
-  padding:0.5rem 1rem; min-height:6rem;
-}
-.logsviewer-tool-wrapper .logsviewer-header__left{ display:flex !important; }
-.logsviewer-tool-wrapper .logsviewer-header__right{ display:flex !important; }
-
-.logsviewer-header__icon{ font-size:3.6rem !important; flex-shrink:0; }
-
-/* ── 5. CONTROL ICONS ─────────────────────────────────────────────────────── */
-
-/* Normalize icon size (prevent Unraid framework interference) */
-.logsviewer-tool-wrapper #logsviewer-settings-icon .fa,
-.logsviewer-tool-wrapper #logsviewer-export-icon .fa{ font-size:1rem; line-height:1; }
-
-/* If Unraid wraps controls with tile-header-right-controls, normalize it */
-.logsviewer-tool-wrapper .tile-header-right-controls{
-  display:inline-flex !important; align-items:center !important; gap:6px !important;
-}
-
-.logsviewer-tool-wrapper .logsviewer-header__controls{
-  width:100%; display:flex !important; justify-content:flex-end !important;
-  align-items:center !important; gap:6px !important;
+  /* Source health dot colors */
+  --lvt-health-active:  #4caf50;
+  --lvt-health-idle:    #6a6a6a;
+  --lvt-health-stale:   #f5b942;
+  --lvt-health-error:   #e24b4a;
 }
 
-/* Anchor geometry (defeats Dynamix header anchor styles) */
-.logsviewer-tool-wrapper .logsviewer-header__controls a,
-.logsviewer-tool-wrapper .tile-header-right-controls a{
-  display:inline-flex !important; align-items:center !important; justify-content:center !important;
-  width:24px !important; height:24px !important; padding:0 !important; margin:0 !important;
-  border-radius:4px !important;
-  background:var(--lv-c-border-subtle) !important; border:1px solid var(--lv-c-border) !important;
-  text-decoration:none !important;
-  color:var(--logsviewer-text-secondary,var(--lv-c-text-mid)) !important;
-  transition:color 0.15s ease, background-color 0.15s ease !important;
+/* ── 2. LAYOUT ──────────────────────────────────────────────────────────
+   Width follows the same convention as the Settings page and Stream Viewer:
+   80% of the viewport on desktop, 95% on tablet/mobile below 768px. The
+   parent's max-width constraint from the Unraid dynamix template is lifted
+   at runtime by the inline unlocker script at the bottom of
+   LogsviewerTool.page. When the script no-ops (e.g. wrapper not in DOM)
+   the wrapper still centers with plain percentages, so layout stays sane.
+*/
+.lvt-wrapper {
+  width: 80%;
+  max-width: 80%;
+  margin: 2rem auto;
+  padding: 0;
+  box-sizing: border-box;
+  display: block;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
-.logsviewer-tool-wrapper .logsviewer-header__controls a:hover,
-.logsviewer-tool-wrapper .tile-header-right-controls a:hover{
-  color:var(--logsviewer-text-primary,#fff) !important;
-  background:var(--lv-c-bg-hover) !important;
-}
-
-/* Icon inside anchor */
-.logsviewer-tool-wrapper .logsviewer-header__controls a .fa,
-.logsviewer-tool-wrapper .tile-header-right-controls a .fa{ font-size:13px !important; line-height:1 !important; width:auto !important; }
-
-/* Neutralize inner .control wrapper if present */
-.logsviewer-tool-wrapper .logsviewer-header__controls .control,
-.logsviewer-tool-wrapper .tile-header-right-controls .control{
-  display:inline-flex !important; align-items:center !important; justify-content:center !important;
-  background:transparent !important; border:0 !important; width:auto !important; height:auto !important;
-  border-radius:0 !important; font-size:inherit !important;
-}
-
-/* ── 6. LOG PANEL ─────────────────────────────────────────────────────────── */
-
-/* Match dashboard tile padding */
-.logsviewer-tool-wrapper .logsviewer-body{
-  padding:0 0.5rem 0.5rem 0.5rem !important;
-  box-sizing:border-box !important; overflow-x:hidden !important; max-width:100% !important;
-}
-
-.logsviewer-tool-wrapper .logsviewer-log{ height:400px; min-height:200px; }
-.logsviewer-tool-wrapper #logsviewer-logs{ padding:0 !important; margin:0 !important; }
-
-@media (max-width:768px){
-  .logsviewer-tool-wrapper .logsviewer-log{ height:200px; min-height:100px; }
-}
-
-/* ── 7. TABS ROW ──────────────────────────────────────────────────────────── */
-
-/* Flush tabs row (no negative margin needed on tool page) */
-.logsviewer-tabs-row{ margin-bottom:0 !important; }
-
-/* Align tabs-row with log panel body padding */
-.logsviewer-tool-wrapper .logsviewer-tabs-row{
-  padding-left:0.5rem !important; padding-right:0.5rem !important; box-sizing:border-box !important;
-}
-
-/* ── 8. FOOTER ────────────────────────────────────────────────────────────── */
-.logsviewer-footer{ margin-top:1rem !important; margin-bottom:1rem !important; }
-
-/* ── 9. RESPONSIVE ───────────────────────────────────────────────────────── */
-
-@media (max-width:560px){
-  .logsviewer-tool-wrapper{ width:100% !important; padding:0 0.3rem !important; margin:0.5rem auto !important; }
-  .logsviewer-tool-panel{ border-radius:4px; }
-  .logsviewer-tool-wrapper .logsviewer-header{
-    min-height:auto !important; padding:0.4rem 0.5rem !important;
+@media (max-width: 768px) {
+  .lvt-wrapper {
+    width: 95%;
+    max-width: 95%;
   }
-  .logsviewer-tool-wrapper .logsviewer-log{ height:180px !important; min-height:100px !important; }
-  .logsviewer-tool-wrapper .logsviewer-body{ padding:0 0.3rem 0.3rem !important; }
-  .logsviewer-tool-wrapper .logsviewer-tabs-row{ padding-left:0.3rem !important; padding-right:0.3rem !important; }
-  .logsviewer-footer{ margin-top:0.5rem !important; margin-bottom:0.5rem !important; }
 }
 
-@media (max-width:480px){
-  .logsviewer-tool-wrapper{ padding:0 0.2rem !important; margin:0.25rem auto !important; }
-  .logsviewer-tool-wrapper .logsviewer-log{ height:150px !important; }
-  .logsviewer-tool-wrapper .logsviewer-header{ padding:0.3rem 0.4rem !important; }
+/* ── 3. PANEL + STATES ────────────────────────────────────────────────── */
+.lvt-panel {
+  padding: 1.25rem;
+  box-sizing: border-box;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--lvt-border);
+  border-radius: 8px;
+  min-height: 320px;
+  position: relative;
+}
+
+/* Tab panels: shown one at a time, swapped by JS */
+.lvt-tab-panel { display: block; }
+
+/* ── 5. PAGE HEADER (one per tab panel) ──────────────────────────────── */
+.lvt-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  min-height: 3rem;
+}
+.lvt-header__left {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+.lvt-header__icon   { width: 36px; height: 36px; object-fit: contain; }
+.lvt-header__title  { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--lvt-text); }
+.lvt-header__sub    { font-size: .95rem; color: var(--lvt-text-mid); }
+.lvt-header__right  { display: flex; flex-direction: column; align-items: flex-end; gap: .7rem; }
+.lvt-header__icons  { display: flex; align-items: center; gap: .3rem; }
+.lvt-header__icons a {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 24px !important;
+  height: 24px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  background: var(--lvt-border-subtle) !important;
+  border: 1px solid var(--lvt-border) !important;
+  text-decoration: none !important;
+  color: var(--lvt-text-dim) !important;
+  transition: color .15s ease, background .15s ease !important;
+}
+.lvt-header__icons a:hover {
+  color: var(--lvt-text) !important;
+  background: var(--lvt-bg-subtle) !important;
+}
+.lvt-header__icons a .fa {
+  font-size: 13px !important;
+  line-height: 1 !important;
+  width: auto !important;
+}
+
+/* ── 6. SHARED COMPONENTS ────────────────────────────────────────────── */
+
+/* Selects (period pickers etc.) */
+.lvt-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: var(--lvt-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E") no-repeat right .5rem center;
+  background-size: 10px 6px;
+  color: var(--lvt-text);
+  border: 1px solid var(--lvt-accent);
+  border-radius: 4px;
+  padding: .4rem 1.5rem .4rem .5rem;
+  font-size: .95rem;
+  cursor: pointer;
+}
+.lvt-select--sm {
+  background: var(--lvt-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23999'/%3E%3C/svg%3E") no-repeat right .4rem center;
+  background-size: 8px 5px;
+  font-size: .9rem;
+  padding: .25rem 1.3rem .25rem .4rem;
+}
+.lvt-select:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ── 7. LOADING + PLACEHOLDER + ERROR ─────────────────────────────────── */
+.lvt-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 1rem;
+  color: var(--lvt-text-dim);
+  gap: .8rem;
+}
+.lvt-loading__spinner { font-size: 2rem; color: var(--lvt-accent); }
+.lvt-loading__text    { font-size: .95rem; }
+
+.lvt-placeholder {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--lvt-text-dim);
+}
+.lvt-placeholder__icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  color: var(--lvt-text-muted);
+}
+.lvt-placeholder h3 {
+  margin: 0 0 .5rem;
+  color: var(--lvt-text);
+  font-weight: 600;
+}
+.lvt-placeholder p {
+  margin: 0 auto;
+  max-width: 540px;
+  color: var(--lvt-text-dim);
+}
+
+.lvt-error {
+  padding: 1rem 1.25rem;
+  background: rgba(212,58,58,.08);
+  border: 1px solid rgba(212,58,58,.35);
+  border-radius: var(--lvt-radius);
+  color: var(--lvt-sev-error);
+  font-size: .95rem;
+}
+
+/* Smooth fade between tab swaps */
+.lvt-panel.lvt-panel--fade-out { opacity: 0; transition: opacity .12s ease; }
+.lvt-panel.lvt-panel--fade-in  { opacity: 1; transition: opacity .18s ease; }
+
+/* ── 8. LIGHT THEME OVERRIDES ─────────────────────────────────────────── */
+.lvt-light {
+  --lvt-bg:             #f5f5f5;
+  --lvt-surface:        #ffffff;
+  --lvt-surface2:       #f0f0f0;
+  --lvt-border:         rgba(0,0,0,.12);
+  --lvt-border-strong:  rgba(0,0,0,.20);
+  --lvt-border-subtle:  rgba(0,0,0,.06);
+  --lvt-text:           rgba(0,0,0,.85);
+  --lvt-text-mid:       rgba(0,0,0,.65);
+  --lvt-text-dim:       rgba(0,0,0,.50);
+  --lvt-text-muted:     rgba(0,0,0,.30);
+  --lvt-bg-subtle:      rgba(0,0,0,.04);
+}
+
+.lvt-light .lvt-tab.active {
+  background: rgba(255,255,255,.85) !important;
+  color: rgba(0,0,0,.85) !important;
+  border-color: var(--lvt-accent-border) !important;
+}
+
+.lvt-light .lvt-panel {
+  background: rgba(255,255,255,.5);
+  border-color: rgba(0,0,0,.12);
+}
+
+.lvt-light .lvt-header__icons a {
+  background: rgba(0,0,0,.04) !important;
+  border-color: rgba(0,0,0,.12) !important;
+  color: rgba(0,0,0,.45) !important;
+}
+.lvt-light .lvt-header__icons a:hover {
+  color: rgba(0,0,0,.85) !important;
+  background: rgba(0,0,0,.08) !important;
 }

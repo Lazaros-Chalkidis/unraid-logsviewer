@@ -29,6 +29,42 @@ trap "rm -rf '$TMPDIR'" EXIT
 
 HAS_FILES=0
 
+# Find PHP for parsing custom-paths.json (avoids hard jq dependency)
+PHP=""
+for p in /usr/bin/php /usr/local/bin/php /usr/local/emhttp/plugins/dynamix/scripts/php; do
+    [ -x "$p" ] && PHP="$p" && break
+done
+
+# Build associative map of custom paths: slug -> filesystem path
+declare -A CUSTOM_PATHS_MAP
+CUSTOM_FILE="/boot/config/plugins/logsviewer/custom-paths.json"
+if [ -n "$PHP" ] && [ -f "$CUSTOM_FILE" ]; then
+    while IFS=$'\t' read -r slug fpath; do
+        [ -z "$slug" ] && continue
+        case "$fpath" in
+            /var/log/*|/mnt/user/*|/mnt/cache/*) ;;
+            *) continue ;;
+        esac
+        case "$fpath" in *..*) continue ;; esac
+        CUSTOM_PATHS_MAP["$slug"]="$fpath"
+    done < <("$PHP" -r '
+        $f = "/boot/config/plugins/logsviewer/custom-paths.json";
+        if (!is_file($f)) exit(0);
+        $a = @json_decode(@file_get_contents($f), true);
+        if (!is_array($a)) exit(0);
+        foreach ($a as $e) {
+            if (!is_array($e)) continue;
+            $label = (string)($e["label"] ?? "");
+            $path  = (string)($e["path"]  ?? "");
+            if ($label === "" || $path === "") continue;
+            $slug = strtolower(preg_replace("/[^a-z0-9]+/", "-", strtolower($label)));
+            $slug = trim((string)$slug, "-");
+            if ($slug === "") continue;
+            echo $slug . "\t" . $path . "\n";
+        }
+    ' 2>/dev/null)
+fi
+
 # System logs
 SYS_LOGS=$(get_cfg BACKUP_ENABLED_SYSTEM_LOGS)
 if [ -n "$SYS_LOGS" ]; then
@@ -47,6 +83,27 @@ if [ -n "$SYS_LOGS" ]; then
     done
     # Remove system dir if empty
     rmdir "$TMPDIR/system" 2>/dev/null
+fi
+
+# Custom logs (separate folder, separate config key)
+CUSTOM_LOGS=$(get_cfg BACKUP_ENABLED_CUSTOM_LOGS)
+if [ -n "$CUSTOM_LOGS" ]; then
+    mkdir -p "$TMPDIR/custom"
+    IFS=',' read -ra CLOGS <<< "$CUSTOM_LOGS"
+    for clog in "${CLOGS[@]}"; do
+        case "$clog" in
+            custom:*)
+                slug="${clog#custom:}"
+                fpath="${CUSTOM_PATHS_MAP[$slug]:-}"
+                [ -z "$fpath" ] && continue
+                [ -f "$fpath" ] || continue
+                safe=$(echo "$slug" | tr -cd 'a-zA-Z0-9._-')
+                [ -z "$safe" ] && continue
+                cp "$fpath" "$TMPDIR/custom/${safe}.log" && HAS_FILES=1
+                ;;
+        esac
+    done
+    rmdir "$TMPDIR/custom" 2>/dev/null
 fi
 
 # Docker logs

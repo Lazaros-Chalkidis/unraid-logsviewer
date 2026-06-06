@@ -295,6 +295,7 @@
 .logsviewer-cat-btn__dot--system{ background:#378ADD; }
 .logsviewer-cat-btn__dot--docker{ background:#1D9E75; }
 .logsviewer-cat-btn__dot--vm{ background:#EF9F27; }
+.logsviewer-cat-btn__dot--custom{ background:#A45EE5; }
 
 .logsviewer-cat-btn__label{ pointer-events:none; }
 .logsviewer-cat-btn__caret{ font-size:0.82em; opacity:0.35; pointer-events:none; transition:opacity 0.15s ease, transform 0.2s ease; }

@@ -51,6 +51,9 @@ $enabledDockerContainers = array_values(array_filter(array_map('trim', explode('
 $dashVmRaw = (string)($cfg['DASH_ENABLED_VMS'] ?? '');
 $enabledVms = array_values(array_filter(array_map('trim', explode(',', $dashVmRaw)), fn($v) => $v !== ''));
 
+$dashCustomRaw = (string)($cfg['DASH_ENABLED_CUSTOM_LOGS'] ?? '');
+$enabledCustomLogs = array_values(array_filter(array_map('trim', explode(',', $dashCustomRaw)), fn($v) => $v !== ''));
+
 // Keep for backward compatibility with JS/config naming.
 $enabledSystemLogs = $enabledScripts;
 
@@ -85,6 +88,29 @@ $systemLogNames = [
     'nginx-error' => 'Nginx Errors', 'phplog' => 'PHP Log', 'libvirt' => 'Libvirt',
 ];
 
+// Merge user-defined custom log paths (read-only, display names only)
+$_lvCustomFile = '/boot/config/plugins/logsviewer/custom-paths.json';
+if (is_file($_lvCustomFile)) {
+    $_lvCustom = @json_decode((string)@file_get_contents($_lvCustomFile), true);
+    if (is_array($_lvCustom)) {
+        foreach ($_lvCustom as $_lvE) {
+            if (!is_array($_lvE)) continue;
+            $_lvL = (string)($_lvE['label'] ?? '');
+            $_lvP = (string)($_lvE['path']  ?? '');
+            if ($_lvL === '' || $_lvP === '') continue;
+            $_lvOK = false;
+            foreach (['/var/log/', '/mnt/user/', '/mnt/cache/'] as $_lvPx) {
+                if (strpos($_lvP, $_lvPx) === 0) { $_lvOK = true; break; }
+            }
+            if (!$_lvOK || strpos($_lvP, '..') !== false) continue;
+            $_lvSlug = strtolower(preg_replace('/[^a-z0-9]+/', '-', strtolower($_lvL)));
+            $_lvSlug = trim((string)$_lvSlug, '-');
+            if ($_lvSlug === '') continue;
+            $systemLogNames['custom:' . $_lvSlug] = $_lvL;
+        }
+    }
+}
+
 $version_override = $cfg['VERSION_OVERRIDE'] ?? 'auto';
 if ($version_override === 'legacy') {
     $isResponsiveWebgui = false;
@@ -97,8 +123,9 @@ if ($version_override === 'legacy') {
 }
 
 $_gf_families = ['jetbrains', 'fira', 'sourcecodepro', 'ibmplex'];
-$_needsGoogleFonts = in_array($cfg['LOG_FONT_FAMILY'] ?? 'system', $_gf_families)
-                  || in_array($cfg['TOOL_LOG_FONT_FAMILY'] ?? 'system', $_gf_families);
+// Only the widget chooses its font from config; the Tool page uses a hard-coded
+// font stack so its TOOL_LOG_FONT_FAMILY (now removed) no longer factors in.
+$_needsGoogleFonts = in_array($cfg['LOG_FONT_FAMILY'] ?? 'system', $_gf_families);
 $googleFontsLink = $_needsGoogleFonts
     ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" media="print" onload="this.media=\'all\'">'
     : '';
@@ -144,6 +171,7 @@ $tile_config = [
     'enabledSystemLogs'      => $enabledSystemLogs,
     'enabledDockerContainers'=> $enabledDockerContainers,
     'enabledVms'             => $enabledVms,
+    'enabledCustomLogs'      => $enabledCustomLogs,
     'systemLogNames'         => $systemLogNames,
 
     'isResponsive'    => $isResponsiveWebgui,
@@ -189,8 +217,8 @@ $render_controls = static function(bool $responsive): string {
 <a id="logsviewer-export-icon" href="#" title="Export current log" aria-label="Export current log" data-action="export-log">
     <i class="fa fa-fw fa-arrow-down control" aria-hidden="true"></i>
 </a>
-<a id="logsviewer-toolpage-icon" href="/Tools/LogsviewerTool" title="Open Logs Viewer Tool" aria-label="Open Logs Viewer Tool">
-    <i class="fa fa-fw fa-share-square-o control" aria-hidden="true"></i>
+<a id="logsviewer-toolpage-icon" href="/Tools/LogsviewerTool" title="Open Logs Viewer page" aria-label="Open Logs Viewer page">
+    <i class="fa fa-fw fa-list-alt control" aria-hidden="true"></i>
 </a>
 <a id="logsviewer-settings-icon" href="/Settings/LogsviewerSettings#dashboard" title="Logsviewer Settings" aria-label="Logsviewer Settings">
     <i class="fa fa-fw fa-cog control" aria-hidden="true"></i>
@@ -198,7 +226,7 @@ $render_controls = static function(bool $responsive): string {
 HTML . $wrapClose;
 };
 
-$render_tabs = static function(string $tabs_aria_label, array $enabledScripts, array $systemLogNames, array $enabledDockerContainers, array $enabledVms, bool $syntaxEnabled, bool $showFilter, array $dockerStates = [], array $vmStates = []): string {
+$render_tabs = static function(string $tabs_aria_label, array $enabledScripts, array $systemLogNames, array $enabledDockerContainers, array $enabledVms, array $enabledCustomLogs, bool $syntaxEnabled, bool $showFilter, array $dockerStates = [], array $vmStates = []): string {
     // Build system options (ul/li for desktop, native select for mobile)
     $sysOpts = ''; $sysNative = '';
     foreach ($enabledScripts as $key) {
@@ -226,6 +254,16 @@ $render_tabs = static function(string $tabs_aria_label, array $enabledScripts, a
         $dotClass = ($st === 'running') ? 'lv-drop-dot--running' : 'lv-drop-dot--stopped';
         $vmOpts   .= "<li data-value=\"{$safe}\"><span class=\"lv-drop-dot {$dotClass}\"></span>{$safe}</li>\n";
         $vmNative .= "<option value=\"{$safe}\">{$safe}</option>\n";
+    }
+
+    // Custom logs (per-tab enable list, defined in Custom log paths shared sub-card)
+    $customHidden = empty($enabledCustomLogs) ? ' logsviewer-cat-btn--hidden' : '';
+    $customOpts = ''; $customNative = '';
+    foreach ($enabledCustomLogs as $key) {
+        $name = htmlspecialchars($systemLogNames[$key] ?? $key, ENT_QUOTES, 'UTF-8');
+        $val  = htmlspecialchars($key, ENT_QUOTES, 'UTF-8');
+        $customOpts   .= "<li data-value=\"{$val}\">{$name}</li>\n";
+        $customNative .= "<option value=\"{$val}\">{$name}</option>\n";
     }
 
     // Syntax control in tabs-row
@@ -287,7 +325,7 @@ HTML;
             </div>
             <div class="logsviewer-cat-btn{$dockerHidden}" data-category="docker" data-selected="">
                 <span class="logsviewer-cat-btn__dot logsviewer-cat-btn__dot--docker" aria-hidden="true"></span>
-                <span class="logsviewer-cat-btn__label">Dockers</span>
+                <span class="logsviewer-cat-btn__label">Docker</span>
                 <i class="fa fa-caret-down logsviewer-cat-btn__caret" aria-hidden="true"></i>
                 <ul class="logsviewer-cat-dropdown" id="logsviewer-cat-docker" role="listbox" aria-label="Docker logs">
                     {$dockerOpts}
@@ -302,6 +340,15 @@ HTML;
                     {$vmOpts}
                 </ul>
                 <select class="logsviewer-cat-native" aria-label="VM logs"><option value="" hidden></option>{$vmNative}</select>
+            </div>
+            <div class="logsviewer-cat-btn{$customHidden}" data-category="custom" data-selected="">
+                <span class="logsviewer-cat-btn__dot logsviewer-cat-btn__dot--custom" aria-hidden="true"></span>
+                <span class="logsviewer-cat-btn__label">Custom</span>
+                <i class="fa fa-caret-down logsviewer-cat-btn__caret" aria-hidden="true"></i>
+                <ul class="logsviewer-cat-dropdown" id="logsviewer-cat-custom" role="listbox" aria-label="Custom logs">
+                    {$customOpts}
+                </ul>
+                <select class="logsviewer-cat-native" aria-label="Custom logs"><option value="" hidden></option>{$customNative}</select>
             </div>
         </div>
         <div class="logsviewer-tabs-row__spacer"></div>
@@ -428,9 +475,11 @@ $render_fallback_tbody = static function(
     string $googleFontsLink = ''
 ): string {
     $dash_row_class = 'dash_logsviewer_toggle logsviewer-content';
+    $lvCssV = @filemtime('/usr/local/emhttp/plugins/logsviewer/css/widget.css') ?: time();
+    $lvJsV  = @filemtime('/usr/local/emhttp/plugins/logsviewer/js/logsviewer.js') ?: time();
 
     return <<<HTML
-<link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/widget.css">
+<link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/widget.css?v={$lvCssV}">
 {$googleFontsLink}
 <tbody id="db-logsviewer" title="{$tile_title}">
     <tr>
@@ -450,13 +499,13 @@ $render_fallback_tbody = static function(
     </tr>
 </tbody>
 {$config_html}
-<script defer src="/plugins/logsviewer/js/logsviewer.js"></script>
+<script defer src="/plugins/logsviewer/js/logsviewer.js?v={$lvJsV}"></script>
 HTML;
 };
 
 $compact_html   = $render_compact();
 $autoscroll_html= $render_autoscroll();
-$tabs_html      = $render_tabs($tabs_aria_label, $enabledScripts, $systemLogNames, $enabledDockerContainers, $enabledVms, $tile_config['syntaxEnabled'], $tile_config['showFilter'], $dockerStates, $vmStates);
+$tabs_html      = $render_tabs($tabs_aria_label, $enabledScripts, $systemLogNames, $enabledDockerContainers, $enabledVms, $enabledCustomLogs, $tile_config['syntaxEnabled'], $tile_config['showFilter'], $dockerStates, $vmStates);
 $panel_html     = $render_log_panel($log_placeholder, $last_update_label, $tile_config['showToast'] ?? true);
 $config_html    = $render_config($tile_config_json);
 

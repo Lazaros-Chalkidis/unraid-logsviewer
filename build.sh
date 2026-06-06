@@ -50,6 +50,12 @@ else
   CHANGES_BLOCK=$'### ${VERSION}\n${CHANGES_TEXT}'
 fi
 
+# The CHANGES block is wrapped in CDATA below, which preserves any <, >, & in
+# markdown without escaping. The only string that breaks CDATA is "]]>"; rewrite
+# it to safely split and re-open the section. In practice this never appears
+# inside a markdown changelog, but the guard is essentially free.
+CHANGES_BLOCK="${CHANGES_BLOCK//]]>/]]]]><![CDATA[>}"
+
 # --- Build Process ---
 echo "Starting build for version ${VERSION} on branch ${BRANCH}..."
 
@@ -63,6 +69,12 @@ mkdir -p ${PACKAGE_DIR_FINAL}
 PLUGIN_DEST_PATH="${PACKAGE_DIR_TEMP}/usr/local/emhttp/plugins/${PLUGIN_NAME}"
 mkdir -p "${PLUGIN_DEST_PATH}"
 cp -R source/* "${PLUGIN_DEST_PATH}/"
+
+# Write VERSION file at the installed plugin root. This is the single source
+# of truth read at runtime by LogsviewerSettings.page for the footer badge
+# and credits modal. Keeping it in sync with build.sh's ${VERSION} avoids the
+# old multi-fallback dance that could disagree across .plg / .txz / packages.
+echo "${VERSION}" > "${PLUGIN_DEST_PATH}/VERSION"
 
 # Create branch metadata file
 cat > "${PLUGIN_DEST_PATH}/branch.meta" << METAEOF
@@ -135,9 +147,9 @@ Real-time system, Docker and VM log viewer with dashboard widget and dedicated T
 </DESCRIPTION>
 
 
-<CHANGES>
+<CHANGES><![CDATA[
 ${CHANGES_BLOCK}
-</CHANGES>
+]]></CHANGES>
 
 <!-- Local install: embed package as base64, decode on the Unraid flash, then install -->
 <FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz.b64">
@@ -234,9 +246,9 @@ else
 Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page - Log Backups and System Alerts. Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.
 </DESCRIPTION>
 
-<CHANGES>
+<CHANGES><![CDATA[
 ${CHANGES_BLOCK}
-</CHANGES>
+]]></CHANGES>
 
 <FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new">
 <URL>&pluginURL;</URL>

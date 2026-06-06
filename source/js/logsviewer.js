@@ -515,7 +515,8 @@ function logsviewer_fetchCategory(category, callback, opts) {
 
             // Update dropdown options if needed (for docker/vm where containers may change)
             // Skip on single-source polls: dropdown list doesn't change, only log content does
-            if (!singleSource && category !== 'system') {
+            // Also skip for 'system' and 'custom' since their dropdowns are statically rendered by PHP
+            if (!singleSource && category !== 'system' && category !== 'custom') {
                 var $drop = $('#logsviewer-cat-' + category);
                 var $tabBtn = $('.logsviewer-cat-btn[data-category="' + category + '"]');
                 var prevVal = $tabBtn.attr('data-selected') || '';
@@ -2717,6 +2718,9 @@ $(function() {
     }
     if (config.enabledVms && config.enabledVms.length > 0) {
         logsviewer_fetchCategory('vm');
+    }
+    if (config.enabledCustomLogs && config.enabledCustomLogs.length > 0) {
+        logsviewer_fetchCategory('custom');
     }
 
     if (config.refreshEnabled && config.refreshInterval > 0) {

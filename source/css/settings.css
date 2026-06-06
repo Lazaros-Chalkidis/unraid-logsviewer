@@ -81,8 +81,7 @@
 
 
 /* -- FOUC PREVENTION ------------------------------------------------------- */
-.logsviewer-settings,
-.lv-credits-top { visibility: visible !important; }
+.logsviewer-settings { visibility: visible !important; }
 
 
 /* -- BUTTON BASELINE (override Unraid width:100%) -------------------------- */
@@ -95,20 +94,32 @@
 }
 
 
-/* -- WRAPPER & RESPONSIVE -------------------------------------------------- */
+/* -- WRAPPER & RESPONSIVE --------------------------------------------------
+   Width follows the same convention as the Tool page and Stream Viewer:
+   80% of the viewport on desktop (10% gutter each side) and 95% on
+   tablet/mobile below 768px. The Unraid dynamix template imposes a
+   ~1180px max-width on standalone plugin pages; that constraint is lifted
+   at runtime by the inline unlocker script at the bottom of
+   LogsviewerSettings.page, which walks up the ancestor chain and removes
+   any max-width on parents narrower than the viewport. When the script is
+   not active (e.g. on widgets), layout stays sane inside whatever parent
+   it has, since we use plain percentages and standard centering.
+*/
 .logsviewer-settings {
-  width: min(54vw, 1020px);
-  min-width: 720px;
-  margin: 0 auto;
+  width: 80%;
+  max-width: 80%;
+  margin: 2rem auto;
   padding: 0;
   box-sizing: border-box;
   display: block;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
-@media (max-width: 1400px) { .logsviewer-settings { width: 78%; } }
-@media (max-width: 1024px) { .logsviewer-settings { width: 92%; } }
-@media (max-width: 900px)  { .logsviewer-settings { width: 96vw; min-width: 0; } }
-@media (max-width: 768px)  { .logsviewer-settings { width: 100%; min-width: 0; } }
+@media (max-width: 768px) {
+  .logsviewer-settings {
+    width: 95%;
+    max-width: 95%;
+  }
+}
 
 
 /* -- SETTINGS PANEL -------------------------------------------------------- */
@@ -171,34 +182,6 @@
 @media (max-width: 480px) {
   .lv-tab { padding: 7px 12px; font-size: 12px; }
 }
-
-
-/* ══════════════════════════════════════════════════════════════════════════
-   CREDITS LINK (top right, preserved)
-   ══════════════════════════════════════════════════════════════════════════ */
-
-.lv-credits-top {
-  display: block !important;
-  width: 100% !important;
-  margin: 0 0 .3rem 0 !important;
-}
-.lv-credits-top .lv-credits {
-  float: right !important;
-  cursor: pointer !important;
-}
-.lv-credits-top::after { content: ""; display: block; clear: both; }
-.lv-credits {
-  font-size: .78em !important;
-  text-decoration: none !important;
-  color: var(--lv-c-text-muted) !important;
-  cursor: pointer !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  border: 0 !important;
-  background: transparent !important;
-  transition: color .2s !important;
-}
-.lv-credits:hover { color: var(--lv-blue) !important; }
 
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -492,7 +475,8 @@
 }
 
 .lv-footer input[type="button"],
-.lv-footer input[type="submit"] {
+.lv-footer input[type="submit"],
+.lv-footer button[type="submit"] {
   display: inline-flex !important;
   align-items: center !important;
   gap: .25rem !important;
@@ -511,21 +495,28 @@
   background: var(--lv-c-bg-subtle) !important;
   color: var(--lv-c-text-mid) !important;
   white-space: nowrap !important;
+  justify-content: center !important;
+  font-family: inherit !important;
 }
 .lv-footer input[type="button"]:hover,
-.lv-footer input[type="submit"]:hover {
+.lv-footer input[type="submit"]:hover,
+.lv-footer button[type="submit"]:hover:not(:disabled) {
   background: var(--lv-c-bg-hover) !important;
   border-color: var(--lv-c-text-faint) !important;
 }
 .lv-footer input[type="button"]:active,
-.lv-footer input[type="submit"]:active { transform: scale(.98); }
+.lv-footer input[type="submit"]:active,
+.lv-footer button[type="submit"]:active:not(:disabled) { transform: scale(.98); }
+.lv-footer button[type="submit"]:disabled { cursor: wait !important; opacity: .8; }
 
-.lv-footer input[name="#apply"] {
+.lv-footer input[name="#apply"],
+.lv-footer button[name="#apply"] {
   background: rgba(76,175,80,.1) !important;
   border-color: rgba(76,175,80,.3) !important;
   color: #4caf50 !important;
 }
-.lv-footer input[name="#apply"]:hover {
+.lv-footer input[name="#apply"]:hover,
+.lv-footer button[name="#apply"]:hover:not(:disabled) {
   background: rgba(76,175,80,.2) !important;
   border-color: rgba(76,175,80,.5) !important;
 }
@@ -540,23 +531,69 @@
   border-color: rgba(244,125,66,.5) !important;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   FOOTER ROW (support / github / credits links cluster + version badge)
+   Mirrors the DiskViewer footer styling so the two plugins read as a set:
+   inline-flex links cluster, thin CSS-drawn vertical separators (no literal
+   pipe characters), hardened text-decoration rules, and a slightly tighter
+   vertical rhythm.
+   ══════════════════════════════════════════════════════════════════════════ */
 .lv-footer-row {
-  text-align: center;
-  padding: 8px 0 4px;
-  font-size: 11px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  /* Vertical gap between the links row and the version badge below.
+     8px keeps them clearly related but visually distinct. */
+  gap: 8px;
+  padding: 10px 0 6px;
+  font-size: 11px;
 }
-.lv-support-link {
+
+/* Links cluster: inline-flex so the separators sit inline with the links
+   and gap controls the spacing on either side of each separator. */
+.lv-footer-links {
+  display: inline-flex;
+  align-items: center;
+  /* gap is the breathing room on EACH side of the separator. 0.7ch lands
+     visually as roughly one character of space, matching the "space on
+     the left and right of the |" effect without using a literal pipe. */
+  gap: 0.7ch;
+}
+
+/* Shared link style. No hover underline anywhere - text colour shifts
+   slightly on hover for affordance, nothing more. !important on the
+   text-decoration defends against the Unraid theme's anchor underline. */
+.lv-footer-link,
+.lv-footer-link:link,
+.lv-footer-link:visited {
   color: var(--lv-blue);
-  text-decoration: none;
+  text-decoration: none !important;
   font-weight: 500;
   cursor: pointer;
   transition: color .2s;
+  border: 0;
+  background: transparent;
 }
-.lv-support-link:hover { color: #6bb3ff; }
+.lv-footer-link:hover,
+.lv-footer-link:focus {
+  color: #6bb3ff;
+  text-decoration: none !important;
+  outline: none;
+}
+
+/* Thin CSS divider between links. 1px wide, 10px tall, vertically centred
+   by virtue of the inline-flex parent. Subtle muted colour so it doesn't
+   fight with the link text. The markup is an empty <span aria-hidden>;
+   no literal pipe character is rendered. */
+.lv-footer-sep {
+  display: inline-block;
+  width: 1px;
+  height: 10px;
+  background: var(--lv-c-text-muted);
+  opacity: 0.45;
+  user-select: none;
+}
+
 .lv-version-badge {
   display: inline-block;
   font-size: 10px;
@@ -780,97 +817,210 @@
   justify-content: center;
 }
 
+/* -- CREDITS MODAL (v2: identity card) ------------------------------------- */
+
 .lv-credits-modal-box {
-  width: 440px;
+  width: 460px;
   max-width: 94vw;
-  height: 370px;
-  max-height: 85vh;
   background: var(--lv-panel-bg);
   color: var(--lv-c-text);
   border: 1px solid var(--lv-c-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 40px rgba(0,0,0,.75);
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.65);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.lv-credits-body {
-  padding: 2.2rem 2.5rem 1.5rem;
+
+.lv-credits-grid {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 0;
+}
+
+/* Left column: avatar + identity */
+.lv-credits-left {
+  position: relative;
+  padding: 26px 16px 22px;
   text-align: center;
-  flex: 1;
+  background: linear-gradient(180deg, #242424 0%, #1a1a1a 100%);
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+.lv-credits-accent-stripe {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--lv-accent) 0%, rgba(244,125,66,0) 100%);
+}
+.lv-credits-avatar-wrap {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 2px solid rgba(244,125,66,0.40);
+  background: #2c2c2c;
+  overflow: hidden;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
 }
-.lv-credits-logo { margin-bottom: 1.1rem; }
-.lv-credits-logo img { width: 46px; height: 46px; }
-.lv-credits-title {
-  font-size: 1.25em;
-  margin-bottom: 1.4rem;
-  font-weight: 700;
-  color: var(--lv-c-text);
-}
-.lv-credits-table {
-  width: auto;
-  margin: 0 auto 1.4rem;
-  border-collapse: collapse;
-  font-size: 0.95em;
-  color: var(--lv-c-text);
-}
-.lv-credits-table td { padding: 0.4rem 0.8rem; vertical-align: middle; }
 .lv-credits-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   display: block;
 }
-.lv-credits-copy {
-  font-size: .8em;
-  opacity: .45;
-  margin-bottom: 1rem;
+.lv-credits-name {
+  font-size: 13px !important;
+  font-weight: 600;
+  margin-top: 12px;
   color: var(--lv-c-text);
-  font-style: italic;
+  line-height: 1.2;
 }
-.lv-credits-support-link {
-  color: var(--lv-blue);
-  text-decoration: none;
-  font-size: 0.9em;
+.lv-credits-role {
+  font-size: 9px !important;
+  color: var(--lv-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 4px;
+  font-weight: 500;
+  line-height: 1.2;
+  opacity: 0.85;
 }
-.lv-credits-support-link:hover { color: #6bb3ff; }
 
+/* Right column: info + links */
+.lv-credits-right {
+  padding: 20px 22px;
+}
+.lv-credits-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.lv-credits-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--lv-c-text);
+}
+.lv-credits-version {
+  background: var(--lv-accent-dim);
+  color: var(--lv-accent);
+  font-size: 9px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--lv-accent-border);
+}
+.lv-credits-version:empty { display: none; }
+.lv-credits-desc {
+  font-size: 11px;
+  color: var(--lv-c-text-mid);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.lv-credits-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lv-credits-link,
+.lv-credits-link:link,
+.lv-credits-link:visited {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--lv-row-odd);
+  border: 1px solid var(--lv-c-border);
+  border-radius: 5px;
+  color: var(--lv-c-text);
+  font-size: 11px;
+  text-decoration: none !important;
+  transition: background-color .15s, border-color .15s;
+}
+.lv-credits-link:hover,
+.lv-credits-link:focus {
+  background: var(--lv-accent-dim) !important;
+  border-color: var(--lv-accent-border) !important;
+  color: var(--lv-c-text) !important;
+  text-decoration: none !important;
+  outline: none;
+}
+.lv-credits-link:active {
+  background: var(--lv-accent-dim) !important;
+  transform: scale(.99);
+}
+.lv-credits-link .fa { font-size: 13px; color: var(--lv-c-text-mid); }
+.lv-credits-link:hover .fa { color: var(--lv-accent); }
+.lv-credits-link-ext {
+  font-size: 9px !important;
+  margin-left: auto;
+  opacity: 0.5;
+}
+
+/* Footer */
 .lv-credits-footer {
-  padding: .85rem;
-  text-align: center;
-  border-top: 1px solid var(--lv-c-border);
+  padding: 12px 22px;
   background: var(--lv-footer-bg);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-shrink: 0;
+  gap: 12px;
+}
+.lv-credits-copy {
+  font-size: 10px;
+  color: var(--lv-c-text-muted);
+  opacity: 0.7;
+  font-style: italic;
 }
 .lv-credits-ok-btn {
   background: var(--lv-accent) !important;
   border: 1px solid var(--lv-accent) !important;
   color: #fff !important;
-  padding: 0.5rem 2.5rem !important;
-  font-size: 0.9em !important;
-  font-weight: 500 !important;
-  border-radius: 4px !important;
+  padding: 6px 22px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  border-radius: 5px !important;
   cursor: pointer !important;
-  letter-spacing: 0.05em !important;
-  transition: background-color .2s !important;
+  transition: background-color .15s !important;
 }
 .lv-credits-ok-btn:hover {
   background: #d56a35 !important;
   border-color: #d56a35 !important;
 }
 
+/* Light theme adjustments */
 .lv-light .lv-credits-modal-box {
   background: #fff;
   color: rgba(0,0,0,.85);
   box-shadow: 0 8px 40px rgba(0,0,0,.25);
 }
+.lv-light .lv-credits-left {
+  background: linear-gradient(180deg, #f4f5f7 0%, #ebecef 100%);
+  border-right-color: rgba(0,0,0,0.08);
+}
+.lv-light .lv-credits-link {
+  background: #f8f9fb;
+  border-color: rgba(0,0,0,0.08);
+  color: rgba(0,0,0,.78);
+}
 .lv-light .lv-credits-footer {
   background: #f4f5f7;
   border-top-color: rgba(0,0,0,.10);
+}
+
+/* Mobile */
+@media (max-width: 520px) {
+  .lv-credits-grid { grid-template-columns: 1fr; }
+  .lv-credits-left {
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .lv-credits-accent-stripe { width: 100%; height: 3px; bottom: auto; }
 }
 
 /* -- RESET CONFIRMATION MODAL ---------------------------------------------- */
@@ -986,8 +1136,8 @@
   .lv-sec-hd { flex-wrap: wrap !important; gap: .4rem .5rem !important; padding: 8px 12px !important; padding-right: 28px !important; }
   .lv-footer { flex-wrap: wrap !important; gap: .5rem !important; padding: .75rem .5rem !important; }
   .lv-footer input[type="submit"],
-  .lv-footer input[type="button"] { min-width: 0 !important; flex: 1 1 auto !important; font-size: .85em !important; }
-  .lv-credits-top { margin-bottom: .25rem !important; }
+  .lv-footer input[type="button"],
+  .lv-footer button[type="submit"] { min-width: 0 !important; flex: 1 1 auto !important; font-size: .85em !important; }
   .lv-color-row { flex-direction: column !important; align-items: flex-start !important; gap: .4rem !important; }
   .lv-color-row input[type="text"] { width: 100% !important; }
   .lv-source-row { flex-direction: column !important; align-items: stretch !important; }
@@ -1014,7 +1164,8 @@
   .lv-select { font-size: 12px !important; min-width: 0 !important; max-width: 100% !important; }
   .lv-footer { padding: 0.5rem 0.3rem !important; }
   .lv-footer input[type="submit"],
-  .lv-footer input[type="button"] { font-size: 0.8em !important; padding: 2px 6px !important; min-width: 70px !important; }
+  .lv-footer input[type="button"],
+  .lv-footer button[type="submit"] { font-size: 0.8em !important; padding: 2px 6px !important; min-width: 70px !important; }
   .lv-source-row { padding: 0 !important; }
   .lv-source-label { padding: 4px 8px !important; }
   .lv-source-field { padding: 3px 8px !important; }
@@ -1055,12 +1206,23 @@
   border-bottom: 1px solid var(--lv-c-border);
 }
 .lv-alert-rule-name {
-  flex: 1; min-width: 0;
-  background: var(--lv-ctrl-bg); border: 1px solid var(--lv-ctrl-border);
-  border-radius: 4px; padding: 4px 8px;
-  color: var(--lv-c-text); font-size: 12.5px; font-weight: 600;
+  flex: 1 !important; min-width: 0 !important;
+  background: var(--lv-ctrl-bg) !important;
+  border: 1px solid var(--lv-ctrl-border) !important;
+  border-radius: 4px !important;
+  padding: 6px 10px !important;
+  color: var(--lv-c-text) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
-.lv-alert-rule-name:focus { border-color: var(--lv-accent); outline: none; }
+.lv-alert-rule-name:focus { border-color: var(--lv-accent) !important; outline: none !important; }
 .lv-alert-rule-remove { flex-shrink: 0; }
 
 .lv-alert-rule-bd { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -1073,12 +1235,43 @@
   min-width: 55px; flex-shrink: 0;
 }
 .lv-alert-rule-pattern {
-  flex: 1; min-width: 120px;
-  background: var(--lv-ctrl-bg); border: 1px solid var(--lv-ctrl-border);
-  border-radius: 4px; padding: 4px 8px;
-  color: var(--lv-c-text); font-size: 12px; font-family: monospace;
+  flex: 1 !important; min-width: 120px !important;
+  background: var(--lv-ctrl-bg) !important;
+  border: 1px solid var(--lv-ctrl-border) !important;
+  border-radius: 4px !important;
+  padding: 6px 10px !important;
+  color: var(--lv-c-text) !important;
+  font-size: 12px !important;
+  font-family: 'JetBrains Mono', Consolas, monospace !important;
+  box-sizing: border-box !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
-.lv-alert-rule-pattern:focus { border-color: var(--lv-accent); outline: none; }
+.lv-alert-rule-pattern:focus { border-color: var(--lv-accent) !important; outline: none !important; }
+
+/* Generic boxed text input, same chrome as the alert rule Pattern field.
+   Used for path/text settings (e.g. Backup Logs storage location) so they
+   read as proper boxes instead of the underline-only native input. The
+   !important set defeats Unraid dynamix.css input styling on specificity. */
+.lv-text-box {
+  background: var(--lv-ctrl-bg) !important;
+  border: 1px solid var(--lv-ctrl-border) !important;
+  border-radius: 4px !important;
+  padding: 6px 10px !important;
+  color: var(--lv-c-text) !important;
+  font-size: 12px !important;
+  font-family: 'JetBrains Mono', Consolas, monospace !important;
+  box-sizing: border-box !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.lv-text-box:focus { border-color: var(--lv-accent) !important; outline: none !important; }
 
 .lv-alert-rule-regex {
   font-size: 11px; color: var(--lv-c-text-muted);
@@ -1105,7 +1298,7 @@
 .lv-alert-history-list { display: flex; flex-direction: column; gap: 0; }
 
 .lv-alert-history-row {
-  display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 8px 12px;
   border-bottom: 1px solid var(--lv-c-border-row);
   font-size: 12px;
@@ -1127,8 +1320,15 @@
 .lv-alert-sev--warning { background: rgba(239,159,39,0.12); color: #EF9F27; }
 .lv-alert-sev--critical { background: rgba(220,50,50,0.12); color: #D43A3A; }
 
-.lv-alert-history-name { font-weight: 600; color: var(--lv-c-text); flex-shrink: 0; }
-.lv-alert-history-src { color: var(--lv-c-text-muted); flex-shrink: 0; }
+.lv-alert-history-name {
+  font-weight: 600; color: var(--lv-c-text); flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.lv-alert-history-src {
+  color: var(--lv-c-text-muted); flex-shrink: 0;
+  padding-left: 8px;
+  border-left: 1px solid var(--lv-c-border-row);
+}
 .lv-alert-history-line {
   width: 100%; font-family: monospace; font-size: 11px;
   color: var(--lv-c-text-mid); word-break: break-all;
@@ -1226,4 +1426,575 @@
   .lv-cal-day { font-size: 9px; padding: 3px 0; }
   .lv-cal-hd { font-size: 8px; }
   .lv-cal-month { font-size: 11px; min-width: 100px; }
+}
+
+/* ==========================================================================
+   v2026.05.11a — Custom log paths, Tags field, MITRE badges, mute menu,
+   scan-now button, inline toast.
+   ========================================================================== */
+
+/* -- CUSTOM LOG PATHS -- */
+.lv-custom-paths-list { display: flex; flex-direction: column; gap: 6px; }
+.lv-custom-paths-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 36px;
+  gap: 10px;
+  align-items: center;
+  background: var(--lv-row-odd);
+  border: 1px solid var(--lv-c-border-row);
+  border-radius: 4px;
+  padding: 8px 10px;
+  position: relative;
+}
+.lv-custom-paths-row.is-invalid {
+  background: rgba(255,80,80,0.05);
+  border-color: rgba(255,80,80,0.30);
+}
+.lv-custom-paths-row input[type="text"] {
+  background: var(--lv-ctrl-bg);
+  border: 1px solid var(--lv-c-border);
+  color: var(--lv-c-text);
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.lv-custom-paths-row .lv-custom-paths-path {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+.lv-custom-paths-row.is-invalid input[type="text"] {
+  border-color: rgba(255,80,80,0.45);
+}
+.lv-custom-paths-remove {
+  background: transparent !important;
+  border: 1px solid var(--lv-c-border) !important;
+  color: var(--lv-c-text-mid) !important;
+  width: 28px; height: 28px;
+  padding: 0 !important;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.lv-custom-paths-remove:hover {
+  background: var(--lv-c-bg-hover) !important;
+  color: var(--lv-c-text) !important;
+}
+.lv-custom-paths-err {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: #ff5050;
+  margin-top: 2px;
+}
+
+/* -- TAGS FIELD IN RULE EDITOR -- */
+.lv-alert-rule-row--tags { display: block !important; }
+.lv-alert-rule-row--tags .lv-alert-rule-lbl {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-bottom: 6px;
+}
+
+/* MITRE technique picker. Sits between the Tags label and the free-text
+   input. Same visual language as .lv-select but full-width so the user
+   reads it as a stacked control above the tags input. Selecting a
+   technique pushes its ID into the tags input below, then the picker
+   resets to its placeholder. Custom tags are still added by typing
+   directly into the input below. */
+.lv-alert-rule-row--tags .lv-alert-rule-mitre-picker {
+  display: block !important;
+  width: 100% !important;
+  background: var(--lv-ctrl-bg) !important;
+  border: 1px solid var(--lv-c-border) !important;
+  border-radius: 4px !important;
+  color: var(--lv-c-text) !important;
+  padding: 6px 28px 6px 10px !important;
+  font-size: 12px !important;
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+  margin: 0 0 6px 0 !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='rgba(255,255,255,0.35)'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.lv-alert-rule-row--tags .lv-alert-rule-mitre-picker:hover {
+  border-color: var(--lv-ctrl-hover) !important;
+}
+.lv-alert-rule-row--tags .lv-alert-rule-mitre-picker:focus {
+  border-color: var(--lv-accent) !important;
+  outline: none !important;
+}
+.lv-alert-rule-row--tags .lv-alert-rule-mitre-picker option {
+  background: #2a2a2a;
+  color: rgba(255,255,255,.85);
+}
+.lv-alert-rule-row--tags .lv-alert-rule-mitre-picker optgroup {
+  background: #1f1f1f;
+  color: var(--lv-accent);
+  font-weight: 600;
+  font-style: normal;
+}
+.lv-light .lv-alert-rule-row--tags .lv-alert-rule-mitre-picker {
+  background-color: #fff !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='rgba(0,0,0,0.35)'/%3E%3C/svg%3E") !important;
+}
+.lv-light .lv-alert-rule-row--tags .lv-alert-rule-mitre-picker option {
+  background: #fff;
+  color: rgba(0,0,0,.85);
+}
+.lv-light .lv-alert-rule-row--tags .lv-alert-rule-mitre-picker optgroup {
+  background: #f4f4f4;
+  color: var(--lv-accent);
+}
+
+.lv-alert-rule-row--tags .lv-alert-rule-tags {
+  display: block !important;
+  width: 100% !important;
+  background: var(--lv-ctrl-bg) !important;
+  border: 1px solid var(--lv-c-border) !important;
+  color: var(--lv-c-text) !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  border-radius: 4px !important;
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+  margin-top: 0 !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.lv-alert-rule-row--tags .lv-alert-rule-tags:focus {
+  border-color: var(--lv-accent) !important;
+  outline: none !important;
+}
+.lv-alert-rule-row--tags .lv-alert-rule-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--lv-c-text-mid);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+/* NEW badge (auto-fade after 3 opens via localStorage) */
+.lv-tags-new-badge {
+  display: inline-block;
+  background: var(--lv-accent);
+  color: #1a1a1a;
+  font-size: 9px;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 2px;
+  margin-left: 6px;
+  letter-spacing: 0.3px;
+  vertical-align: middle;
+}
+
+/* -- ALERT TAGS / MITRE BADGES (history rows) -- */
+.lv-alert-tags { display: inline-flex; gap: 4px; margin-left: 6px; flex-wrap: wrap; vertical-align: middle; }
+.lv-tag {
+  display: inline-block;
+  background: var(--lv-c-bg-hover);
+  color: var(--lv-c-text-mid);
+  border: 1px solid var(--lv-c-border);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+.lv-tag--mitre {
+  background: var(--lv-accent-dim);
+  color: var(--lv-accent);
+  border-color: var(--lv-accent-border);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+/* When MITRE badge is rendered as a link to attack.mitre.org */
+a.lv-tag--mitre {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-decoration: none !important;
+  cursor: pointer;
+  padding: 1px 7px 1px 6px;
+  transition: background-color .15s, border-color .15s, color .15s, transform .1s;
+}
+a.lv-tag--mitre:hover,
+a.lv-tag--mitre:focus {
+  background: rgba(244,125,66,.28);
+  border-color: var(--lv-accent);
+  color: var(--lv-accent);
+  text-decoration: none !important;
+  outline: none;
+}
+a.lv-tag--mitre:active { transform: scale(0.97); }
+a.lv-tag--mitre:visited { color: var(--lv-accent); }
+.lv-tag-ext {
+  font-size: 10px !important;
+  opacity: 0.9;
+  line-height: 1;
+}
+a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
+
+/* -- ALERT HISTORY MUTE BUTTON & MENU -- */
+.lv-alert-history-actions-cell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 28px;
+  margin-left: auto;
+}
+.lv-alert-row-menu-btn {
+  background: transparent;
+  border: 1px solid var(--lv-c-border-strong);
+  outline: none;
+  color: var(--lv-c-text);
+  cursor: pointer;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.lv-alert-row-menu-btn .lv-amb-icon   { font-size: 12px; color: var(--lv-c-text-mid); }
+.lv-alert-row-menu-btn .lv-amb-caret  { font-size: 11px; opacity: 0.7; margin-left: 2px; }
+.lv-alert-row-menu-btn .lv-amb-label  { font-weight: 500; }
+.lv-alert-row-menu-btn:hover,
+.lv-alert-row-menu-btn:focus {
+  background: var(--lv-c-bg-hover);
+  border-color: var(--lv-c-text-mid);
+  color: var(--lv-c-text);
+  outline: none;
+  box-shadow: none;
+}
+.lv-alert-row-menu-btn:hover .lv-amb-icon,
+.lv-alert-row-menu-btn:focus .lv-amb-icon { color: var(--lv-c-text); }
+.lv-alert-row-menu-btn:focus-visible {
+  outline: 2px solid var(--lv-c-text-mid);
+  outline-offset: 1px;
+}
+.lv-alert-row-menu-btn[aria-expanded="true"] {
+  background: var(--lv-c-bg-hover);
+  border-color: var(--lv-c-text-mid);
+}
+.lv-alert-row-menu-btn[aria-expanded="true"] .lv-amb-caret { transform: rotate(180deg); }
+/* Muted-rule variant: subtle accent so users see "this rule is currently muted" */
+.lv-alert-row-menu-btn--muted {
+  border-color: var(--lv-accent);
+  color: var(--lv-accent);
+}
+.lv-alert-row-menu-btn--muted .lv-amb-icon  { color: var(--lv-accent); }
+.lv-alert-row-menu-btn--muted .lv-amb-caret { color: var(--lv-accent); }
+.lv-alert-row-menu-btn--muted:hover,
+.lv-alert-row-menu-btn--muted:focus {
+  background: var(--lv-accent-dim);
+  border-color: var(--lv-accent);
+  color: var(--lv-accent);
+}
+.lv-alert-row-menu {
+  display: none;
+  position: fixed;            /* escapes ancestor overflow:hidden */
+  top: 0; left: 0;            /* coords are set inline by JS on open */
+  background: var(--lv-sec-hd-bg);
+  border: 1px solid var(--lv-c-border-strong);
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 200px;
+  z-index: 10000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  overflow-y: auto;           /* in case JS sets max-height for tight viewports */
+}
+.lv-alert-row-menu.is-open { display: block; }
+/* Flip-up variant: only the shadow direction needs to change; coordinates are
+   already computed by JS so we don't override top/bottom here. */
+.lv-alert-row-menu.lv-alert-row-menu--up {
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.4);
+}
+.lv-alert-menu-header {
+  padding: 6px 10px;
+  font-size: 10px;
+  color: var(--lv-c-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--lv-c-border-row);
+  margin-bottom: 2px;
+}
+.lv-alert-menu-item {
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--lv-c-text);
+  cursor: pointer;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lv-alert-menu-item:hover { background: var(--lv-accent-dim); color: var(--lv-accent); }
+.lv-alert-menu-item:hover .fa { color: var(--lv-accent); }
+.lv-alert-menu-item .fa { font-size: 13px; color: var(--lv-c-text-mid); }
+.lv-alert-menu-sep {
+  height: 1px;
+  background: var(--lv-c-border-row);
+  margin: 2px 0;
+}
+.lv-alert-menu-item--danger:hover { background: rgba(255,80,80,0.10); color: #ff5050; }
+.lv-alert-menu-item--danger:hover .fa { color: #ff5050; }
+.lv-alert-menu-unmute {
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--lv-c-text);
+  cursor: pointer;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lv-alert-menu-unmute:hover { background: var(--lv-accent-dim); color: var(--lv-accent); }
+.lv-alert-menu-unmute .fa { font-size: 13px; }
+
+/* Muted-state indicator */
+.lv-alert-muted-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,0.04);
+  color: var(--lv-c-text-muted);
+  border: 1px solid var(--lv-c-border);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  line-height: 1.5;
+}
+.lv-alert-history-row.is-muted { opacity: 0.65; }
+
+/* -- SCAN NOW BUTTON (accent variant) -- */
+.lv-action-btn--accent {
+  border-color: var(--lv-accent-border) !important;
+  color: var(--lv-accent) !important;
+}
+.lv-action-btn--accent:hover:not(.disabled) {
+  background: var(--lv-accent-dim) !important;
+}
+.lv-action-btn--accent.disabled,
+.lv-action-btn--accent[disabled] { opacity: 0.7; cursor: wait; }
+
+/* -- INLINE TOAST (feedback for scan-now) -- */
+.lv-toast-inline {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  margin-left: 12px;
+  padding: 4px 10px;
+  background: rgba(46, 204, 113, 0.10);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.30);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  width: auto;
+  height: auto;
+  animation: lvToastFadeIn 0.2s ease-out;
+}
+.lv-toast-inline--error {
+  background: rgba(255, 80, 80, 0.08);
+  color: #ff5050;
+  border-color: rgba(255, 80, 80, 0.30);
+}
+@keyframes lvToastFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* -- ALERT SRC CUSTOM marker -- */
+.lv-alert-src-chk.lv-alert-src-custom {
+  border-left: 2px solid var(--lv-accent-border);
+  padding-left: 8px;
+}
+
+/* -- MOBILE -- */
+@media (max-width: 768px) {
+  .lv-custom-paths-row {
+    grid-template-columns: 1fr 1fr 36px;
+    gap: 6px;
+  }
+}
+@media (max-width: 480px) {
+  .lv-custom-paths-row {
+    grid-template-columns: 1fr 36px;
+  }
+  .lv-custom-paths-row .lv-custom-paths-path { grid-column: 1 / -1; }
+  .lv-alert-row-menu { min-width: 180px; }
+  .lv-alert-row-menu-btn { padding: 0 8px; font-size: 11px; }
+  .lv-toast-inline { display: block; margin: 8px 0 0; }
+}
+
+/* ==========================================================================
+   v2026.05.11a — Light theme overrides for new components
+   (White & Azure Unraid themes)
+   ========================================================================== */
+
+/* Muted pill: white-on-white invisible in light mode */
+.lv-light .lv-alert-muted-pill {
+  background: rgba(0,0,0,0.03);
+  color: var(--lv-c-text-muted);
+  border-color: var(--lv-c-border);
+}
+
+/* Toast: tone down saturated green/red for light backgrounds */
+.lv-light .lv-toast-inline {
+  background: rgba(46, 125, 50, 0.10);
+  color: #1e7e34;
+  border-color: rgba(46, 125, 50, 0.30);
+}
+.lv-light .lv-toast-inline--error {
+  background: rgba(220, 53, 69, 0.08);
+  color: #b02a37;
+  border-color: rgba(220, 53, 69, 0.30);
+}
+
+/* Custom paths invalid-state */
+.lv-light .lv-custom-paths-row.is-invalid {
+  background: rgba(220, 53, 69, 0.05);
+  border-color: rgba(220, 53, 69, 0.30);
+}
+.lv-light .lv-custom-paths-row.is-invalid input[type="text"] {
+  border-color: rgba(220, 53, 69, 0.45);
+}
+.lv-light .lv-custom-paths-err { color: #b02a37; }
+
+/* Danger menu item */
+.lv-light .lv-alert-menu-item--danger:hover {
+  background: rgba(220, 53, 69, 0.08);
+  color: #b02a37;
+}
+.lv-light .lv-alert-menu-item--danger:hover .fa { color: #b02a37; }
+
+/* Dropdown menu shadow softer on light */
+.lv-light .lv-alert-row-menu {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+/* MITRE tag: keep accent color but verify contrast with light bg */
+.lv-light .lv-tag--mitre {
+  background: rgba(244,125,66,.10);
+  color: #c1601f;
+  border-color: rgba(244,125,66,.40);
+}
+
+/* NEW badge: same accent, dark text already legible on orange */
+
+/* Tags field hint already uses --lv-c-text-mid → auto-switches */
+
+/* ==========================================================================
+   v2026.05.11a — Sub-card "Shared" pill + link icon + callout box
+   (Used by the Custom log paths sub-card in Tool & Dashboard tabs)
+   ========================================================================== */
+
+/* Sub-card header that hosts a pill: keep title left, pill right (before the arrow) */
+.lv-sub-card-hd--has-pill {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.lv-sub-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 1 auto;
+}
+
+/* "Shared" pill variant: same shape as .lv-pill but with accent treatment */
+.lv-pill--shared {
+  margin-left: auto;
+  margin-right: 8px;
+  background: var(--lv-accent-dim);
+  color: var(--lv-accent);
+  border: 1px solid var(--lv-accent-border);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  line-height: 1.4;
+}
+.lv-pill--shared .fa { font-size: 9px; }
+
+/* Shared callout box (info banner) — accent left border, subtle bg */
+.lv-shared-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--lv-accent-dim);
+  border-left: 3px solid var(--lv-accent);
+  border-radius: 0 4px 4px 0;
+  padding: 10px 12px;
+  margin: 12px 12px 12px 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--lv-c-text);
+}
+.lv-shared-callout-icon {
+  color: var(--lv-accent);
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.lv-shared-callout-body { flex: 1; }
+.lv-shared-callout-body strong {
+  color: var(--lv-accent);
+  font-weight: 600;
+}
+
+/* Body padding for the custom-paths sub-card specifically (other sub-cards
+   like System/Docker/VM Logs have their own bar-style notes/actions and
+   must not be affected). Scoped via parent class. */
+.lv-sub-card--custom-paths .lv-sub-card-bd > .lv-sources-note {
+  margin: 0 12px 10px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.lv-sub-card--custom-paths .lv-sub-card-bd > .lv-custom-paths-list {
+  margin: 0 12px;
+}
+.lv-sub-card--custom-paths .lv-sub-card-bd > .lv-source-actions {
+  margin: 8px 12px 12px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+/* Light theme adjustment */
+.lv-light .lv-shared-callout {
+  background: rgba(244,125,66,.08);
+  color: var(--lv-c-text);
+}
+
+/* Mobile: tighter callout */
+@media (max-width: 480px) {
+  .lv-shared-callout {
+    margin: 8px 8px 10px 8px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  .lv-pill--shared { font-size: 9px; padding: 1px 5px; }
 }

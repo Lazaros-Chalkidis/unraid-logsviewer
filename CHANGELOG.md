@@ -1,6 +1,44 @@
 
 # Logs Viewer
 
+## 2026.06.06
+
+This release is a big one. The Tool page has been completely rebuilt into a full log viewer, and there are new tools on the Alerts side plus a lot of polish across the plugin.
+
+### Fixed
+
+- Apostrophes and other characters in log lines no longer show as raw codes like &amp;#039;.
+- The Tool page no longer shows an "HTTP 403" error after being left idle.
+- Merge mode now orders lines from different sources correctly by time.
+- On a fresh install, Dmesg no longer appears with a "log not found" error; empty (0 B) logs are now hidden from the very first load.
+- Docker container log sizes are detected reliably, so the source pickers no longer grey out valid containers.
+- The alert mute menu no longer gets cut off at the bottom of the list.
+- The whole Tool page now fits on screen without page scrolling.
+
+### New Features
+
+- Rebuilt Tool page: a full-screen log viewer with a sidebar listing all your sources (System logs, Docker containers, VMs, and custom logs), grouped together with a status dot and the file size next to each one.
+- Live tailing: the open log updates on its own. Pick the refresh rate (3, 5, 10 or 20 seconds) in settings. Hovering over the log pauses updates so lines do not scroll away while you are reading.
+- Severity filtering: click the Info / Warnings / Errors / Critical pills to show only that level, and use the Filter dropdown for "and above" levels.
+- Merge mode: pick two or more sources to see them combined in one stream, ordered by time.
+- Search box in the footer to filter the current log as you type.
+- Right-click a line to copy it or to filter the log on the selected text.
+- Download button to save the current log as plain text, JSON or CSV (format is chosen in settings).
+- Custom log paths: add any log file under /var/log, /mnt/user or /mnt/cache, and it becomes available everywhere (Tool page, widget, Alerts and Backup).
+- Alerts: a Scan Now button for on-demand scans, the option to mute a rule for 1 hour / 24 hours / 7 days / forever, and tags on rules with a built-in MITRE ATT&CK technique picker.
+- Log font size setting (Default or Large) for the Tool page.
+
+### Improvements
+
+- Settings and Tool pages now use the full width of large 2K and 4K monitors instead of leaving big empty margins.
+- Tidier Settings footer with Support Forum, GitHub Issues and Credits links in one row.
+- Stopped Docker containers and VMs now show a red dot, matching the dashboard widget.
+- Sidebar dots now always reflect the source state and no longer change colour when you click a source.
+- Alternating row shading in the log makes long lines easier to follow.
+- Consistent "Docker Containers" wording across the whole plugin.
+- Alert tracking now survives reboots and log rotation, so you do not get duplicate or missed alerts.
+- One consistent button style across the Tool page.
+
 ## 2026.04.16
 
 ### Fixed
