@@ -1,44 +1,15 @@
-/* ══════════════════════════════════════════════════════════════════════════════
-   Logs Viewer Widget JS
-   Drives polling and UI updates in the dashboard widget and Tool page.
+/* ============================================================================
+   LOGS VIEWER
    Copyright (C) 2026 Lazaros Chalkidis
    License: GPLv3
-   Configuration is injected via window.logsviewerConfig from Logsviewer.page.
-
-   TABLE OF CONTENTS
-    1. STATE & CONFIG ........... Global variables, DOM refs, config object
-    2. THEME .................... Light/dark detection
-    3. DATA CORE ................ Source lookup, data merge
-    4. LOG DISPLAY .............. Show log entry in panel
-    5. TOAST SYSTEM ............. Login, selected, perf, search toasts + layout
-    6. NAVIGATION ............... Category switching, tab activation, fetch
-    7. API & UTILITIES .......... URL building, nonce refresh, compact indicators
-    8. FILTER & BADGES .......... Filter dropdown, badge counts, proportion strip
-    9. TEXT UTILITIES ........... Tail, escape, line count
-   10. SEARCH ................... Search UI, hit collection, highlighting
-   11. LOG LEVEL HIGHLIGHTING ... Level highlights, line counting
-   12. SYNTAX ENGINE ............ Highlight.js + Prism loading and application
-   13. SECURITY ................. Hash, HTML sanitizer
-   14. MAIN RENDER PIPELINE ..... renderLog (core render pipeline)
-   15. UI CONTROLS .............. Autoscroll, export, filename
-   16. THEMING .................. Presets, font family application
-   17. INITIALIZATION ........... applyConfig, manual refresh
-   18. EVENT HANDLERS ........... jQuery ready, click/change/keyboard bindings
-   ══════════════════════════════════════════════════════════════════════════════ */
-/* global $ */
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   1. STATE & CONFIG
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ========================================================================= */
 
 let logsviewer_cfg = {};
 let logsviewer_searchState = { term: '', hits: [], idx: -1 };
 let logsviewer_pauseHoverActive = false;
-let logsviewer_lastRenderKey = '';          // diff-check: skip re-render when content unchanged
-let logsviewer_systemFetchCounter = 0;     // throttle background system fetch (#2)
+let logsviewer_lastRenderKey = '';
+let logsviewer_systemFetchCounter = 0;
 
-// Cached DOM references — populated on first use, cleared on re-init
 const logsviewer_dom = {
     get logs()       { return this._logs       || (this._logs       = document.getElementById('logsviewer-logs')); },
     get container()  { return this._container  || (this._container  = document.getElementById('logsviewer-container')); },
@@ -50,16 +21,14 @@ const logsviewer_dom = {
     clear() { this._logs = this._container = this._autoscroll = this._timestamp = this._toastLine = this._toastRight = this._totalLines = null; }
 };
 
-// v4: Category state
-let logsviewer_activeCategory = 'system';  // 'system' | 'docker' | 'vm'
-let logsviewer_categoryData = {};          // { system: [...], docker: [...], vm: [...] }
-let logsviewer_contentHashes = {};         // Phase B: { 'system|syslog': 'md5hash', ... }
-let logsviewer_activeLogContent = '';       // Current displayed log raw content
-let logsviewer_activeLogTotalLines = 0;    // Current displayed log total lines
+let logsviewer_activeCategory = 'system';
+let logsviewer_categoryData = {};
+let logsviewer_contentHashes = {};
+let logsviewer_activeLogContent = '';
+let logsviewer_activeLogTotalLines = 0;
 
-let logsviewer_lastShown = { category: null, source: null }; // Track last rendered log
+let logsviewer_lastShown = { category: null, source: null };
 
-// Pre-compiled regex for hot render paths (avoid re-compilation per render)
 const LV_RE_HEADER = /^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:)/gm;
 const LV_RE_LEVELS_COMBINED = /\b(emergency|critical|alert|fatal|panic|error|err|warning|warn|info|notice|trace|debug)\b/gi;
 const LV_RE_LEVELS_KEYWORDS = /\b(emergency|critical|alert|fatal|panic|error|err|warning|warn|info)\b/gi;
@@ -71,6 +40,7 @@ const LV_LEVEL_CLASS = {
     info: 'logsviewer-lvl-info', notice: 'logsviewer-lvl-notice',
     trace: 'logsviewer-lvl-trace', debug: 'logsviewer-lvl-debug',
 };
+// precompiled so the render path doesn't rebuild these on every poll
 const LV_RE_COUNT = {
     critical: /\b(?:emergency|critical|alert|fatal|panic)\b/i,
     error:    /\b(?:error|err)\b/i,
@@ -85,19 +55,13 @@ const LV_RE_FILTER = {
     auth:     /\b(?:auth|authentication|login|logout|oidc|token|jwt|sso)\b/i,
 };
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   2. THEME
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-// Light theme detection -- PHP injects .lv-light; JS luminance backup
 let logsviewer_lightThemeCache = null;
 function logsviewer_isLightTheme() {
     if (logsviewer_lightThemeCache !== null) return logsviewer_lightThemeCache;
-    // Primary: check PHP-injected class
+
     var el = document.querySelector('.logsviewer-body, .logsviewer-tool-wrapper');
     if (el && el.classList.contains('lv-light')) { logsviewer_lightThemeCache = true; return true; }
-    // Backup: check body background luminance
+
     try {
         var bg = getComputedStyle(document.body).backgroundColor;
         var m = bg.match(/(\d+)/g);
@@ -111,7 +75,7 @@ function logsviewer_isLightTheme() {
     return false;
 }
 
-// Run luminance backup on load — inject .lv-light if PHP missed it
+// php injects .lv-light when it can, this is the luminance fallback when it can't
 function logsviewer_detectTheme() {
     if (!logsviewer_isLightTheme()) return;
     document.querySelectorAll('.logsviewer-body, .logsviewer-tool-wrapper').forEach(function(el) {
@@ -119,25 +83,13 @@ function logsviewer_detectTheme() {
     });
 }
 
-// Login event toast de-dupe (avoid repeating on each poll)
 let logsviewer_lastLoginEventId = null;
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   3. DATA CORE
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/**
- * Get the currently selected source name from the active category dropdown.
- */
 function logsviewer_getActiveSource() {
     var btn = $('.logsviewer-cat-btn[data-category="' + logsviewer_activeCategory + '"]');
     return btn.attr('data-selected') || '';
 }
 
-/**
- * Find log data for a given source name within a category's data array.
- */
 function logsviewer_findLogData(category, sourceName) {
     var data = logsviewer_categoryData[category];
     if (!Array.isArray(data)) return null;
@@ -147,11 +99,7 @@ function logsviewer_findLogData(category, sourceName) {
     return null;
 }
 
-/**
- * Merge fetched scripts into category data.
- * Single-source poll: update only the fetched entry, keep others intact.
- * Full-category fetch: replace the entire array.
- */
+// merge a single-source refresh back into the cached full set
 function logsviewer_mergeSourceData(category, scripts, singleSource) {
     if (singleSource && logsviewer_categoryData[category]) {
         var existing = logsviewer_categoryData[category];
@@ -171,15 +119,6 @@ function logsviewer_mergeSourceData(category, scripts, singleSource) {
     }
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   4. LOG DISPLAY
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/**
- * Display a specific log entry in the log panel.
- */
-
 function logsviewer_showLog(entry) {
     var logDisplay = $(logsviewer_dom.logs);
     if (!entry || !logDisplay.length) return;
@@ -191,8 +130,6 @@ function logsviewer_showLog(entry) {
     logsviewer_updateSelectedToast();
     logsviewer_layoutToasts();
 
-    // Detect login attempts in syslog and show a transient toast.
-    // We only scan when the displayed log is syslog to avoid extra work.
     try{
         const name = String(entry.name || entry.display_name || '').toLowerCase();
         const cat  = String(entry.category || logsviewer_activeCategory || '').toLowerCase();
@@ -201,12 +138,10 @@ function logsviewer_showLog(entry) {
         }
     }catch(_){ }
 
-    // Update search if active
     if (logsviewer_cfg.searchEnabled && String(logsviewer_searchState.term || '').trim()) {
         var count = logsviewer_countMatches(logsviewer_activeLogContent, logsviewer_searchState.term);
         logsviewer_updateSearchToast(count);
 
-        // When user stops typing, restore Syntax toast and re-flash (2x) once.
         logsviewer_searchTypingTimer = setTimeout(() => {
             logsviewer_searchTyping = false;
             const perf = document.getElementById('logsviewer-perf-toast');
@@ -217,11 +152,10 @@ function logsviewer_showLog(entry) {
     }
 }
 
-let logsviewer_forceLoginUntil = 0; // temporary override to show login toast even when Syntax toast is active
-let logsviewer_perfToastTimer   = null; // auto-dismiss timer for Large log toast
+let logsviewer_forceLoginUntil = 0;
+let logsviewer_perfToastTimer   = null;
 let logsviewer_perfToastSetThisRender = false;
 
-// Right toast slot: tracking for diff indicators
 let logsviewer_prevTotalLines = null;
 let logsviewer_prevErrorCount = null;
 let logsviewer_prevCriticalCount = null;
@@ -254,48 +188,37 @@ function logsviewer_updateToastRight(entry, badgeCounts) {
     var errCount = Number(badgeCounts && badgeCounts.error || 0);
     var critCount = Number(badgeCounts && badgeCounts.critical || 0);
 
-    // New lines diff (only if we have a previous value and it increased)
     if (logsviewer_prevTotalLines !== null && totalLines > logsviewer_prevTotalLines) {
         var diff = totalLines - logsviewer_prevTotalLines;
         parts.push('<span class="lv-toast-newlines">+' + diff + ' new lines</span>');
     }
 
-    // New errors diff
     if (logsviewer_prevErrorCount !== null && errCount > logsviewer_prevErrorCount) {
         var errDiff = errCount - logsviewer_prevErrorCount;
         if (parts.length) parts.push('<span class="lv-toast-sep"></span>');
         parts.push('<span class="lv-toast-newerrors">+' + errDiff + ' err</span>');
     }
 
-    // New critical diff
     if (logsviewer_prevCriticalCount !== null && critCount > logsviewer_prevCriticalCount) {
         var critDiff = critCount - logsviewer_prevCriticalCount;
         if (parts.length) parts.push('<span class="lv-toast-sep"></span>');
         parts.push('<span class="lv-toast-newcritical">+' + critDiff + ' crit</span>');
     }
 
-    // File size (always visible)
     if (fileSize > 0) {
         if (parts.length) parts.push('<span class="lv-toast-sep"></span>');
         parts.push('<span class="lv-toast-size">' + logsviewer_formatFileSize(fileSize) + '</span>');
     }
 
-    // Update tracking state
     logsviewer_prevTotalLines = totalLines;
     logsviewer_prevErrorCount = errCount;
     logsviewer_prevCriticalCount = critCount;
 
     right.innerHTML = parts.join('');
 
-    // Make the panel visible if it has content
     var panel = document.querySelector('.logsviewer-toast-panel');
     if (panel && parts.length) panel.style.display = '';
 }
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   5. TOAST SYSTEM
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_showLoginToast(message){
 
@@ -313,7 +236,6 @@ function logsviewer_showLoginToast(message){
       line.append(el);
     }
 
-    // Persist the last login message (used as "idle" toast when no Search/Syntax toast exists).
     if(!message){
       el.textContent = '';
       el.style.display = 'none';
@@ -330,16 +252,14 @@ function logsviewer_showLoginToast(message){
 }
 
 function logsviewer_getSelectedLabel() {
-    // Returns e.g. "System → Syslog" based on logsviewer_lastShown
+
     try {
         var cat  = String((logsviewer_lastShown && logsviewer_lastShown.category) || logsviewer_activeCategory || '');
         var src  = String((logsviewer_lastShown && logsviewer_lastShown.source)   || '');
         if (!src) return '';
 
-        // Pretty-print category
         var catLabel = cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
 
-        // Pretty-print source: capitalise each word, replace dashes/underscores with spaces
         var srcLabel = src.replace(/[-_]/g, ' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
 
         return catLabel + ' → ' + srcLabel;
@@ -376,30 +296,29 @@ function logsviewer_restoreLoginToast(){
   }catch(_){ }
 }
 
+// pull the most recent ssh / webgui / pam login line out of the tail
 function logsviewer_extractLoginEvent(text){
     const t = String(text || '');
     if(!t) return null;
 
-    // Scan the tail for the most recent event.
     const lines = t.split(/\r?\n/);
     const start = Math.max(0, lines.length - 250);
 
-    // Common patterns (SSH + Unraid webGUI + PAM)
     const reSuccess = [
-        // Unraid webgui — \b prevents matching "Unsuccessful login"
+
         /\bSuccessful\s+login\s+user\s+(?<user>[^\s,;]+)\s+from\s+(?<ip>[0-9a-fA-F:\.]+)/i,
-        // sshd
+
         /Accepted\s+(?:password|publickey)\s+for\s+(?<user>[^\s]+)\s+from\s+(?<ip>[0-9a-fA-F:\.]+)/i,
-        // webgui-ish
+
         /\bSuccessful\s+login\s+(?:for\s+user\s+)?(?<user>[^\s,;]+).*?(?:from\s+(?<ip>[0-9a-fA-F:\.]+))?/i,
-        // generic
+
         /user\s+(?<user>[^\s,;]+)\s+logged\s+in.*?(?:from\s+(?<ip>[0-9a-fA-F:\.]+))?/i
     ];
     const reFail = [
-        // Unraid webgui — "Unsuccessful login" / "Unsuccessful login attempt"
+
         /Unsuccessful\s+login(?:\s+attempt)?\s+(?:for\s+)?(?:user\s+)?(?<user>[^\s,;]+)\s+from\s+(?<ip>[0-9a-fA-F:\.]+)/i,
         /Unsuccessful\s+login(?:\s+attempt)?.*?user[:\s]+(?<user>[^\s,;]+).*?(?:from\s+(?<ip>[0-9a-fA-F:\.]+))?/i,
-        // Unraid webgui "Failed login"
+
         /Failed\s+login\s+user\s+(?<user>[^\s,;]+)\s+from\s+(?<ip>[0-9a-fA-F:\.]+)/i,
         /Failed\s+password\s+for\s+(?:invalid\s+user\s+)?(?<user>[^\s]+)\s+from\s+(?<ip>[0-9a-fA-F:\.]+)/i,
         /authentication\s+failure.*?user=(?<user>[^\s]+).*?(?:rhost=(?<ip>[0-9a-fA-F:\.]+))?/i,
@@ -410,7 +329,6 @@ function logsviewer_extractLoginEvent(text){
         const line = lines[i];
         if(!line) continue;
 
-        // Check fail BEFORE success — "Unsuccessful" contains "successful" so order matters
         for(const r of reFail){
             const m = line.match(r);
             if(m){
@@ -436,7 +354,6 @@ function logsviewer_checkLoginToast(rawText){
         const ev = logsviewer_extractLoginEvent(rawText);
         if(!ev) return;
 
-        // De-dupe across polls. Persist lightly so page reload won't re-toast.
         if(!logsviewer_lastLoginEventId){
             logsviewer_lastLoginEventId = localStorage.getItem(logsviewer_storageKey('logsviewer_last_login_event')) || null;
         }
@@ -451,22 +368,11 @@ function logsviewer_checkLoginToast(rawText){
             ? `Login successful: ${who} IP: ${ip}`
             : `Login failed: ${who} IP: ${ip}`;
 
-        // If Syntax toast is currently visible (and Search isn't), briefly force showing the login toast.
         logsviewer_forceLoginUntil = Date.now() + 6500;
         logsviewer_showLoginToast(msg);
     }catch(_){ }
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   6. NAVIGATION
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/**
- * Fetch logs for a category and update the display.
- */
-// Mark exactly one dropdown item as active (globally across all tabs)
-// Must be global so logsviewer_fetchCategory can call it after async li rebuild
 function logsviewer_markActiveItem(cat, sourceName) {
     $('.logsviewer-cat-dropdown li').removeClass('lv-item--active');
     if (cat && sourceName) {
@@ -475,6 +381,7 @@ function logsviewer_markActiveItem(cat, sourceName) {
     }
 }
 
+// main poll: fetch a category (or one source), update the view and the badges
 function logsviewer_fetchCategory(category, callback, opts) {
     opts = opts || {};
     var autoShow = (opts.autoShow !== false);
@@ -482,7 +389,6 @@ function logsviewer_fetchCategory(category, callback, opts) {
     var params = { category: category };
     if (singleSource) params.source = singleSource;
 
-    // Phase B: send last known content hash so server can return "unchanged"
     var hashKey = category + '|' + (singleSource || '*');
     if (!opts.skipHash) {
         var knownHash = logsviewer_contentHashes[hashKey] || '';
@@ -493,13 +399,12 @@ function logsviewer_fetchCategory(category, callback, opts) {
 
     $.ajax({ url: url, dataType: 'json', timeout: 15000 })
         .done(function(data, textStatus, jqXHR) {
-            // Phase B: store new hash from response header (body _hash as fallback)
+
             var newHash = jqXHR.getResponseHeader('X-LV-Hash') || (data && data._hash) || '';
             if (newHash) logsviewer_contentHashes[hashKey] = newHash;
 
-            // Phase B: unchanged response, content is identical to last poll
             if (data && data.unchanged === true) {
-                // Still update timestamp so the user sees the widget is alive
+
                 if (autoShow && category === logsviewer_activeCategory) {
                     var timestampDisplay = $(logsviewer_dom.timestamp);
                     if (timestampDisplay.length && logsviewer_cfg.showTimestamp) {
@@ -513,9 +418,6 @@ function logsviewer_fetchCategory(category, callback, opts) {
             var scripts = Array.isArray(data) ? data : [];
             logsviewer_mergeSourceData(category, scripts, singleSource);
 
-            // Update dropdown options if needed (for docker/vm where containers may change)
-            // Skip on single-source polls: dropdown list doesn't change, only log content does
-            // Also skip for 'system' and 'custom' since their dropdowns are statically rendered by PHP
             if (!singleSource && category !== 'system' && category !== 'custom') {
                 var $drop = $('#logsviewer-cat-' + category);
                 var $tabBtn = $('.logsviewer-cat-btn[data-category="' + category + '"]');
@@ -524,7 +426,7 @@ function logsviewer_fetchCategory(category, callback, opts) {
                 scripts.forEach(function(s) {
                     var name = s.display_name || s.name;
                     var $li = $('<li>').attr('data-value', s.name);
-                    // Add status dot for Docker/VM containers
+
                     if (category === 'docker' || category === 'vm') {
                         var dotClass = (s.status === 'running') ? 'lv-drop-dot--running' : 'lv-drop-dot--stopped';
                         $li.append($('<span>').addClass('lv-drop-dot ' + dotClass));
@@ -532,23 +434,21 @@ function logsviewer_fetchCategory(category, callback, opts) {
                     $li.append(document.createTextNode(name));
                     $drop.append($li);
                 });
-                // Restore selection if still available, otherwise clear it
+
                 if (prevVal && $drop.find('li[data-value="' + prevVal + '"]').length) {
                     $tabBtn.attr('data-selected', prevVal);
-                    // Re-apply active highlight after li rebuild (Docker/VM async populate)
+
                     logsviewer_markActiveItem(category, prevVal);
                 } else {
                     $tabBtn.attr('data-selected', '');
                 }
             }
 
-            // Show/hide category tab based on data availability
             var tab = $('.logsviewer-cat-btn[data-category="' + category + '"]');
             if (scripts.length > 0) {
                 tab.removeClass('logsviewer-cat-btn--hidden');
             }
 
-            // If this is the active category, display the selected source
             if (autoShow) {
             if (category === logsviewer_activeCategory) {
                 var $tabNow = $('.logsviewer-cat-btn[data-category="' + category + '"]');
@@ -558,23 +458,21 @@ function logsviewer_fetchCategory(category, callback, opts) {
                 if (entry) {
                     logsviewer_showLog(entry);
                     logsviewer_markActiveItem(category, sourceName);
-                    // Mobile: set native select value for visual checkmark
+
                     var $nativeSel = $tabNow.find('.logsviewer-cat-native');
                     try { $nativeSel[0].value = sourceName; } catch(_) {}
                 } else if (scripts.length > 0 && !sourceName) {
-                    // Fallback on initial load only (no user selection yet): show first item
+
                     $tabNow.attr('data-selected', scripts[0].name);
                     logsviewer_showLog(scripts[0]);
                     logsviewer_markActiveItem(category, scripts[0].name);
-                    // Mobile: set native select value
+
                     var $nativeSelFb = $tabNow.find('.logsviewer-cat-native');
                     try { $nativeSelFb[0].value = scripts[0].name; } catch(_) {}
                 }
 
-                // Update compact indicators (use full category data, not just polled source)
                 logsviewer_updateCompactIndicators(logsviewer_categoryData[category] || scripts);
 
-                // Timestamp
                 var timestampDisplay = $(logsviewer_dom.timestamp);
                 if (timestampDisplay.length && logsviewer_cfg.showTimestamp) {
                     timestampDisplay.text(new Date().toLocaleTimeString([], {hour12: false}));
@@ -586,11 +484,11 @@ function logsviewer_fetchCategory(category, callback, opts) {
             if (callback) callback(scripts);
         })
         .fail(function(jqXHR) {
-            // Nonce expired (403) → refresh token and retry once
+
             if (jqXHR && jqXHR.status === 403) {
                 logsviewer_refreshNonce(function(ok) {
                     if (ok) {
-                        // Retry with fresh nonce (no further retry on failure)
+
                         var retryUrl = logsviewer_apiUrl('get_script_states', params);
                         $.ajax({ url: retryUrl, dataType: 'json', timeout: 15000 })
                             .done(function(data, textStatus, jqXHR2) {
@@ -617,12 +515,6 @@ function logsviewer_fetchCategory(category, callback, opts) {
         });
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   7. API & UTILITIES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-// Context-aware localStorage key: prevents Dashboard/Tool bleed
 function logsviewer_storageKey(base) {
     const ctx = (logsviewer_cfg && logsviewer_cfg.apiContext) || 'dashboard';
     return base + '_' + ctx;
@@ -633,7 +525,7 @@ function logsviewer_apiUrl(action, extraParams) {
     if (logsviewer_cfg.apiContext) {
         url += '&context=' + encodeURIComponent(logsviewer_cfg.apiContext);
     }
-    // CSRF token — generated server-side, rotated hourly
+
     if (logsviewer_cfg.lvToken) {
         url += '&_lvt=' + encodeURIComponent(logsviewer_cfg.lvToken);
     }
@@ -645,7 +537,6 @@ function logsviewer_apiUrl(action, extraParams) {
     return url;
 }
 
-// Auto-refresh expired CSRF nonce (token rotates hourly on server)
 let logsviewer_nonceRefreshing = false;
 
 function logsviewer_refreshNonce(callback) {
@@ -703,11 +594,6 @@ function logsviewer_updateCompactIndicators(scripts) {
         );
     }
 }
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   8. FILTER & BADGES
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_getFilterValue() {
     const sel = $('#logsviewer-filter-select');
@@ -792,7 +678,6 @@ function logsviewer_updateBadges(counts) {
         el.title = `Set filter: ${b.filter} (${b.label} = ${v})`;
     });
 
-    // Update proportion strip segments
     logsviewer_updateProportionStrip(counts);
 }
 
@@ -802,7 +687,7 @@ function logsviewer_updateProportionStrip(counts) {
     var e = Math.max(0, Number(counts.error || 0));
     var c = Math.max(0, Number(counts.critical || 0));
     var total = i + w + e + c;
-    if (total <= 0) total = 1; // avoid division by zero
+    if (total <= 0) total = 1;
 
     var si = logsviewer_dom._stripI || (logsviewer_dom._stripI = document.getElementById('logsviewer-strip-info'));
     var sw = logsviewer_dom._stripW || (logsviewer_dom._stripW = document.getElementById('logsviewer-strip-warn'));
@@ -811,7 +696,6 @@ function logsviewer_updateProportionStrip(counts) {
     var so = logsviewer_dom._stripO || (logsviewer_dom._stripO = document.getElementById('logsviewer-strip-ok'));
     if (!si || !sw || !se || !sc) return;
 
-    // Scale: colored segments proportional, remaining space is neutral
     var colorTotal = i + w + e + c;
     var okFlex = Math.max(0, 100 - colorTotal);
     si.style.flex = String(Math.max(i > 0 ? 0.5 : 0, i));
@@ -821,30 +705,20 @@ function logsviewer_updateProportionStrip(counts) {
     if (so) so.style.flex = String(okFlex);
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   9. TEXT UTILITIES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 function logsviewer_tailText(text, n) {
     const N = Number(n) || 0;
     if (!N || N <= 0) return String(text || '');
     var raw = String(text || '');
-    // Fast path: scan backward for Nth newline from end (avoids split on large logs)
+
     var count = 0, pos = raw.length;
     while (pos > 0 && count < N) {
         pos = raw.lastIndexOf('\n', pos - 1);
         if (pos === -1) break;
         count++;
     }
-    if (pos <= 0) return raw; // fewer lines than N
+    if (pos <= 0) return raw;
     return raw.substring(pos + 1);
 }
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   10. SEARCH
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_escapeRegExp(s) {
     return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -864,7 +738,6 @@ function logsviewer_countMatches(raw, term) {
     }
 }
 
-// Pre-compiled regex for splitting HTML tags from text content
 const LV_RE_TAG_SPLIT = /(<[^>]+>)|([^<]+)/g;
 
 function logsviewer_applySearchHighlight(text) {
@@ -872,17 +745,15 @@ function logsviewer_applySearchHighlight(text) {
     const term = String(logsviewer_searchState.term || '').trim();
     if (!term) return String(text || '');
 
-    // Always wrap matches in a span so we can scroll to them.
-    // Add the visible highlight class only when the setting is on.
     const cls = logsviewer_cfg.searchHighlight
         ? 'logsviewer-search-hit logsviewer-search-hit--visible'
         : 'logsviewer-search-hit';
 
     const re = new RegExp(logsviewer_escapeRegExp(term), 'gi');
-    // Only replace in text nodes (outside HTML tags) to avoid corrupting existing markup
+
     LV_RE_TAG_SPLIT.lastIndex = 0;
     return String(text || '').replace(LV_RE_TAG_SPLIT, function(match, tag, txt) {
-        if (tag) return tag; // Leave HTML tags untouched
+        if (tag) return tag;
         return txt.replace(re, (m) => `<span class="${cls}">${m}</span>`);
     });
 }
@@ -896,7 +767,6 @@ function logsviewer_collectSearchHits() {
         return;
     }
 
-    // Always use DOM spans for hit tracking (both highlight-on and highlight-off)
     const hits = $('#logsviewer-logs .logsviewer-search-hit').toArray();
     logsviewer_searchState.hits = hits;
     logsviewer_searchState.idx = hits.length ? 0 : -1;
@@ -951,24 +821,18 @@ function logsviewer_updateSearchToast(count) {
     }
     const num = Number(count) || 0;
     const label = (num === 1) ? 'match' : 'matches';
-    // Plain text styling via spans: number colored, label white.
+
     toast.html(`<span class="lv-toast-num">${num}</span> <span class="lv-toast-label">${label}</span>`).show();
 
-    // Reflow toast rows so perf/syntax toast won't overlap.
     logsviewer_layoutToasts();
 }
 
-// Keep search + perf toasts in a stable 2-line footer area.
-// If search toast is hidden/inactive, perf toast moves to row1.
-// Toast layout rules (single-line panel)
-// - When user is actively typing in Search, Search toast wins and Syntax toast is hidden.
-// - When typing stops, Syntax toast returns and flashes (2x) once, then stays on.
 let logsviewer_searchTyping = false;
 let logsviewer_searchTypingTimer = null;
 
 let logsviewer_layoutToastsRaf = null;
 function logsviewer_layoutToasts(){
-    // Batch multiple calls per frame (called 11+ times per cycle)
+
     if (logsviewer_layoutToastsRaf) return;
     logsviewer_layoutToastsRaf = requestAnimationFrame(function(){
         logsviewer_layoutToastsRaf = null;
@@ -977,7 +841,7 @@ function logsviewer_layoutToasts(){
 }
 function logsviewer_layoutToastsImpl(){
     const line = $(logsviewer_dom.toastLine);
-    // If toast panel was not rendered (showToast=false in PHP), nothing to do
+
     if(!line.length) return;
 
     const searchToast = $('#logsviewer-search-toast');
@@ -992,7 +856,7 @@ function logsviewer_layoutToastsImpl(){
     const forceLogin = (Date.now() < (logsviewer_forceLoginUntil || 0));
 
     if (logsviewer_searchTyping) {
-        // typing: hide perf, show search if available
+
         if (perfToast.length) {
             perfToast[0].dataset.lvSuppressedBySearch = '1';
             perfToast.hide();
@@ -1007,9 +871,8 @@ function logsviewer_layoutToastsImpl(){
         return;
     }
 
-    // not typing
     if (searchVisible) {
-        // search wins when visible
+
         if (searchToast.length) searchToast.show();
         if (perfToast.length) perfToast.hide();
         if (loginToast.length) loginToast.hide();
@@ -1019,7 +882,6 @@ function logsviewer_layoutToastsImpl(){
         return;
     }
 
-    // No search -> if a new login event arrived, briefly force showing it even if Syntax toast exists.
     if (forceLogin && loginToast.length && loginHasText) {
         loginToast.show();
         if (perfToast.length) perfToast.hide();
@@ -1030,10 +892,9 @@ function logsviewer_layoutToastsImpl(){
         return;
     }
 
-    // no visible search -> show perf (Syntax) if it has text
     if (perfToast.length && perfHasText) {
         perfToast.show();
-        // If it was suppressed by typing, re-flash once when returning.
+
         if (perfToast[0].dataset.lvSuppressedBySearch === '1') {
             perfToast[0].dataset.lvSuppressedBySearch = '0';
             logsviewer_startPerfFlash(perfToast[0], 2);
@@ -1044,7 +905,6 @@ function logsviewer_layoutToastsImpl(){
 
     if (searchToast.length) searchToast.hide();
 
-    // If Syntax toast active, hide login and selected, show panel
     if (perfToast.length && perfHasText) {
         if (loginToast.length) loginToast.hide();
         var selToastA = document.getElementById('logsviewer-selected-toast');
@@ -1053,7 +913,6 @@ function logsviewer_layoutToastsImpl(){
         return;
     }
 
-    // Idle fallback: show "Selected: Category → Source" if a log is already loaded
     logsviewer_updateSelectedToast();
     var selToast = document.getElementById('logsviewer-selected-toast');
     var selLabel = logsviewer_getSelectedLabel();
@@ -1064,14 +923,12 @@ function logsviewer_layoutToastsImpl(){
         return;
     }
 
-    // No log selected yet (initial load) → fall back to login toast if available
     if (loginToast.length && loginHasText) {
         loginToast.show();
         if(panel.length) panel.show();
         return;
     }
 
-    // Nothing to show on the left -> hide left toasts but keep panel if right slot has content
     if (perfToast.length) perfToast.hide();
     if (loginToast.length) loginToast.hide();
     if (searchToast.length) searchToast.hide();
@@ -1080,12 +937,10 @@ function logsviewer_layoutToastsImpl(){
     if(panel.length) { if (rightHasContent) panel.show(); else panel.hide(); }
 }
 
-
 function logsviewer_ensureSearchUi() {
     if (!logsviewer_cfg.searchEnabled) return;
     if ($('#logsviewer-search-input').length) return;
 
-    // Support both responsive (.logsviewer-header__right) and legacy (.logsviewer-legacy-controls)
     let headerRight = $('.logsviewer-header__right');
     const isLegacy = !headerRight.length;
     if (isLegacy) {
@@ -1093,7 +948,6 @@ function logsviewer_ensureSearchUi() {
     }
     if (!headerRight.length) return;
 
-    // Ensure we have an inputs row
     let inputsRow = headerRight.find('.logsviewer-header__inputs').first();
     if (!inputsRow.length) {
         inputsRow = $('<div class="logsviewer-header__inputs"></div>');
@@ -1121,7 +975,6 @@ function logsviewer_ensureSearchUi() {
         logsviewer_searchState.term = term;
         logsviewer_ensureSearchToast();
 
-        // Hide Syntax toast while typing
         logsviewer_searchTyping = true;
         if (logsviewer_searchTypingTimer) clearTimeout(logsviewer_searchTypingTimer);
         logsviewer_searchTypingTimer = setTimeout(() => {
@@ -1130,7 +983,6 @@ function logsviewer_ensureSearchUi() {
         }, 700);
         logsviewer_layoutToasts();
 
-        // Debounce the expensive render (200ms after last keystroke)
         if (logsviewer_searchRenderTimer) clearTimeout(logsviewer_searchRenderTimer);
         logsviewer_searchRenderTimer = setTimeout(() => {
             const logDisplay = $(logsviewer_dom.logs);
@@ -1148,7 +1000,6 @@ function logsviewer_ensureSearchUi() {
         }, 200);
     });
 
-    // keyboard: Enter -> next, Shift+Enter -> prev
     $('#logsviewer-search-input').on('keydown', function(e) {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -1158,7 +1009,7 @@ function logsviewer_ensureSearchUi() {
                 logsviewer_searchNext();
             }
         }
-        // Escape clears
+
         if (e.key === 'Escape') {
             e.preventDefault();
             this.value = '';
@@ -1167,21 +1018,14 @@ function logsviewer_ensureSearchUi() {
     });
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   11. LOG LEVEL HIGHLIGHTING
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 function logsviewer_highlightLevels(text) {
     let t = String(text || '');
     if (!logsviewer_cfg.highlightEnabled) return t;
 
     const mode = logsviewer_cfg.highlightMode || 'full';
 
-    // Header highlight (pre-compiled regex)
     t = t.replace(LV_RE_HEADER, '<span class="logsviewer-hdr">$1</span>');
 
-    // Single-pass level highlighting: one regex matches all keywords
     var re = (mode === 'keywords') ? LV_RE_LEVELS_KEYWORDS : LV_RE_LEVELS_COMBINED;
     re.lastIndex = 0;
     t = t.replace(re, function(m) {
@@ -1208,12 +1052,11 @@ function logsviewer_setTotalLinesValue(n) {
     var val = Math.max(0, Number(n) || 0);
     out.textContent = String(val);
 
-    // Flash pulse dot when new lines arrive
     if (logsviewer_lastTotalLines >= 0 && val > logsviewer_lastTotalLines) {
         var pulse = logsviewer_dom._pulse || (logsviewer_dom._pulse = document.querySelector('.logsviewer-pulse'));
         if (pulse) {
             pulse.classList.remove('logsviewer-pulse--flash');
-            // Force reflow to restart animation
+
             void pulse.offsetWidth;
             pulse.classList.add('logsviewer-pulse--flash');
         }
@@ -1224,20 +1067,15 @@ function logsviewer_setTotalLinesValue(n) {
 let logsviewer_hljsLoaded = false;
 let logsviewer_currentSyntax = 'plaintext';
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   12. SYNTAX ENGINE
-   ═══════════════════════════════════════════════════════════════════════════ */
-
+// highlight.js is loaded on demand, only when a log actually needs it
 function logsviewer_loadHighlightJs(callback) {
-    // Load Highlight.js from CDN (stable path). Guard against double-load.
+
     if (logsviewer_hljsLoaded || window.hljs) {
         logsviewer_hljsLoaded = true;
         if (callback) callback();
         return;
     }
 
-    // CSS (only once)
     if (!document.querySelector('link[data-logsviewer-hljs-css]')) {
         const cssLink = document.createElement('link');
         cssLink.rel = 'stylesheet';
@@ -1247,9 +1085,8 @@ function logsviewer_loadHighlightJs(callback) {
         document.head.appendChild(cssLink);
     }
 
-    // JS (only once)
     if (document.querySelector('script[data-logsviewer-hljs-js]')) {
-        // Script is already in flight; poll until available.
+
         const t0 = Date.now();
         const wait = () => {
             if (window.hljs) {
@@ -1271,22 +1108,15 @@ function logsviewer_loadHighlightJs(callback) {
         if (callback) callback();
     };
     script.onerror = function () {
-        // If CDN is blocked/offline, just disable highlighting gracefully.
+
         logsviewer_hljsLoaded = false;
         if (callback) callback();
     };
     document.head.appendChild(script);
 }
 
-
-// Prism.js (CDN) — assets loader (vNext). Not used yet; safe to keep as no-op.
-// Step 1: only add assets for later use. Engine switch comes in Step 2.
 let logsviewer_prismLoaded = false;
 
-/**
- * Load Prism core + theme CSS from CDN (idempotent).
- * NOTE: This does NOT apply highlighting by itself.
- */
 function logsviewer_loadPrism(callback) {
     if (logsviewer_prismLoaded || window.Prism) {
         logsviewer_prismLoaded = true;
@@ -1294,7 +1124,6 @@ function logsviewer_loadPrism(callback) {
         return;
     }
 
-    // Theme CSS (only once)
     if (!document.querySelector('link[data-logsviewer-prism-css]')) {
         const cssLink = document.createElement('link');
         cssLink.rel = 'stylesheet';
@@ -1303,9 +1132,8 @@ function logsviewer_loadPrism(callback) {
         document.head.appendChild(cssLink);
     }
 
-    // Core JS (only once)
     if (document.querySelector('script[data-logsviewer-prism-js]')) {
-        // Script is already in flight; poll until available.
+
         const t0 = Date.now();
         const wait = () => {
             if (window.Prism) {
@@ -1353,9 +1181,7 @@ function logsviewer_applySyntaxHighlightToText(text, syntax) {
     }
 
     try {
-        // Decode HTML entities first: the API sends htmlspecialchars() output
-        // (e.g. &quot; &amp; &lt;) but hljs expects plain text as input.
-        // Without this, hljs double-encodes entities (&quot; becomes &amp;quot;).
+
         var plain = logsviewer_decodeHtmlEntities(text);
         var result = window.hljs.highlight(plain, { language: syntax, ignoreIllegals: true });
         return result.value;
@@ -1365,19 +1191,6 @@ function logsviewer_applySyntaxHighlightToText(text, syntax) {
     }
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   13. SECURITY
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/**
- * Decode HTML entities to plain text.
- * Uses textarea (never parsed as HTML) to safely decode entities from
- * API output (which is htmlspecialchars-encoded) before feeding to
- * syntax engines that expect raw text and do their own HTML encoding.
- * SECURITY: textarea.innerHTML never executes scripts or loads resources.
- */
-// Reusable textarea for entity decoding (avoid creating DOM element per call)
 let logsviewer_entityDecoder = null;
 function logsviewer_decodeHtmlEntities(text) {
     if (!logsviewer_entityDecoder) logsviewer_entityDecoder = document.createElement('textarea');
@@ -1385,14 +1198,11 @@ function logsviewer_decodeHtmlEntities(text) {
     return logsviewer_entityDecoder.value;
 }
 
-// Prism helpers (beta engine)
-// We load a small set of Prism language components on-demand via CDNJS.
 const LOGSVIEWER_PRISM_LANG_URLS = {
-    // Base deps for some languages
+
     'clike': '/plugins/logsviewer/vendor/prism/components/prism-clike.min.js',
     'markup-templating': '/plugins/logsviewer/vendor/prism/components/prism-markup-templating.min.js',
 
-    // Common languages for logsviewer
     'bash': '/plugins/logsviewer/vendor/prism/components/prism-bash.min.js',
     'json': '/plugins/logsviewer/vendor/prism/components/prism-json.min.js',
     'yaml': '/plugins/logsviewer/vendor/prism/components/prism-yaml.min.js',
@@ -1403,9 +1213,7 @@ const LOGSVIEWER_PRISM_LANG_URLS = {
 };
 
 function logsviewer_prismLanguageDeps(lang) {
-    // PHP requires clike + markup-templating (which itself needs markup from core).
-    // markup-templating does NOT register in Prism.languages — we track it via
-    // a window sentinel (window.__lvPrismMarkupTemplating) set in loadScriptOnce.
+
     if (lang === 'php') return ['clike', 'markup-templating', 'php'];
     return [lang];
 }
@@ -1423,6 +1231,7 @@ function logsviewer_loadScriptOnce(url, dataAttr, callback) {
     document.head.appendChild(s);
 }
 
+// load prism plus whatever grammars the language depends on, once
 function logsviewer_ensurePrismLanguage(lang, callback) {
     const cb = callback || function () {};
 
@@ -1431,7 +1240,6 @@ function logsviewer_ensurePrismLanguage(lang, callback) {
     logsviewer_loadPrism(function () {
         if (!window.Prism || !Prism.languages) { cb(false); return; }
 
-        // If already present
         if (Prism.languages[lang]) { cb(true); return; }
 
         const deps = logsviewer_prismLanguageDeps(lang);
@@ -1444,18 +1252,18 @@ function logsviewer_ensurePrismLanguage(lang, callback) {
                 return;
             }
             const dep = deps[i++];
-            // markup-templating doesn't register in Prism.languages — use sentinel
+
             const alreadyLoaded = (dep === 'markup-templating')
                 ? !!window.__lvPrismMarkupTemplating
                 : !!Prism.languages[dep];
             if (alreadyLoaded) { next(); return; }
 
             const url = LOGSVIEWER_PRISM_LANG_URLS[dep];
-            if (!url) { next(); return; }  // skip unknown dep, don't abort chain
+            if (!url) { next(); return; }
 
             logsviewer_loadScriptOnce(url, 'data-logsviewer-prism-lang-' + dep, function () {
                 if (dep === 'markup-templating') window.__lvPrismMarkupTemplating = true;
-                // Give Prism a tick to register language
+
                 setTimeout(next, 0);
             });
         };
@@ -1481,26 +1289,22 @@ function logsviewer_isMobileish() {
     try {
         const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
         const narrow = typeof window.innerWidth === 'number' && window.innerWidth <= 768;
-        // Fix #7: Removed hardwareConcurrency ≤ 4 check — many Unraid servers (Celeron/J-series/i3)
-        // have ≤ 4 cores and are NOT mobile. Only use actual mobile signals.
+
         return Boolean(coarse || narrow);
     } catch (e) {
         return false;
     }
 }
 
+// caps on how much text we'll syntax-highlight, lower on mobile and for php (the heavy grammar)
 function logsviewer_getPrismBudgets(lang) {
     const mobile = logsviewer_isMobileish();
     const heavy = (String(lang || '').toLowerCase() === 'php');
 
-    // Budgets are conservative to avoid freezing on phones.
-    // autoTailLines is used when the current view is "too big" for Prism.
-    // NOTE: Per user request, autoTailLines is fixed to 800 everywhere.
     let budget = mobile
         ? { maxChars: 40000, maxLines: 400, autoTailLines: 800 }
         : { maxChars: 80000, maxLines: 800, autoTailLines: 800 };
 
-    // Heavy grammars (PHP in particular) get stricter limits.
     if (heavy) {
         budget = mobile
             ? { maxChars: 25000, maxLines: 250, autoTailLines: 800 }
@@ -1516,7 +1320,6 @@ function logsviewer_startPerfFlash(el, flashes){
         const maxFlashes = Math.max(0, Number(flashes)||0);
         if(maxFlashes === 0) return;
 
-        // prevent restarting while already flashing
         if(el.dataset.lvFlashing === '1') return;
 
         el.dataset.lvFlashing = '1';
@@ -1527,7 +1330,7 @@ function logsviewer_startPerfFlash(el, flashes){
         let count = 0;
         const runOnce = () => {
             el.classList.remove('logsviewer-toast-flash');
-            void el.offsetWidth; // reflow
+            void el.offsetWidth;
             el.classList.add('logsviewer-toast-flash');
         };
 
@@ -1549,7 +1352,6 @@ function logsviewer_startPerfFlash(el, flashes){
     }catch(_){}
 }
 
-
 let logsviewer_lastPerfMessage = null;
 let logsviewer_perfToastDismissed = false;
 
@@ -1567,7 +1369,6 @@ function logsviewer_showPerfToast(message){
       line.append(el);
     }
 
-    // Show/hide
     if(!message){
       el.textContent = '';
       el.style.display = 'none';
@@ -1576,13 +1377,11 @@ function logsviewer_showPerfToast(message){
       return;
     }
 
-    // If already dismissed for this log, don't show again until source changes
     if (logsviewer_perfToastDismissed && message === logsviewer_lastPerfMessage) {
       logsviewer_perfToastSetThisRender = true;
       return;
     }
 
-    // If the same message is being set again by a poll cycle, don't restart the timer
     if (message === logsviewer_lastPerfMessage && logsviewer_perfToastTimer) {
       logsviewer_perfToastSetThisRender = true;
       return;
@@ -1594,19 +1393,16 @@ function logsviewer_showPerfToast(message){
     el.textContent = message;
     el.style.display = '';
 
-    // If user is typing search, suppress (will return after debounce)
     if (logsviewer_searchTyping) {
         el.dataset.lvSuppressedBySearch = '1';
         el.style.display = 'none';
         return;
     }
 
-    // Flash exactly 2 times, then stay on briefly.
     if (el.dataset.lvFlashDone !== '1' && el.dataset.lvFlashing !== '1') {
         logsviewer_startPerfFlash(el, 2);
     }
 
-    // Auto-dismiss after 6s → fall back to Selected toast
     if (logsviewer_perfToastTimer) { clearTimeout(logsviewer_perfToastTimer); }
     logsviewer_perfToastTimer = setTimeout(function() {
         logsviewer_perfToastTimer = null;
@@ -1624,12 +1420,10 @@ function logsviewer_setupSyntaxDropdown() {
     var dropdown = $('#logsviewer-syntax-select');
     if (!dropdown.length) return;
 
-    // Load saved syntax preference
     var savedSyntax = logsviewer_getSyntaxSelection();
     logsviewer_currentSyntax = savedSyntax;
     dropdown.val(savedSyntax);
 
-    // Unbind previous handler (guard against double-binding on tile re-init)
     dropdown.off('change.lvsyntax');
 
     dropdown.on('change.lvsyntax', function() {
@@ -1637,11 +1431,8 @@ function logsviewer_setupSyntaxDropdown() {
         logsviewer_currentSyntax = newSyntax;
         logsviewer_setSyntaxSelection(newSyntax);
 
-        // Force full re-render via the same path as source switching.
-        // Clear diff-check cache so renderLog cannot skip.
         logsviewer_lastRenderKey = '';
 
-        // Re-display the active log entry from category data (same as source switch)
         var cat = logsviewer_activeCategory;
         var src = logsviewer_getActiveSource();
         if (cat && src) {
@@ -1652,15 +1443,12 @@ function logsviewer_setupSyntaxDropdown() {
             }
         }
 
-        // Fallback: direct renderLog with cached content
         var logDisplay = $(logsviewer_dom.logs);
         if (logsviewer_activeLogContent && logDisplay.length) {
             logsviewer_renderLog(logDisplay, logsviewer_activeLogContent, logsviewer_activeLogTotalLines);
         }
     });
 
-    // If restored syntax is not plaintext, trigger an initial re-render
-    // so the log displays with highlighting immediately after hljs loads
     if (savedSyntax !== 'plaintext' && logsviewer_activeLogContent) {
         logsviewer_lastRenderKey = '';
         var cat = logsviewer_activeCategory;
@@ -1672,7 +1460,6 @@ function logsviewer_setupSyntaxDropdown() {
     }
 }
 
-// Fast non-crypto hash for render diff-check (Fix #4)
 function logsviewer_quickHash(str) {
     var s = String(str || ''), len = s.length, h = 0;
     if (len === 0) return '0|0';
@@ -1691,13 +1478,6 @@ function logsviewer_quickHash(str) {
     return len + '|' + h;
 }
 
-
-// XSS defense-in-depth: whitelist-sanitize HTML before innerHTML write.
-// Only <span class="..."> and </span> tags are allowed (produced by hljs, Prism,
-// level highlighting, and search highlighting). Everything else is escaped.
-// Also double-escapes ALL &lt; / &gt; entities so dangerous content always
-// displays visibly as "&lt;script&gt;" instead of "<script>".
-// Pre-compiled regexes for sanitizeHTML (called every render cycle)
 const LV_RE_SANITIZE_TAGS = /<\/?(?!span[\s>\/])[a-zA-Z][^>]*>/g;
 const LV_RE_SANITIZE_SPAN = /<span\s+([^>]*)>/gi;
 const LV_RE_SANITIZE_CLASS_DQ = /class\s*=\s*"([^"]*)"/i;
@@ -1705,13 +1485,12 @@ const LV_RE_SANITIZE_CLASS_SQ = /class\s*=\s*'([^']*)'/i;
 const LV_RE_SANITIZE_CLASSVAL = /[^a-zA-Z0-9\s_-]/g;
 
 function logsviewer_sanitizeHTML(html) {
-    // 1. Replace any raw HTML tag that is NOT <span> / </span>
+
     LV_RE_SANITIZE_TAGS.lastIndex = 0;
     html = html.replace(LV_RE_SANITIZE_TAGS, function(tag) {
         return tag.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     });
 
-    // 2. Strip dangerous attributes from span tags (keep only class)
     LV_RE_SANITIZE_SPAN.lastIndex = 0;
     html = html.replace(LV_RE_SANITIZE_SPAN, function(match, attrs) {
         var classMatch = attrs.match(LV_RE_SANITIZE_CLASS_DQ) || attrs.match(LV_RE_SANITIZE_CLASS_SQ);
@@ -1722,41 +1501,27 @@ function logsviewer_sanitizeHTML(html) {
         return '<span>';
     });
 
-    // 3. Double-escape entity-encoded angle brackets
     html = html.replace(/&lt;/g, '&amp;lt;').replace(/&gt;/g, '&amp;gt;');
 
     return html;
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   14. MAIN RENDER PIPELINE
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
     const filter = logsviewer_getFilterValue();
     const searchTerm = String(logsviewer_searchState.term || '').trim();
 
-    // ── Fix #4: Diff check — skip entire render if nothing changed ──
     var renderKey = logsviewer_quickHash(rawText) + '|' + filter + '|' + logsviewer_currentSyntax + '|' + searchTerm;
     if (renderKey === logsviewer_lastRenderKey) {
-        return; // content, filter, syntax, search all identical → no work needed
+        return;
     }
     logsviewer_lastRenderKey = renderKey;
 
-    // Track whether a perf toast is set during this render cycle.
-    // If not, we clear it at the end (handles source switching).
     logsviewer_perfToastSetThisRender = false;
 
-    // Tail first (performance: render limit)
     let base = logsviewer_tailText(rawText || '', logsviewer_cfg.tailLines || 0);
 
-
-    // Sanitize syslog date padding: RFC 3164 pads single-digit days with a space
-    // e.g. "Feb  8 04:00:08" → "Feb 8 04:00:08"
     base = base.replace(/^([A-Z][a-z]{2})  (\d )/gm, '$1 $2');
 
-    // Apply filter
     let filtered = logsviewer_applyFilterToText(base);
 
     if (filter !== 'none' && String(filtered).trim() === '') {
@@ -1764,26 +1529,22 @@ function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
         filtered = `[info] No matching lines for '${label}' filter.`;
     }
 
-    // Total lines display
     if (logsviewer_cfg.showTotalLines) {
         if (filter === 'none' && Number.isFinite(Number(totalLinesFromApi)) && (!logsviewer_cfg.tailLines || logsviewer_cfg.tailLines <= 0)) {
-            logsviewer_setTotalLinesValue(Number(totalLinesFromApi)); // whole file total
+            logsviewer_setTotalLinesValue(Number(totalLinesFromApi));
         } else {
-            logsviewer_setTotalLinesValue(logsviewer_countLines(filtered)); // filtered/tail view count
+            logsviewer_setTotalLinesValue(logsviewer_countLines(filtered));
         }
         $('.logsviewer-title-meta').show();
     } else {
         $('.logsviewer-title-meta').hide();
     }
 
-
-// Apply syntax highlighting BEFORE level highlighting (so levels can override)
-// Engine can be switched via Settings (default: Highlight.js)
 if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     const engine = String(logsviewer_cfg.syntaxEngine || 'hljs');
 
     if (engine === 'prism') {
-        // Performance guard: Prism can freeze on huge logs (especially mobile / heavy grammars like PHP)
+
         const budget = logsviewer_getPrismBudgets(logsviewer_currentSyntax);
         const lineCount = logsviewer_countLines(filtered);
         const charCount = (filtered || '').length;
@@ -1791,53 +1552,47 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
         const tooBigByChars = (userTailLines <= 0) && (charCount > budget.maxChars);
         const tooBigByLines = (lineCount > budget.maxLines);
 	    const tooBig = tooBigByLines || tooBigByChars;
-	    // Only show the perf toast if lines actually exceeded the threshold.
-	    // When only chars are large (long lines, e.g. nginx) we still trim silently.
+
 	    const showPerfToastAllowed = tooBigByLines;
-	    // We may trim content and still safely apply Prism. This flag controls whether
-	    // highlighting should proceed after guards.
+
 	    let prismCanHighlight = true;
 
         if (tooBig) {
-            // Auto fallback: apply syntax only to the last N lines so we don't freeze
+
             const tailN = Number(budget.autoTailLines) || 0;
 
             if (tailN > 0 && tooBigByLines && (lineCount > tailN)) {
                 filtered = logsviewer_tailText(filtered, tailN);
                 if (showPerfToastAllowed) logsviewer_showPerfToast(`Large log • Syntax: last ${tailN}`);
             } else if (tooBigByChars) {
-                // Too many characters can still freeze Prism. Instead of disabling outright,
-                // try trimming by *lines* based on average line length.
+
                 const avgCharsPerLine = Math.max(1, Math.ceil(charCount / Math.max(1, lineCount)));
                 let maxSafeLines = Math.floor(budget.maxChars / avgCharsPerLine);
 
-                // Keep a sane minimum so the output isn't useless.
                 maxSafeLines = Math.max(50, maxSafeLines);
 
                 if (lineCount > maxSafeLines) {
                     filtered = logsviewer_tailText(filtered, maxSafeLines);
                     if (showPerfToastAllowed) logsviewer_showPerfToast(`Large log • Syntax: last ${maxSafeLines}`);
                 } else {
-                    // Single very long lines (or already under maxSafeLines): safest is to skip syntax.
+
                     if (showPerfToastAllowed) logsviewer_showPerfToast('Syntax disabled for performance');
 	                    prismCanHighlight = false;
                 }
             } else {
-                // Nothing to reduce (e.g. user already limited lines)
+
                 logsviewer_showPerfToast(null);
             }
         } else {
             logsviewer_showPerfToast(null);
         }
 
-	        // Apply Prism if either content is within budget, or it was safely trimmed.
-	        // When tooBigByChars, we only allow Prism if we actually trimmed by lines.
 	        const trimmedByCharsPath = tooBigByChars && prismCanHighlight && (lineCount > 0) && ((filtered || '').length <= budget.maxChars);
 	        if (prismCanHighlight && (!tooBig || tooBigByLines || trimmedByCharsPath)) {
-            // If Prism or the language component isn't loaded yet, load asynchronously and re-render.
+
             if (!window.Prism || !Prism.languages || !Prism.languages[logsviewer_currentSyntax]) {
                 logsviewer_ensurePrismLanguage(logsviewer_currentSyntax, function () {
-                    // Clear diff-check so the recursive render is not skipped
+
                     logsviewer_lastRenderKey = '';
                     const logDisplay = $(logsviewer_dom.logs);
                     if (logsviewer_activeLogContent && logDisplay.length) {
@@ -1849,16 +1604,15 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
             }
         }
     } else {
-        // Highlight.js (default) — same line-count guard as Prism
+
         const hljsLineCount = logsviewer_countLines(filtered);
         const hljsMaxLines  = 800;
 
         if (hljsLineCount > hljsMaxLines) {
-            // Trim to last 800 lines and show perf toast (auto-dismisses after 6s)
+
             filtered = logsviewer_tailText(filtered, hljsMaxLines);
             logsviewer_showPerfToast(`Large log • Syntax: last ${hljsMaxLines}`);
         }
-        // (null case already handled by the showPerfToast(null) at top of renderLog)
 
         if (window.hljs) {
             filtered = logsviewer_applySyntaxHighlightToText(filtered, logsviewer_currentSyntax);
@@ -1866,42 +1620,31 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     }
 }
 
-    // ── Fix #5: Count levels on RAW text (before HTML spans inflate string) ──
-    // Count levels once (used for badges + right toast slot)
     var badgeCounts = logsviewer_countLevels(filtered);
     logsviewer_lastBadgeCounts = badgeCounts;
 
-    // Highlight levels (optional)
     filtered = logsviewer_highlightLevels(filtered);
 
-    // Search highlight LAST — uses tag-aware regex so it doesn't corrupt existing HTML spans
     filtered = logsviewer_applySearchHighlight(filtered);
 
-    // Deferred perf toast clear: if no perf toast was set during this render cycle,
-    // clear it now (handles switching to a smaller log)
     if (!logsviewer_perfToastSetThisRender) {
         logsviewer_showPerfToast(null);
     }
 
-    // Batch DOM writes in one rAF to avoid layout thrashing
     requestAnimationFrame(function() {
         const el = logDisplay[0];
         if (!el) return;
 
-        // XSS defense-in-depth: strip any non-span HTML tags before writing
         filtered = logsviewer_sanitizeHTML(filtered);
 
-        // innerHTML write (single reflow)
         el.innerHTML = filtered;
 
-        // hljs class toggle
         if (logsviewer_cfg.syntaxEnabled && window.hljs && logsviewer_currentSyntax !== 'plaintext') {
             logDisplay.addClass('hljs');
         } else {
             logDisplay.removeClass('hljs');
         }
 
-        // Badges (optional) — uses pre-computed counts from raw text
         if (logsviewer_cfg.showBadges && badgeCounts) {
             logsviewer_updateBadges(badgeCounts);
             $('.logsviewer-badges').show();
@@ -1909,17 +1652,11 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
             $('.logsviewer-badges').hide();
         }
 
-        // Refresh search hit list (if enabled)
         if (logsviewer_cfg.searchEnabled) {
             logsviewer_collectSearchHits();
         }
     });
 }
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   15. UI CONTROLS
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 function logsviewer_applyAutoscrollUiState(isOn) {
     const title = $('.logsviewer-autoscroll-title');
@@ -1985,11 +1722,11 @@ function logsviewer_exportCurrentLog() {
     const base = logsviewer_sanitizeFilename(scriptName) + stamp;
 
     if (fmt === 'json') {
-        // Syslog:  "Mar  6 03:37:46 hostname service: message"
+
         const reSyslog = /^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+([^:]+):\s*(.*)$/;
-        // ISO/Docker: "2026-03-06T03:37:46.123Z message"  or  "2026-03-06 03:37:46 message"
+
         const reIso    = /^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(.*)$/;
-        // Level keywords (priority order — most specific first)
+
         const levelMap = [
             [/\bemergency\b/i, 'emergency'],
             [/\bpanic\b/i,     'emergency'],
@@ -2054,19 +1791,11 @@ function logsviewer_exportCurrentLog() {
     logsviewer_downloadTextFile(text, `${base}.${ext}`, 'text/plain;charset=utf-8');
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   16. THEMING
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 function logsviewer_applyThemePreset(target, preset) {
-    // IMPORTANT:
-    // Theme presets should ONLY affect the log display skin (log panel), not the tabs/buttons.
-    // So we apply CSS variables to the log container element (#logsviewer-container).
+
     const p = String(preset || 'default').toLowerCase();
     if (!target) return;
 
-    // Default: clear any preset overrides
     if (p === 'default') {
         target.style.removeProperty('--logsviewer-log-bg');
         target.style.removeProperty('--logsviewer-border');
@@ -2079,8 +1808,6 @@ function logsviewer_applyThemePreset(target, preset) {
     }
 
     const set = (k, v) => target.style.setProperty(k, v);
-
-    // Log-panel-only palette (scoped to #logsviewer-container)
 
     const _light = logsviewer_isLightTheme();
     if (p === 'terminal') {
@@ -2138,8 +1865,6 @@ function logsviewer_applyFontFamily(root, familyKey) {
     const k = String(familyKey || 'system').toLowerCase();
     if (!root) return;
 
-    // We set a few CSS vars so the user sees a clear, consistent difference
-    // even if a specific webfont can't be loaded in their environment.
     const map = {
         system: {
             family: 'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace',
@@ -2187,21 +1912,11 @@ function logsviewer_applyFontFamily(root, familyKey) {
     root.style.setProperty('--logsviewer-font-weight', cfg.weight || '400');
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   17. INITIALIZATION
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 function logsviewer_applyConfig() {
-    // Two separate bodies exist on the dashboard tile:
-    // 1) Tabs body (UI)
-    // 2) Log panel body (log display)
-    // We only want theming to affect the LOG panel skin.
+
     const logPanel = document.querySelector('#logsviewer-container');
     if (!logPanel) return;
 
-    // Backwards-compat cleanup: older versions applied theme vars to the first .logsviewer-body (tabs)
-    // which causes buttons/tabs to change colors. Clear those vars if present.
     document.querySelectorAll('.logsviewer-body').forEach((el) => {
         el.style.removeProperty('--logsviewer-bg');
         el.style.removeProperty('--logsviewer-tab-bg');
@@ -2214,41 +1929,28 @@ function logsviewer_applyConfig() {
         el.style.removeProperty('--logsviewer-log-bg');
     });
 
-
-    // Theme preset (log panel only)
     logsviewer_applyThemePreset(logPanel, logsviewer_cfg.themePreset);
 
-    // Background color override (only when preset is Default)
-    // IMPORTANT: presets *also* set --logsviewer-log-bg. We must NOT remove that variable
-    // when a non-default preset is selected, otherwise only border/scrollbar colors change.
     const preset = String(logsviewer_cfg.themePreset || 'default');
     const bgColor = String(logsviewer_cfg.bgColor || '').trim();
     if (preset === 'default') {
-        // Always set explicitly to ensure consistent background across Dashboard/Tool pages.
-        // Unraid's --bg-elevation-* variables differ between page contexts, so we can't rely
-        // on CSS variable fallback chains for consistency.
+
         logPanel.style.setProperty('--logsviewer-log-bg', bgColor || (logsviewer_isLightTheme() ? '#ffffff' : '#1b1b1b'));
     }
 
-    // Sync toast background with the manual bg color (dark theme only, default preset only).
-    // When a theme preset is active, the toast keeps its own CSS default.
     if (!logsviewer_isLightTheme() && preset === 'default' && bgColor) {
         var _toastEl = document.querySelector('.logsviewer-toast-panel');
         if (_toastEl) _toastEl.style.background = bgColor;
     }
 
-    // Backwards-compat cleanup (in case an older version set it globally)
     document.documentElement.style.removeProperty('--logsviewer-log-bg');
 
-    // Font family
-    // Apply to BOTH container and the actual pre element for immediate visible effect
     logsviewer_applyFontFamily(logPanel, logsviewer_cfg.fontFamily);
     const preElement = document.getElementById('logsviewer-logs');
     if (preElement) {
         logsviewer_applyFontFamily(preElement, logsviewer_cfg.fontFamily);
     }
 
-    // Wrap / no-wrap
     if (logsviewer_cfg.wrapLines) {
         logPanel.style.setProperty('--logsviewer-white-space', 'pre-wrap');
         $(logsviewer_dom.container).removeClass('logsviewer-nowarp');
@@ -2257,20 +1959,15 @@ function logsviewer_applyConfig() {
         $(logsviewer_dom.container).addClass('logsviewer-nowarp');
     }
 
-    // Show/hide UI pieces
     $('.logsviewer-badges')[logsviewer_cfg.showBadges ? 'show' : 'hide']();
     $('.logsviewer-title-meta')[logsviewer_cfg.showTotalLines ? 'show' : 'hide']();
     $('.logsviewer-timestamp-container')[logsviewer_cfg.showTimestamp ? 'show' : 'hide']();
     $('.logsviewer-filter')[logsviewer_cfg.showFilter ? 'show' : 'hide']();
-    // Toast visibility is controlled by PHP (panel is not rendered when showToast=false)
 
-    // Search UI (inject only if enabled)
     logsviewer_ensureSearchUi();
 
-    // Restore last login toast (idle message) if any.
     logsviewer_restoreLoginToast();
 
-    // Syntax highlighting (load library and setup dropdown if enabled)
     if (logsviewer_cfg.syntaxEnabled) {
         $('.logsviewer-syntax').show();
         logsviewer_loadHighlightJs(function() {
@@ -2299,7 +1996,7 @@ function logsviewer_manualRefresh() {
     var scrollTarget = logContainer.length ? logContainer.get(0) : null;
 
     logsviewer_fetchCategory(logsviewer_activeCategory, function() {
-        // Auto-scroll after refresh
+
         var autoscrollNow = $(logsviewer_dom.autoscroll).prop('checked');
         var allowNow = autoscrollNow && !(config.pauseOnHover && logsviewer_pauseHoverActive);
         if (allowNow && scrollTarget) {
@@ -2324,7 +2021,7 @@ function logsviewer_status() {
     var allowAutoscroll = autoscrollEnabled && !(config.pauseOnHover && logsviewer_pauseHoverActive);
 
     logsviewer_fetchCategory(logsviewer_activeCategory, function(scripts) {
-        // Auto-scroll: always snap to bottom when autoscroll is active
+
         if (allowAutoscroll && scrollTarget) {
             requestAnimationFrame(function() {
                 scrollTarget.scrollTop = scrollTarget.scrollHeight;
@@ -2332,14 +2029,9 @@ function logsviewer_status() {
         }
     }, { source: logsviewer_getActiveSource() || null });
 
-    // -------------------------------------------------------------------
-    // Background login detection (always from syslog)  — Fix #2
-    // -------------------------------------------------------------------
-    // When active category IS system, data is already fetched above → just use cache.
-    // When browsing docker/vm, only poll system every 3rd cycle to halve AJAX load.
     try{
         if (logsviewer_activeCategory === 'system') {
-            // Already fetched above — just check cached syslog data
+
             var sys = logsviewer_findLogData('system', 'syslog');
             if (sys && typeof sys.log === 'string' && sys.log.length) {
                 logsviewer_checkLoginToast(sys.log);
@@ -2360,11 +2052,6 @@ function logsviewer_status() {
     }catch(_){ }
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   18. EVENT HANDLERS
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 $(function() {
     logsviewer_cfg = window.logsviewerConfig || {};
     const config = logsviewer_cfg;
@@ -2375,21 +2062,16 @@ $(function() {
         widgetRoot.toggleClass('logsviewer-body--legacy', !config.isResponsive);
     }
 
-    // Detect light/dark theme (JS luminance backup for PHP detection)
     logsviewer_detectTheme();
 
-    // Apply config (theme/bg/wrap/font/search/ui visibility)
     logsviewer_applyConfig();
 
-    // Font size (existing behavior)
     if (config.fontSize) {
         const logContainer = $(logsviewer_dom.container);
         const logPre = $(logsviewer_dom.logs);
         if (logContainer.length) logContainer.css('font-size', config.fontSize);
         if (logPre.length) logPre.css('font-size', config.fontSize);
     }
-
-    // Pause on hover (optional)
 
     if (config.pauseOnHover) {
         $(document).on('mouseenter', '#logsviewer-container', function(){
@@ -2417,7 +2099,6 @@ $(function() {
         });
     }
 
-    // Compact view handling (existing)
     const compactWrapper = $('#logsviewer-compact-wrapper');
     const collapsibleRow = $('.dash_logsviewer_toggle');
 
@@ -2441,11 +2122,10 @@ $(function() {
         });
 
         updateCompactVisibility();
-        // Fix #6: Removed redundant 500ms setInterval — MutationObserver above handles visibility
+
         if (window.__logsviewerCompactInterval) { clearInterval(window.__logsviewerCompactInterval); window.__logsviewerCompactInterval = null; }
     }
 
-    // Badge click to filter (existing)
     $(document).on('click', '.logsviewer-badge', function() {
         const filter = $(this).attr('data-filter');
         if (!filter) return;
@@ -2460,7 +2140,6 @@ $(function() {
         }
     });
 
-    // Filter change -> rerender + sync badge selection
     $(document).on('change', '#logsviewer-filter-select', function() {
         var filterVal = $(this).val() || 'none';
         logsviewer_syncBadgeSelection(filterVal);
@@ -2469,7 +2148,6 @@ $(function() {
         logsviewer_renderLog(logDisplay, logsviewer_activeLogContent, logsviewer_activeLogTotalLines);
     });
 
-    // Auto-scroll checkbox change -> scroll and update label/state (existing)
     $(document).on('change', '#logsviewer-autoscroll', function() {
         const isOn = !!this.checked;
         logsviewer_applyAutoscrollUiState(isOn);
@@ -2478,7 +2156,6 @@ $(function() {
 
         if (!isOn) return;
 
-        // Snap to bottom immediately when toggled ON (rAF ensures DOM is ready)
         const logContainer = $(logsviewer_dom.container);
         const scrollTarget = logContainer.length ? logContainer.get(0) : null;
         if (scrollTarget && !(config.pauseOnHover && logsviewer_pauseHoverActive)) {
@@ -2488,19 +2165,16 @@ $(function() {
         }
     });
 
-    // Export button (existing)
     $(document).on('click', '#logsviewer-export-icon, [data-action="export-log"]', function(e) {
         e.preventDefault();
         logsviewer_exportCurrentLog();
     });
 
-    // Manual refresh button
     $(document).on('click', '#logsviewer-manual-refresh', function(e) {
         e.preventDefault();
         logsviewer_manualRefresh();
     });
 
-    // Init auto-scroll from localStorage (default uses config.autoscrollDefault)
     (function initAutoscrollState(){
         const cb = $(logsviewer_dom.autoscroll);
         if (!cb.length) return;
@@ -2513,42 +2187,36 @@ $(function() {
         logsviewer_applyAutoscrollUiState(isOn);
     })();
 
-    // Persist user-resized log panel height (per-context: dashboard vs tool)
     (function initResizeMemory(){
         const container = document.getElementById('logsviewer-container');
         if (!container) return;
 
-        // Determine context explicitly (don't rely solely on config)
-        const ctx = (logsviewer_cfg && logsviewer_cfg.apiContext) || 
+        const ctx = (logsviewer_cfg && logsviewer_cfg.apiContext) ||
                     (window.location.pathname.indexOf('Tool') !== -1 ? 'tool' : 'dashboard');
         const storageKey = 'logsviewer_panel_height_' + ctx;
 
-        // Context + viewport default heights
         const defaultHeight = (ctx === 'tool')
             ? (logsviewer_isMobileish() ? 200 : 400)
             : 300;
 
-        // If settings page requested a reset for THIS context, clear its height key and consume flag
         var resetFlagKey = 'logsviewer_panel_height_reset_' + (ctx === 'tool' ? 'tool' : 'dash');
         try {
             if (localStorage.getItem(resetFlagKey) === '1') {
                 localStorage.removeItem(resetFlagKey);
                 localStorage.removeItem(storageKey);
             }
-            // Backward compat: consume old global flag (from pre-v2 installs) without nuking other context
+
             if (localStorage.getItem('logsviewer_panel_height_reset') === '1') {
                 localStorage.removeItem('logsviewer_panel_height_reset');
                 localStorage.removeItem(storageKey);
             }
         } catch(_) {}
 
-        // Clear stale 600px saved values so old installs get the new default
         try {
             const saved = parseInt(localStorage.getItem(storageKey), 10);
             if (saved === 600) localStorage.removeItem(storageKey);
         } catch(_) {}
 
-        // Restore saved height, or apply context default
         try {
             const saved = localStorage.getItem(storageKey);
             if (saved) {
@@ -2561,7 +2229,6 @@ $(function() {
             container.style.height = defaultHeight + 'px';
         }
 
-        // Observe resize via ResizeObserver
         let saveTimeout = null;
         let resizeEnabled = true;
         const observer = new ResizeObserver(function(entries) {
@@ -2578,15 +2245,14 @@ $(function() {
         });
         observer.observe(container);
 
-        // Expose reset function for Settings page
         window.logsviewer_resetPanelHeight = function(context) {
             try {
-                // Delete only this context's height key + set context-specific flag
+
                 localStorage.removeItem(storageKey);
                 var flagKey = 'logsviewer_panel_height_reset_' + (ctx === 'tool' ? 'tool' : 'dash');
                 localStorage.setItem(flagKey, '1');
             } catch(_) {}
-            // Apply immediately on current page
+
             resizeEnabled = false;
             clearTimeout(saveTimeout);
             const resetDefault = (ctx === 'tool') ? (logsviewer_isMobileish() ? 200 : 400) : 300;
@@ -2595,22 +2261,18 @@ $(function() {
         };
     })();
 
-    // ═══════════ Category dropdown-tabs wiring ═══════════
 (function initCategoryTabs() {
 
-    // Use the existing reliable mobile detector (pointer:coarse + narrow viewport)
     function isMobile() {
         return typeof logsviewer_isMobileish === 'function'
             ? logsviewer_isMobileish()
             : window.matchMedia('(max-width:768px)').matches;
     }
 
-    // Close all open category dropdowns
     function closeAllCatDropdowns() {
         $('.logsviewer-cat-dropdown').removeClass('logsviewer-cat-dropdown--open');
     }
 
-    // Toggle custom dropdown for the given tab button (desktop only).
     function toggleCatDropdown($tabBtn) {
         var $drop = $tabBtn.find('.logsviewer-cat-dropdown');
         if (!$drop.length) return;
@@ -2621,19 +2283,14 @@ $(function() {
         }
     }
 
-    // Load a log source by category + source name
     function loadSource(cat, sourceName) {
         logsviewer_activeCategory = cat;
         $('.logsviewer-cat-btn').removeClass('logsviewer-cat-btn--active');
         var $tabBtn = $('.logsviewer-cat-btn[data-category="' + cat + '"]');
         $tabBtn.attr('data-selected', sourceName).addClass('logsviewer-cat-btn--active');
 
-        // Mark active item in dropdown (clears all others across all tabs)
         logsviewer_markActiveItem(cat, sourceName);
 
-        // Mobile: set native select value for visual checkmark (iOS/Android picker)
-        // Done in a setTimeout so iOS picker closes before value is set.
-        // Other tabs' native selects are reset so their checkmark doesn't linger.
         (function(c, sn) {
             setTimeout(function() {
                 $('.logsviewer-cat-native').each(function() {
@@ -2643,15 +2300,12 @@ $(function() {
             }, 50);
         })(cat, sourceName);
 
-        // Show from cache immediately if available
         var entry = logsviewer_findLogData(cat, sourceName);
         if (entry) logsviewer_showLog(entry);
 
-        // Always refresh from server
         logsviewer_fetchCategory(cat);
     }
 
-    // ── Tab button click → desktop: toggle custom dropdown / mobile: native select handles it ──
     $(document).off('click.lvcattab', '.logsviewer-cat-btn');
     $(document).on('click.lvcattab', '.logsviewer-cat-btn', function(e) {
         if ($(e.target).closest('.logsviewer-cat-dropdown').length) return;
@@ -2661,7 +2315,6 @@ $(function() {
         toggleCatDropdown($(this));
     });
 
-    // ── Custom dropdown item click → load that log (desktop) ──
     $(document).off('click.lvcatitem', '.logsviewer-cat-dropdown li');
     $(document).on('click.lvcatitem', '.logsviewer-cat-dropdown li', function(e) {
         e.stopPropagation();
@@ -2673,7 +2326,6 @@ $(function() {
         loadSource(cat, sourceName);
     });
 
-    // ── Native select change → load that log (mobile) ──
     $(document).off('change.lvcatnative', '.logsviewer-cat-native');
     $(document).on('change.lvcatnative', '.logsviewer-cat-native', function(e) {
         var sourceName = this.value;
@@ -2682,13 +2334,9 @@ $(function() {
         var cat     = $tabBtn.attr('data-category');
         if (!cat) return;
         loadSource(cat, sourceName);
-        // Reset to placeholder AFTER loadSource sets the correct value via the
-        // loadSource → $('.logsviewer-cat-native').each() path below.
-        // This happens asynchronously so the value is already set before reset.
+
     });
 
-
-    // ── Click anywhere outside → close custom dropdowns ──
     $(document).off('click.lvcatoutside');
     $(document).on('click.lvcatoutside', function(e) {
         if (!$(e.target).closest('.logsviewer-cat-btn').length) {
@@ -2698,9 +2346,8 @@ $(function() {
 
 })();
 
-    // Initial fetch: system category (always), then docker/vm if enabled
     logsviewer_fetchCategory('system', function() {
-        // Scroll to bottom on initial load if autoscroll is enabled
+
         var autoscrollNow = $(logsviewer_dom.autoscroll).prop('checked');
         if (autoscrollNow) {
             var logContainer = $(logsviewer_dom.container);

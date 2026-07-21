@@ -1,26 +1,20 @@
 <?php
-/**
- * Logs Viewer Tool — AJAX tab loader
- * Copyright (C) 2026 Lazaros Chalkidis
- * License: GPLv3
- * /plugins/logsviewer/include/tool-loader.php
- *
- * Loads the Logs tab content for the Tool page via AJAX so the page shell is
- * cheap. (Saved and Pinned tabs were removed, so Logs is the only tab.)
- */
+/* ============================================================================
+   LOGS VIEWER
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
+   ========================================================================= */
 
 require_once __DIR__ . '/logsviewer_api.php';
 
-// Same-origin check via X-Requested-With header
+// ajax only, the tab html is never served on a direct hit
 if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
     http_response_code(403);
     echo '<div class="lvt-error">Direct access denied.</div>';
     exit;
 }
 
-// Allowed tabs (whitelist — no path traversal possible). Saved and Pinned
-// were removed, so only the Logs view remains.
-$allowed = ['logs'];
+$allowed = ['logs'];  // whitelist the tab names so $tab can't be used to include an arbitrary file
 $tab     = (string)($_GET['tab'] ?? '');
 
 if (!in_array($tab, $allowed, true)) {
@@ -29,7 +23,6 @@ if (!in_array($tab, $allowed, true)) {
     exit;
 }
 
-// Build the template path and include it
 $template = __DIR__ . '/tool-tab-' . $tab . '.php';
 if (!is_file($template)) {
     http_response_code(404);
@@ -37,8 +30,6 @@ if (!is_file($template)) {
     exit;
 }
 
-// Shared config the templates may need
 $cfg = parse_plugin_cfg('logsviewer', true) ?: [];
 
-// Include the template (it outputs HTML directly)
 include $template;

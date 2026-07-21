@@ -1,23 +1,28 @@
 <?php
-// LogsViewer for Unraid - Copyright (C) 2026 Lazaros Chalkidis - License: GPLv3
+/* ============================================================================
+   LOGS VIEWER
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
+   ========================================================================= */
+
 declare(strict_types=1);
 
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
 final class LogsViewerEndpoint
 {
-    // ── Constants ──────────────────────────────────────────────────────────
+
     private const HARD_MAX_LINES          = 5000;
-    private const BACKREAD_CAP_BYTES      = 1048576; // 1 MB
+    private const BACKREAD_CAP_BYTES      = 1048576;
     private const FORWARD_FALLBACK_CAP_BYTES = 1048576;
-    private const COUNT_READ_BUF          = 65536;   // 64 KB
-    private const MICRO_CACHE_MIN_MS      = 500;    // Fix #9: raised from 150ms
-    private const MICRO_CACHE_MAX_MS      = 2000;   // Fix #9: raised from 800ms
+    private const COUNT_READ_BUF          = 65536;
+    private const MICRO_CACHE_MIN_MS      = 500;
+    private const MICRO_CACHE_MAX_MS      = 2000;
     private const CACHE_DIR               = '/tmp/logsviewer_cache';
     private const NONCE_FILE              = '/tmp/logsviewer_cache/nonce';
-    private const NONCE_TTL               = 3600; // 1 hour
+    private const NONCE_TTL               = 3600;
     private const RATE_LIMIT_FILE         = '/tmp/logsviewer_cache/rl';
-    private const RATE_LIMIT_MAX          = 60;   // max requests per minute per IP
+    private const RATE_LIMIT_MAX          = 60;
 
     private const SYSTEM_LOGS = [
         'syslog'          => '/var/log/syslog',
@@ -52,10 +57,7 @@ final class LogsViewerEndpoint
         }
     }
 
-    /**
-     * Validate a custom log path against the allowed prefix whitelist.
-     * Mirrors the rules enforced in the Settings page.
-     */
+    // custom log paths must sit under a known prefix and have no .. in them
     private static function isAllowedCustomPath(string $path): bool
     {
         if ($path === '' || $path[0] !== '/') return false;
@@ -66,9 +68,6 @@ final class LogsViewerEndpoint
         return false;
     }
 
-    /**
-     * Sanitize a custom source key derived from the user-supplied label.
-     */
     private static function customKey(string $label): string
     {
         $slug = strtolower(trim($label));
@@ -78,10 +77,6 @@ final class LogsViewerEndpoint
         return 'custom:' . $slug;
     }
 
-    /**
-     * Load user-defined custom log paths (validated).
-     * Returns array of ['key' => slug, 'label' => str, 'path' => abs] in input order.
-     */
     private function getCustomLogs(): array
     {
         if (!is_file(self::CUSTOM_PATHS_FILE)) return [];
@@ -95,7 +90,7 @@ final class LogsViewerEndpoint
             $path  = (string)($e['path']  ?? '');
             if ($label === '' || $path === '' || !self::isAllowedCustomPath($path)) continue;
             $key = self::customKey($label);
-            // Skip if it collides with built-in or duplicate user keys
+
             if (isset(self::SYSTEM_LOGS[$key]) || isset($seenKeys[$key])) continue;
             $seenKeys[$key] = true;
             $out[] = ['key' => $key, 'label' => $label, 'path' => $path];
@@ -103,9 +98,6 @@ final class LogsViewerEndpoint
         return $out;
     }
 
-    /**
-     * Resolve a system-log label (built-in or custom) to its filesystem path.
-     */
     private function resolveSystemLogPath(string $label): ?string
     {
         if (isset(self::SYSTEM_LOGS[$label])) return self::SYSTEM_LOGS[$label];
@@ -117,9 +109,6 @@ final class LogsViewerEndpoint
         return null;
     }
 
-    /**
-     * Resolve a system-log label to its display name (built-in or custom).
-     */
     private function resolveSystemLogName(string $label): string
     {
         if (isset(self::SYSTEM_LOG_NAMES[$label])) return self::SYSTEM_LOG_NAMES[$label];
@@ -131,13 +120,11 @@ final class LogsViewerEndpoint
         return $label;
     }
 
-    // ── Cached runtime state (avoid duplicate calls per request) ────────
     private ?array $_dockerStatesCache = null;
     private ?array $_vmStatesCache = null;
     private ?array $_cfgCache = null;
     private bool $_migrationDone = false;
 
-    /** Cached config: read once per request instead of 6x */
     private function getCfg(): array
     {
         if ($this->_cfgCache === null) {
@@ -175,16 +162,12 @@ final class LogsViewerEndpoint
         return $this->_vmStatesCache;
     }
 
-    // ── Nonce (CSRF token) ────────────────────────────────────────────────
-
-    /** Generate or return existing nonce (stored in a temp file, rotated hourly) */
     public static function generateNonce(): string
     {
         if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0755, true);
         $file = self::NONCE_FILE;
         $now  = time();
 
-        // Reuse valid nonce
         if (is_file($file)) {
             $data = @json_decode((string)@file_get_contents($file), true);
             if (is_array($data) && isset($data['token'], $data['ts'])
@@ -193,13 +176,13 @@ final class LogsViewerEndpoint
             }
         }
 
-        // Generate new nonce
         $token = bin2hex(random_bytes(24));
         @file_put_contents($file, json_encode(['token' => $token, 'ts' => $now]), LOCK_EX);
         @chmod($file, 0600);
         return $token;
     }
 
+    // token gate with a sliding ttl, read from the nonce file the widget refreshes
     private function verifyNonce(): void
     {
         $provided = (string)(
@@ -223,8 +206,7 @@ final class LogsViewerEndpoint
         }
     }
 
-    // ── Rate limiting (per IP, file-based) ────────────────────────────────
-
+    // per-ip cap with a rolling 60s window, file-backed
     private function enforceRateLimit(): void
     {
         $ip   = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
@@ -238,7 +220,6 @@ final class LogsViewerEndpoint
             if (is_array($raw)) $data = $raw;
         }
 
-        // Reset window every 60 seconds
         if (($now - (int)$data['window']) >= 60) {
             $data = ['count' => 0, 'window' => $now];
         }
@@ -252,11 +233,9 @@ final class LogsViewerEndpoint
         }
     }
 
-    // ── Request entry point ────────────────────────────────────────────────
-
     public function run(): void
     {
-        // Download bypass: direct browser request, no AJAX header required
+
         $action = (string)($_GET['action'] ?? '');
         if ($action === 'download_backup') {
             $this->enforceLocalOrigin();
@@ -268,7 +247,6 @@ final class LogsViewerEndpoint
 
         $this->enforceAjaxGet();
 
-        // Nonce refresh must bypass nonce verification (the old one has expired)
         $action = (string)($_GET['action'] ?? '');
         if ($action === 'refresh_nonce') {
             $this->enforceRateLimit();
@@ -293,11 +271,7 @@ final class LogsViewerEndpoint
             'get_alert_mutes'       => fn() => $this->replyAlertMutes(),
             'set_alert_mute'        => fn() => $this->replySetAlertMute(),
             'unset_alert_mute'      => fn() => $this->replyUnsetAlertMute(),
-            // Saved-filter and pinned-line endpoints removed with the Saved /
-            // Pinned tabs. The backing functions remain below as dead code
-            // because they are interleaved with the still-live alert helpers
-            // (readAlertRules / writeAlertRules); they are simply no longer
-            // routable from here.
+
         ];
 
         if (!isset($routes[$action])) {
@@ -306,8 +280,6 @@ final class LogsViewerEndpoint
 
         $routes[$action]();
     }
-
-    // ── Context helpers ────────────────────────────────────────────────────
 
     private ?string $_contextCache = null;
 
@@ -325,9 +297,7 @@ final class LogsViewerEndpoint
         return $this->getContext() === 'tool';
     }
 
-    // ── Config helpers ─────────────────────────────────────────────────────
-
-    /** One-time migration from legacy global keys → DASH_* keys */
+    // old single-context keys get copied into the new DASH_ keys on first run
     private function migrateDashIfNeeded(array &$cfg): void
     {
         if ($this->_migrationDone) return;
@@ -399,8 +369,6 @@ final class LogsViewerEndpoint
         return $n;
     }
 
-    // ── Discovery (Settings page) ──────────────────────────────────────────
-
     private function replyDiscoverSources(): void
     {
         $cfg     = $this->getCfg();
@@ -431,7 +399,6 @@ final class LogsViewerEndpoint
             ];
         }
 
-        // Custom logs in their own group (no longer mixed with system)
         $customLogs = [];
         foreach ($this->getCustomLogs() as $c) {
             $exists       = is_file($c['path']) && is_readable($c['path']);
@@ -472,24 +439,18 @@ final class LogsViewerEndpoint
         ]);
     }
 
-    // ── Docker ─────────────────────────────────────────────────────────────
-
     private function isDockerAvailable(): bool
     {
         return !empty(trim((string)@shell_exec('which docker 2>/dev/null')));
     }
 
+    // one docker call for every container's log path, then one stat call for the sizes
     private function getDockerContainerList(): array
     {
-        // Pipe separator instead of \t throughout. Reason: the Go template engine
-        // used by docker `--format` does not consistently interpret \t as an
-        // actual tab character across shell/template combinations, which caused
-        // the previous code path to silently produce literal "\t" sequences and
-        // fail the subsequent explode(), making every log_size resolve to 0.
+
         $output = @shell_exec('docker ps -a --format "{{.Names}}|{{.State}}|{{.ID}}" 2>/dev/null');
         if (empty($output)) return [];
 
-        // Batch: get every container's LogPath in one shell call.
         $logPaths = [];
         $pathsRaw = @shell_exec('docker inspect --format="{{.Name}}|{{.LogPath}}" $(docker ps -aq) 2>/dev/null');
         if ($pathsRaw) {
@@ -505,17 +466,10 @@ final class LogsViewerEndpoint
             }
         }
 
-        // Batch: get size for every log path via a single shell `stat` call.
-        // PHP's filesize() can return 0/false on /var/lib/docker/containers/...
-        // paths depending on overlay-fs visibility and process credentials, so
-        // shell stat (running as root under Unraid's nginx) is the primary
-        // source. PHP filesize() is kept as a per-path fallback below.
         $logSizes = [];
         if (!empty($logPaths)) {
             $args = implode(' ', array_map('escapeshellarg', array_values($logPaths)));
-            // "%n|%s" prints "fullpath|size", one line per file, missing files
-            // emit a stderr line that gets swallowed by 2>/dev/null and produce
-            // no stdout line so the keyed map naturally skips them.
+
             $sizesRaw = @shell_exec('stat -c "%n|%s" -- ' . $args . ' 2>/dev/null');
             if ($sizesRaw) {
                 foreach (array_filter(explode("\n", trim($sizesRaw))) as $sLine) {
@@ -536,7 +490,6 @@ final class LogsViewerEndpoint
             $id      = trim($parts[2]);
             $logPath = $logPaths[$name] ?? '';
 
-            // Primary: shell stat result. Fallback: PHP filesize() if stat missed.
             $logSize = ($logPath !== '' && isset($logSizes[$logPath])) ? $logSizes[$logPath] : 0;
             if ($logSize === 0 && $logPath !== '' && is_file($logPath)) {
                 $logSize = (int)@filesize($logPath);
@@ -586,8 +539,6 @@ final class LogsViewerEndpoint
             'max_lines'   => $maxLines, 'source' => 'docker', 'file_size' => strlen($rawLog),
         ]]);
     }
-
-    // ── VMs ────────────────────────────────────────────────────────────────
 
     private function isVirshAvailable(): bool
     {
@@ -655,7 +606,7 @@ final class LogsViewerEndpoint
         } else {
             $text  = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
             fclose($fh);
-            $total = $this->fastCountLines($logPath); // Fix #1
+            $total = $this->fastCountLines($logPath);
         }
 
         $text = $this->forceValidUtf8($text);
@@ -667,8 +618,6 @@ final class LogsViewerEndpoint
         ]]);
     }
 
-    // ── Main log fetch (category-aware) ────────────────────────────────────
-
     private function replyStates(): void
     {
         $cfg     = $this->getCfg();
@@ -677,7 +626,7 @@ final class LogsViewerEndpoint
         if ($cacheMs > 0) {
             $cached = $this->cacheGet($cfg, $cacheMs);
             if ($cached !== null) {
-                // Phase B: hash check on cached content too
+
                 $cachedHash = md5($cached);
                 $clientHash = (string)($_GET['_since_hash'] ?? '');
                 if ($clientHash !== '' && preg_match('/^[a-f0-9]{32}$/', $clientHash) && $clientHash === $cachedHash) {
@@ -702,15 +651,12 @@ final class LogsViewerEndpoint
         if ($context === 'dash') $this->migrateDashIfNeeded($cfg);
         $category = (string)($_GET['category'] ?? 'system');
 
-        // Phase A: single-source polling (fetch only the log the user is viewing)
         $source = (string)($_GET['source'] ?? '');
         if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $source)) {
             $source = '';
         }
         $singleSource = ($source !== '') ? $source : null;
 
-        // Merge mode asks for normalized (docker --timestamps) output so lines
-        // from every source carry a comparable, system-local timestamp.
         $normTs = (($_GET['_normts'] ?? '') === '1');
 
         if ($category === 'docker') {
@@ -728,10 +674,6 @@ final class LogsViewerEndpoint
             $this->cachePut($cfg, (string)$jsonOut);
         }
 
-        // Phase B: content hash for unchanged detection
-        // Client sends _since_hash from the previous poll. If the content
-        // hasn't changed, we return a tiny {"unchanged":true} response
-        // instead of the full payload (saves 99%+ bandwidth on idle logs).
         if ($jsonOut !== false) {
             $contentHash = md5((string)$jsonOut);
             $clientHash  = (string)($_GET['_since_hash'] ?? '');
@@ -768,7 +710,7 @@ final class LogsViewerEndpoint
             } else {
                 $text  = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
                 fclose($fh);
-                $total = $this->fastCountLines($path); // Fix #1: wc -l instead of full re-read
+                $total = $this->fastCountLines($path);
             }
 
             $text   = $this->forceValidUtf8($text);
@@ -842,33 +784,26 @@ final class LogsViewerEndpoint
         $maxLines = $this->getMaxLines($cfg);
         $rows     = [];
 
-        // Get actual container states (cached per request)
         $containerStates = $this->getDockerStates();
 
-        // Fix #3: Launch all docker log commands in parallel (proc_open)
-        // instead of serial shell_exec which blocks N × 0.5-2s.
         $procs = [];
         $pipes = [];
         $validContainers = [];
         foreach ($enabled as $container) {
             if (!preg_match('/^[a-zA-Z0-9._-]{1,64}$/', $container)) continue;
-            // In merge mode (normTs) we pull Docker's own RFC3339 UTC timestamp
-            // per line via --timestamps. Container apps log in wildly different
-            // formats (or none), so their inline timestamps cannot be relied on
-            // for cross-source ordering; the docker-supplied one always can.
+
             $tsFlag = $normTs ? '--timestamps ' : '';
             $cmd = 'docker logs ' . $tsFlag . '--tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1';
             $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
             $proc = @proc_open($cmd, $desc, $p);
             if (is_resource($proc)) {
-                @fclose($p[0]); // close stdin
+                @fclose($p[0]);
                 $procs[]    = $proc;
                 $pipes[]    = $p;
                 $validContainers[] = $container;
             }
         }
 
-        // Collect results (all ran in parallel, now just reading)
         foreach ($procs as $i => $proc) {
             $rawLog = (string)@stream_get_contents($pipes[$i][1]);
             @fclose($pipes[$i][1]);
@@ -894,17 +829,7 @@ final class LogsViewerEndpoint
         return $rows;
     }
 
-    /**
-     * Rewrite Docker's RFC3339 (UTC) per-line timestamp prefix, produced by
-     * `docker logs --timestamps`, into the same system-local "M j H:i:s" shape
-     * the Unraid syslog uses. This makes Docker lines directly comparable and
-     * visually consistent with system lines in Merge mode, and lets the single
-     * client-side syslog timestamp parser order every source correctly.
-     *
-     * gmdate() with (epoch + system offset) is used deliberately so the result
-     * does not depend on PHP's date_default_timezone, which on Unraid is often
-     * UTC even though the syslog is written in local time.
-     */
+    // rewrite docker's UTC timestamps to local time so merge mode sorts correctly
     private function normalizeDockerTimestamps(string $raw): string
     {
         if ($raw === '') return $raw;
@@ -912,7 +837,7 @@ final class LogsViewerEndpoint
         $out    = [];
         foreach (explode("\n", $raw) as $line) {
             if ($line === '') { $out[] = $line; continue; }
-            // Docker prefix: 2026-05-15T14:03:29.123456789Z <original line>
+
             if (preg_match('/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})\s(.*)$/s', $line, $m)) {
                 $epoch = strtotime($m[1] . $m[2]);
                 if ($epoch !== false) {
@@ -920,15 +845,14 @@ final class LogsViewerEndpoint
                     continue;
                 }
             }
-            $out[] = $line; // leave anything we cannot parse untouched
+            $out[] = $line;
         }
         return implode("\n", $out);
     }
 
-    /** System (kernel) UTC offset in seconds, e.g. +10800 for EEST. */
     private function systemTzOffsetSeconds(): int
     {
-        $z = trim((string)@shell_exec('date +%z 2>/dev/null')); // "+0300"
+        $z = trim((string)@shell_exec('date +%z 2>/dev/null'));
         if (!preg_match('/^([+-])(\d{2})(\d{2})$/', $z, $m)) return 0;
         $sec = ((int)$m[2]) * 3600 + ((int)$m[3]) * 60;
         return ($m[1] === '-') ? -$sec : $sec;
@@ -946,7 +870,6 @@ final class LogsViewerEndpoint
         $maxLines = $this->getMaxLines($cfg);
         $rows     = [];
 
-        // Get actual VM states (cached per request)
         $vmStates = $this->getVmStates();
 
         foreach ($enabled as $vmName) {
@@ -962,7 +885,7 @@ final class LogsViewerEndpoint
             } else {
                 $text  = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
                 fclose($fh);
-                $total = $this->fastCountLines($logPath); // Fix #1: wc -l instead of full re-read
+                $total = $this->fastCountLines($logPath);
             }
 
             $text   = $this->forceValidUtf8($text);
@@ -982,8 +905,6 @@ final class LogsViewerEndpoint
         return $rows;
     }
 
-    // ── Backup: List available backups ────────────────────────────────────
-
     private function replyListBackups(): void
     {
         $cfg         = $this->getCfg();
@@ -999,7 +920,6 @@ final class LogsViewerEndpoint
             $name = basename($file, '.zip');
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $name)) continue;
 
-            // Peek inside zip for summary
             $contents = ['system' => 0, 'docker' => 0, 'vms' => 0, 'custom' => 0];
             $za = new \ZipArchive();
             if ($za->open($file) === true) {
@@ -1024,8 +944,6 @@ final class LogsViewerEndpoint
         $this->json(['backups' => $backups]);
     }
 
-    // ── Backup: Download a backup zip ─────────────────────────────────────
-
     private function replyDownloadBackup(): void
     {
         $date = (string)($_GET['date'] ?? '');
@@ -1044,7 +962,6 @@ final class LogsViewerEndpoint
         $backupDir = rtrim($storagePath, '/');
         $file      = $backupDir . '/' . $date . '.zip';
 
-        // Security: verify resolved path stays in backup dir
         $real = @realpath($file);
         if ($real === false || !is_file($real) || strncmp($real, $backupDir, strlen($backupDir)) !== 0) {
             http_response_code(404);
@@ -1059,16 +976,12 @@ final class LogsViewerEndpoint
         exit;
     }
 
-    // ── Alerts: Get rules ─────────────────────────────────────────────────
-
     private function replyAlertRules(): void
     {
         $path = '/boot/config/plugins/logsviewer/alerts-rules.json';
         $rules = is_file($path) ? @json_decode((string)@file_get_contents($path), true) : [];
         $this->json(['rules' => is_array($rules) ? $rules : []]);
     }
-
-    // ── Alerts: Get history ───────────────────────────────────────────────
 
     private function replyAlertHistory(): void
     {
@@ -1077,23 +990,19 @@ final class LogsViewerEndpoint
         $this->json(['history' => is_array($history) ? $history : []]);
     }
 
-    // ── Alerts: Clear history ─────────────────────────────────────────────
-
     private function replyClearAlertHistory(): void
     {
         $path = '/boot/config/plugins/logsviewer/alerts-history.json';
         @file_put_contents($path, '[]', LOCK_EX);
-        // Also clear cooldowns so alerts can re-trigger
+
         $cdPath = '/tmp/logsviewer_cache/alert_cooldowns.json';
         if (is_file($cdPath)) @file_put_contents($cdPath, '{}', LOCK_EX);
         $this->json(['cleared' => true]);
     }
 
-    // ── Alerts: Run on-demand scan ────────────────────────────────────────
-
     private function replyRunAlertsScan(): void
     {
-        // Lock to prevent concurrent scans (cron + manual + multiple manual)
+
         $lockPath = self::ALERTS_SCAN_LOCK;
         $fh = @fopen($lockPath, 'c');
         if ($fh === false) {
@@ -1104,7 +1013,6 @@ final class LogsViewerEndpoint
             $this->json(['busy' => true, 'message' => 'A scan is already running. Try again in a moment.'], 409);
         }
 
-        // Locate PHP binary (mirror logic from logsviewer-alerts.sh)
         $phpBin = '';
         foreach (['/usr/bin/php', '/usr/local/bin/php', '/usr/local/emhttp/plugins/dynamix/scripts/php'] as $candidate) {
             if (is_executable($candidate)) { $phpBin = $candidate; break; }
@@ -1128,8 +1036,6 @@ final class LogsViewerEndpoint
 
         $this->json(['success' => true, 'new_alerts' => $count]);
     }
-
-    // ── Alerts: Mutes ──────────────────────────────────────────────────────
 
     private function loadAlertMutes(): array
     {
@@ -1201,8 +1107,6 @@ final class LogsViewerEndpoint
         $this->json(['unmuted' => true, 'rule_id' => $ruleId]);
     }
 
-    // ── HTTP helpers ───────────────────────────────────────────────────────
-
     private function enforceAjaxGet(): void
     {
         if (!$this->isAjax()) { header('HTTP/1.1 403 Forbidden'); exit('Direct access not allowed'); }
@@ -1210,11 +1114,11 @@ final class LogsViewerEndpoint
         $this->enforceLocalOrigin();
     }
 
-    /** Reject requests whose Origin/Referer points to a different host (CSRF via foreign page) */
+    // reject cross-origin calls: this endpoint is only meant to be hit from the unraid ui
     private function enforceLocalOrigin(): void
     {
         $host = $_SERVER['HTTP_HOST'] ?? '';
-        if ($host === '') return; // CLI / no-host: allow
+        if ($host === '') return;
 
         foreach (['HTTP_ORIGIN', 'HTTP_REFERER'] as $key) {
             $val = $_SERVER[$key] ?? '';
@@ -1250,8 +1154,6 @@ final class LogsViewerEndpoint
         exit;
     }
 
-    // ── File I/O ───────────────────────────────────────────────────────────
-
     private function openSnapshot(string $path): array
     {
         if (!is_file($path) || !is_readable($path)) return [null, null];
@@ -1268,6 +1170,7 @@ final class LogsViewerEndpoint
         return ($t === '') ? 0 : substr_count($t, "\n") + 1;
     }
 
+    // read backwards in chunks from the snapshot size so we don't load the whole file to get the last N lines
     private function tailFromSnapshot($fh, ?int $snapSize, int $lines): string
     {
         if ($snapSize === null) {
@@ -1333,50 +1236,42 @@ final class LogsViewerEndpoint
         return $count;
     }
 
-    /**
-     * Security: Build VM log path and verify it stays within the allowed directory.
-     * Returns null if the path would escape /var/log/libvirt/qemu/.
-     */
     private function safeVmLogPath(string $vmName): ?string
     {
         $base = '/var/log/libvirt/qemu/';
         $path = $base . $vmName . '.log';
         $real = @realpath($path);
-        // If file doesn't exist yet, validate the directory component
+
         if ($real === false) {
-            // Ensure no directory traversal characters snuck through
+
             if (strpos($vmName, '..') !== false || strpos($vmName, '/') !== false || strpos($vmName, '\\') !== false) {
                 return null;
             }
             return $path;
         }
-        // File exists: verify it resolves within the allowed directory
+
         if (strncmp($real, $base, strlen($base)) !== 0) return null;
         return $real;
     }
 
-    /**
-     * Fix #1: Fast line count using native wc -l (C-speed) for local files.
-     * Falls back to PHP stream counting if wc is unavailable or fails.
-     */
+    // wc -l is much faster than counting in php, fall back to the snapshot if the path isn't readable
     private function fastCountLines(string $path, $fh = null, ?int $snapSize = null): ?int
     {
         if ($path !== '' && is_file($path) && is_readable($path)) {
             $out = @shell_exec('wc -l < ' . escapeshellarg($path) . ' 2>/dev/null');
             if ($out !== null && $out !== false) {
                 $n = (int)trim($out);
-                // wc -l counts newlines; if file doesn't end with \n, add 1
+
                 $lastByte = @file_get_contents($path, false, null, max(0, filesize($path) - 1), 1);
                 if ($lastByte !== false && $lastByte !== '' && $lastByte !== "\n") $n++;
                 return max(0, $n);
             }
         }
-        // Fallback: PHP stream counting (original method)
+
         if ($fh !== null) return $this->countLinesFromSnapshot($fh, $snapSize);
         return null;
     }
 
-    // Cache function availability checks (called 5+ times per request)
     private static ?bool $_hasMbCheck = null;
     private static ?bool $_hasMbConvert = null;
 
@@ -1394,8 +1289,7 @@ final class LogsViewerEndpoint
         return preg_replace('/[^\P{C}\n\t\r]+/u', '', $s) ?? $s;
     }
 
-    // ── Micro-cache ────────────────────────────────────────────────────────
-
+    // brief cache window, a quarter of the refresh interval, so rapid polls don't re-read the same file
     private function computeMicroCacheMs(array $cfg): int
     {
         if ((string)($cfg['REFRESH_ENABLED'] ?? '1') !== '1') return 0;
@@ -1446,7 +1340,6 @@ final class LogsViewerEndpoint
         if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $path);
         else @unlink($tmp);
 
-        // Stale cache cleanup (1% chance per request)
         if (mt_rand(1, 100) !== 1) return;
         $now   = time();
         $files = @glob(self::CACHE_DIR . '/resp_*.json');
@@ -1456,12 +1349,6 @@ final class LogsViewerEndpoint
             if (is_array($st) && isset($st['mtime']) && ($now - (int)$st['mtime']) > 10) @unlink($f);
         }
     }
-
-    // ── Saved Filters ──────────────────────────────────────────────────────
-    // CRUD for filter presets stored in /boot/config/plugins/logsviewer/saved-filters.json.
-    // Each filter:
-    //   id, name, sources[], level, pattern, is_regex,
-    //   created_at, updated_at, last_run_at, last_match_count, alert_rule_id
 
     private const SAVED_FILTERS_FILE = '/boot/config/plugins/logsviewer/saved-filters.json';
     private const ALERT_RULES_FILE   = '/boot/config/plugins/logsviewer/alerts-rules.json';
@@ -1511,7 +1398,7 @@ final class LogsViewerEndpoint
 
     private function validateFilterInput(array $in): array
     {
-        // Returns [valid?, errors[], cleaned[]]
+
         $errors = [];
         $name = trim((string)($in['name'] ?? ''));
         if ($name === '' || strlen($name) > 80) {
@@ -1538,7 +1425,7 @@ final class LogsViewerEndpoint
 
         $isRegex = !empty($in['is_regex']);
         if ($isRegex && $pattern !== '') {
-            // Validate the regex compiles
+
             $test = @preg_match('/' . str_replace('/', '\/', $pattern) . '/', '');
             if ($test === false) $errors[] = 'Regex pattern is invalid.';
         }
@@ -1559,13 +1446,13 @@ final class LogsViewerEndpoint
     private function replyGetSavedFilters(): void
     {
         $filters = $this->readSavedFilters();
-        // Decorate with whether the linked alert rule still exists
+
         if (!empty($filters)) {
             $ruleIds = array_column($this->readAlertRules(), 'id');
             $ruleSet = array_flip($ruleIds);
             foreach ($filters as &$f) {
                 if (!empty($f['alert_rule_id']) && !isset($ruleSet[$f['alert_rule_id']])) {
-                    $f['alert_rule_id'] = null; // orphan link cleaned up
+                    $f['alert_rule_id'] = null;
                 }
             }
             unset($f);
@@ -1575,7 +1462,7 @@ final class LogsViewerEndpoint
 
     private function replySaveFilter(): void
     {
-        // Accept POST or GET (GET kept simple for now since other actions use GET)
+
         $body = $_POST;
         if (empty($body) && !empty($_GET['payload'])) {
             $body = @json_decode((string)$_GET['payload'], true) ?: [];
@@ -1593,7 +1480,7 @@ final class LogsViewerEndpoint
 
         $filters = $this->readSavedFilters();
         if ($id !== '') {
-            // Update
+
             $found = false;
             foreach ($filters as &$f) {
                 if (($f['id'] ?? '') === $id) {
@@ -1610,7 +1497,7 @@ final class LogsViewerEndpoint
             unset($f);
             if (!$found) $this->json(['error' => 'Filter not found.'], 404);
         } else {
-            // Create
+
             $id = $this->genFilterId();
             $filters[] = array_merge($clean, [
                 'id'                => $id,
@@ -1661,17 +1548,14 @@ final class LogsViewerEndpoint
         if ($filter === null) $this->json(['error' => 'Filter not found.'], 404);
 
         if (!empty($filter['alert_rule_id'])) {
-            // Already converted; verify the rule still exists
+
             $rules = $this->readAlertRules();
             foreach ($rules as $r) if (($r['id'] ?? '') === $filter['alert_rule_id']) {
                 $this->json(['already' => true, 'rule_id' => $r['id']]);
             }
-            // Stale link — clear and re-create below
+
         }
 
-        // Build the alert rule. Level maps to severity; the "only-X" single-
-        // severity filters map straight to their underlying severity, and the
-        // catch-all 'all' falls back to 'warning' (alerts can't be all-levels).
         $levelToSev = [
             'all'          => 'warning',
             'critical'     => 'critical',
@@ -1691,7 +1575,7 @@ final class LogsViewerEndpoint
             'is_regex'  => !empty($filter['is_regex']),
             'severity'  => $sev,
             'sources'   => $filter['sources'],
-            'cooldown'  => 300, // sensible default: 5 minutes
+            'cooldown'  => 300,
             'tags'      => [],
             'created_at'=> time(),
             'origin'    => 'saved_filter:' . $filter['id'],
@@ -1703,7 +1587,6 @@ final class LogsViewerEndpoint
             $this->json(['error' => 'Failed to write alert rules file.'], 500);
         }
 
-        // Link the filter back to the new rule
         $filters[$fIdx]['alert_rule_id'] = $newRule['id'];
         $filters[$fIdx]['updated_at']    = time();
         $this->writeSavedFilters($filters);
@@ -1711,16 +1594,9 @@ final class LogsViewerEndpoint
         $this->json(['created' => true, 'rule_id' => $newRule['id'], 'rule_name' => $newRule['name']]);
     }
 
-    // ── Pinned Lines ───────────────────────────────────────────────────────
-    // Bookmarked log lines from any source. Storage:
-    //   /boot/config/plugins/logsviewer/pinned-lines.json
-    // Schema per entry:
-    //   id, category, source, source_label, line, note, pinned_at
-    // Capped at 200 entries to keep the file small.
-
     private const PINNED_FILE     = '/boot/config/plugins/logsviewer/pinned-lines.json';
     private const PINNED_MAX      = 200;
-    private const PINNED_LINE_MAX = 1500; // truncate very long lines
+    private const PINNED_LINE_MAX = 1500;
 
     private function readPinnedLines(): array
     {
@@ -1749,14 +1625,14 @@ final class LogsViewerEndpoint
     private function replyGetPinnedLines(): void
     {
         $pins = $this->readPinnedLines();
-        // Newest first
+
         usort($pins, fn($a, $b) => ((int)($b['pinned_at'] ?? 0)) <=> ((int)($a['pinned_at'] ?? 0)));
         $this->json(['pins' => $pins]);
     }
 
     private function replyPinLine(): void
     {
-        // Accept POST (preferred) or GET with payload
+
         $body = $_POST;
         if (empty($body)) {
             $raw = @file_get_contents('php://input');
@@ -1769,7 +1645,6 @@ final class LogsViewerEndpoint
         $line        = (string)($body['line'] ?? '');
         $note        = trim((string)($body['note'] ?? ''));
 
-        // Validate
         if (!in_array($category, ['system', 'docker', 'vm', 'custom'], true)) {
             $this->json(['error' => 'Invalid category.'], 400);
         }
@@ -1778,7 +1653,6 @@ final class LogsViewerEndpoint
         }
         if ($line === '') $this->json(['error' => 'Line cannot be empty.'], 400);
 
-        // Truncate very long lines
         if (strlen($line) > self::PINNED_LINE_MAX) {
             $line = substr($line, 0, self::PINNED_LINE_MAX) . '…';
         }
@@ -1787,14 +1661,12 @@ final class LogsViewerEndpoint
 
         $pins = $this->readPinnedLines();
 
-        // Dedupe: same source + same line text → return existing
         foreach ($pins as $p) {
             if (($p['source'] ?? '') === $source && ($p['line'] ?? '') === $line) {
                 $this->json(['already' => true, 'id' => $p['id']]);
             }
         }
 
-        // Cap: drop oldest if at limit
         if (count($pins) >= self::PINNED_MAX) {
             usort($pins, fn($a, $b) => ((int)($a['pinned_at'] ?? 0)) <=> ((int)($b['pinned_at'] ?? 0)));
             array_shift($pins);
@@ -1846,7 +1718,6 @@ final class LogsViewerEndpoint
     }
 }
 
-// Only execute when accessed directly (not when require_once'd by a page file)
 if (basename($_SERVER['SCRIPT_FILENAME'] ?? '') === basename(__FILE__)) {
     (new LogsViewerEndpoint())->run();
 }

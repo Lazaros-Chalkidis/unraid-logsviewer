@@ -1,38 +1,20 @@
-/* ==========================================================================
-   LOGS VIEWER -- Tool Page :: Logs Tab Styles
+/* ============================================================================
+   LOGS VIEWER
    Copyright (C) 2026 Lazaros Chalkidis
    License: GPLv3
-   /plugins/logsviewer/css/tool-logs.css
+   ========================================================================= */
 
-   Sidebar (source list), main pane (severity pills + log content), mode toggle
-   and status bar. Severity sparkline / density bar removed.
-   ========================================================================== */
-
-/* ── LAYOUT ─────────────────────────────────────────────────────────────
-   Logs tab fits the viewport exactly so the user never has to scroll past
-   the status bar to reach the bottom. The whole #lvtPanelLogs becomes a
-   flex column with viewport-relative height; the panel header takes its
-   natural size, the logs-layout fills the remaining space, and the log
-   content area inside is the only thing that scrolls. The reservation
-   value below accounts for the Unraid top nav, the Tool page wrapper
-   margin, the page title, the tab strip, the panel padding and the panel
-   header above the logs-layout. A min-height fallback keeps the view
-   usable on short laptop screens where the calc would otherwise collapse.
-*/
 #lvtPanelLogs {
   display: flex;
   flex-direction: column;
-  /* Reservation bumped from 280px to 300px. The previous value left a few
-     pixels of overflow that triggered the page scrollbar - the missing
-     amount was the log content area's own horizontal scrollbar gutter plus
-     the Unraid content wrapper's bottom padding, neither of which the old
-     figure accounted for. 300px clears both with a small safety margin. */
+
   height: calc(100vh - 300px);
   min-height: 420px;
 }
 #lvtPanelLogs > .lvt-header { flex-shrink: 0; }
 #lvtPanelLogs > .lvt-logs-layout { flex: 1; min-height: 0; }
 
+/* logs tab: sidebar + main pane */
 .lvt-logs-layout {
   display: flex;
   gap: 0;
@@ -42,7 +24,7 @@
   overflow: hidden;
 }
 
-/* ── SIDEBAR ─────────────────────────────────────────────────────────── */
+/* source sidebar */
 .lvt-sidebar {
   width: 220px;
   flex-shrink: 0;
@@ -66,9 +48,7 @@
   justify-content: space-between;
   gap: .6rem;
   padding: .45rem .85rem .3rem;
-  /* A hair larger than the per-source labels (var(--lvt-log-font-size, .9rem)),
-     but with a small offset so it does not blow up and crowd the count badge
-     when a large log font size is chosen. */
+
   font-size: calc(var(--lvt-log-font-size, .9rem) + .04rem);
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -101,9 +81,7 @@
   padding: .35rem .85rem .35rem 1.2rem;
   cursor: pointer;
   color: var(--lvt-text-mid);
-  /* Scales with the Settings → Tool → Log display → "Log font size" knob.
-     The CSS variable is set on .lvt-wrapper from PHP; fallback preserves the
-     original .9rem when the wrapper has no inline style (e.g. dev preview). */
+
   font-size: var(--lvt-log-font-size, .9rem);
   border-left: 2px solid transparent;
   transition: background .12s ease, color .12s ease, border-color .12s ease;
@@ -116,11 +94,7 @@
   outline: none;
 }
 .lvt-source.is-active {
-  /* Sidebar-only blue accent for the currently-viewed source. Decoupled from
-     --lvt-accent (the brand orange) on purpose so the orange remains the
-     plugin-wide highlight colour everywhere else (filter input focus, merge
-     bar icon, etc.) while the sidebar selection gets its own cooler tone.
-     Picked from the active_source_color_options mockup (option B). */
+
   background: rgba(66,153,244,.14);
   color: #4299e4;
   border-left-color: #4299e4;
@@ -144,9 +118,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* File size on the right of each source row (was previously in the footer for
-   the active log only). Muted, tabular figures, never wraps. Empty span (size
-   0 / unknown, e.g. some docker/vm sources) collapses to nothing. */
+
 .lvt-source__size {
   flex-shrink: 0;
   margin-left: .4rem;
@@ -165,14 +137,13 @@
 .lvt-sidebar__empty .fa { font-size: 1.4rem; margin-bottom: .5rem; display: block; opacity: .5; }
 .lvt-sidebar__empty a { color: #4299e4; text-decoration: underline; }
 
-/* ── MAIN PANE ───────────────────────────────────────────────────────── */
+/* main pane */
 .lvt-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 0;   /* required so the inner log-content can shrink/scroll
-                      within the viewport-sized .lvt-logs-layout parent */
+  min-height: 0;
 }
 
 .lvt-main__header {
@@ -187,20 +158,13 @@
   flex-shrink: 0;
 }
 
-/* Severity pill bar - lives on the left of the main header where the
-   breadcrumb used to sit. Four clickable button-style chips (Info / Warning /
-   Error / Critical) that toggle a single-severity filter, plus a Filter
-   dropdown for the cumulative levels. They mirror the visual language of the
-   mode buttons on the right (same padding, uppercase, letter-spacing, radius)
-   but carry the per-severity colour. The counts are driven by
-   updateStatusbar() which still targets the same #lvtCount* IDs. */
 .lvt-sev-bar {
   display: flex;
   align-items: center;
   gap: .4rem;
   flex-wrap: wrap;
   min-width: 0;
-  margin-left: .6rem; /* extra breathing room from the panel's left edge */
+  margin-left: .6rem;
 }
 .lvt-sev-bar .lvt-sev-count {
   display: inline-flex;
@@ -228,8 +192,6 @@
 .lvt-sev-bar .lvt-sev-count:focus-visible { outline: 2px solid var(--lvt-text-dim) !important; outline-offset: 1px; }
 .lvt-sev-bar .lvt-sev-count:active { transform: scale(.97); }
 
-/* Active (selected) pill: filled with its severity colour. The count number
-   inherits, and the text colour flips to a readable on-fill value. */
 .lvt-sev-bar .lvt-sev-count--info.is-active {
   background: var(--lvt-sev-info) !important; border-color: var(--lvt-sev-info) !important; color: #fff !important;
 }
@@ -243,7 +205,6 @@
   background: var(--lvt-sev-critical) !important; border-color: var(--lvt-sev-critical) !important; color: #fff !important;
 }
 
-/* Filter dropdown (cumulative levels) - sits after the Critical pill. */
 .lvt-filter-dd { position: relative; display: inline-block; }
 .lvt-filter-dd__btn {
   display: inline-flex;
@@ -322,7 +283,7 @@
   letter-spacing: .03em;
 }
 .lvt-poll-indicator[hidden] { display: none; }
-/* Hover-pause state: badge flips to amber and reads "paused". */
+
 .lvt-poll-indicator--paused {
   color: var(--lvt-accent) !important;
   background: var(--lvt-accent-dim) !important;
@@ -335,7 +296,7 @@
   background: var(--lvt-health-active);
   animation: lvt-pulse var(--lvt-poll-pulse, 5s) ease-in-out infinite;
 }
-/* Paused dot: amber and steady (no pulse) so it reads as "halted". */
+
 .lvt-poll-indicator--paused .lvt-poll-dot {
   background: var(--lvt-accent);
   animation: none;
@@ -345,7 +306,7 @@
   50%      { opacity: 1; }
 }
 
-/* ── LOG CONTENT ─────────────────────────────────────────────────────── */
+/* the log body itself */
 .lvt-log-content {
   flex: 1;
   overflow-y: auto;
@@ -353,14 +314,10 @@
   padding: .5rem .75rem;
   background: var(--lvt-bg);
   font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", "IBM Plex Mono", Menlo, Consolas, monospace;
-  /* Scales with the Settings → Tool → Log display → "Log font size" knob.
-     Child .lvt-log-line elements inherit, so each log row resizes too. */
+
   font-size: var(--lvt-log-font-size, .85rem);
   line-height: 1.55;
-  /* No max-height/min-height: the flex parent (.lvt-main inside .lvt-logs-layout
-     inside the viewport-sized #lvtPanelLogs) handles sizing. min-height: 0
-     allows the element to shrink below its intrinsic content size, which is
-     what makes the internal overflow scroll work in nested flex layouts. */
+
   min-height: 0;
   scroll-behavior: smooth;
 }
@@ -379,23 +336,16 @@
   margin-right: .35rem;
 }
 
-/* Severity styles — match widget palette so users feel at home */
 .lvt-log-line--info     { color: var(--lvt-sev-info); }
 .lvt-log-line--warning  { color: var(--lvt-sev-warn); }
 .lvt-log-line--error    { color: var(--lvt-sev-error); }
 .lvt-log-line--critical { color: #ffffff; background: rgba(212,58,58,.18); border-left-color: var(--lvt-sev-critical); }
 .lvt-log-line--success  { color: var(--lvt-sev-success); }
 
-/* Zebra striping — subtle alternating tint that makes long log streams easier
-   to scan vertically. Applied to every other row via :nth-child(even). The
-   :not(.lvt-log-line--critical) guard keeps the critical severity background
-   (red wash) intact instead of being painted over with grey. Info / warning /
-   error / success only override the text color, so zebra coexists with them. */
 .lvt-log-line:nth-child(even):not(.lvt-log-line--critical) {
   background: rgba(255,255,255,.025);
 }
 
-/* Placeholder when no source is selected */
 .lvt-log-placeholder {
   display: flex;
   flex-direction: column;
@@ -410,7 +360,6 @@
 .lvt-log-placeholder .fa { font-size: 2.4rem; margin-bottom: .6rem; opacity: .4; }
 .lvt-log-placeholder p   { margin: 0; max-width: 680px; }
 
-/* Empty / error states for the log content area */
 .lvt-log-empty,
 .lvt-log-error {
   display: flex;
@@ -427,14 +376,6 @@
 .lvt-log-empty .fa,
 .lvt-log-error .fa { font-size: 1.8rem; margin-bottom: .5rem; }
 
-/* ── MODE TOGGLE ───────────────────────────────────────────────────────
-   Visual language mirrors the Settings page footer (Apply / Reset to
-   Defaults / Done): subtle tinted background, colored border, solid
-   colored text. Inactive buttons use the neutral "Done" treatment; the
-   currently-active mode adopts the green "Apply" treatment to signal
-   "this mode is on". Sizes match the Settings footer buttons exactly so
-   the two pages share visual rhythm.
-*/
 .lvt-modes {
   display: flex;
   gap: .4rem;
@@ -456,9 +397,7 @@
   border-radius: 4px;
   cursor: pointer;
   transition: background .2s, border-color .2s, color .2s;
-  /* !important on the color triplet defends against any upstream Unraid
-     native button styling or theme override that could otherwise leak the
-     old accent orange through. The default state stays strictly neutral. */
+
   background: var(--lvt-bg-subtle) !important;
   border: 1px solid var(--lvt-border-strong) !important;
   color: var(--lvt-text-mid) !important;
@@ -491,7 +430,6 @@
   cursor: not-allowed;
 }
 
-/* ── FILTER BAR ──────────────────────────────────────────────────────── */
 .lvt-filter-bar {
   display: flex;
   align-items: center;
@@ -551,9 +489,7 @@
   width: 26px;
   height: 26px;
   background: transparent;
-  /* !important + focus handling for the same reason as .lvt-iconbtn:
-     stops Unraid's native button:focus from repainting the border orange
-     after a click. */
+
   border: 1px solid var(--lvt-border) !important;
   border-radius: 4px;
   color: var(--lvt-text-mid);
@@ -576,7 +512,6 @@
 .lvt-filter-bar__clear:focus-visible { outline: 2px solid var(--lvt-text-dim) !important; outline-offset: 1px; }
 .lvt-filter-bar__clear:active { transform: scale(.96); }
 
-/* Highlighted match within a filtered line */
 .lvt-log-match {
   background: rgba(244,125,66,.35);
   color: var(--lvt-text);
@@ -584,7 +519,6 @@
   padding: 0 1px;
 }
 
-/* ── STATUS BAR ──────────────────────────────────────────────────────── */
 .lvt-statusbar {
   display: flex;
   align-items: center;
@@ -600,10 +534,7 @@
   gap: .5rem;
   flex-shrink: 0;
 }
-/* Lines total on the left, enlarged ~50% over the base footer text.
-   left and right share equal flex-grow so the center search box stays
-   geometrically centered in the footer regardless of how wide the right-hand
-   live/paused badge is (the badge changes width between states). */
+
 .lvt-statusbar__left  { font-size: 1.08rem; flex: 1 1 0; justify-content: flex-start; }
 .lvt-statusbar__right { flex: 1 1 0; justify-content: flex-end; }
 .lvt-statusbar__left,
@@ -624,8 +555,6 @@
 .lvt-statusbar__left .lvt-statusbar__item { gap: .6rem; }
 .lvt-statusbar strong { color: var(--lvt-text); font-weight: 600; }
 
-/* Persistent search box, centered in the footer. Takes the middle slot and
-   stays out of the way of the lines count (left) and live badge (right). */
 .lvt-statusbar__center {
   flex: 0 1 460px;
   display: flex;
@@ -698,7 +627,6 @@
 .lvt-sev-count--critical.has-count { color: var(--lvt-sev-critical); }
 .lvt-sev-count strong { color: inherit; }
 
-/* ── MERGE MODE ──────────────────────────────────────────────────────── */
 .lvt-merge-bar {
   display: flex;
   align-items: center;
@@ -759,25 +687,21 @@
 }
 .lvt-merge-chip__x:hover { background: var(--lvt-border-subtle); color: var(--lvt-text); }
 
-/* Sidebar row in merge-selected state (kept distinct from single-select active) */
 .lvt-source.is-merge-selected {
   background: var(--lvt-bg-subtle);
   color: var(--lvt-text);
   border-left-color: transparent;
 }
 .lvt-source.is-merge-selected::before {
-  content: "\f00c"; /* fa-check */
+  content: "\f00c";
   font-family: FontAwesome;
-  /* Match the sidebar's blue selection palette so all sidebar "picked"
-     indicators read as one family. Distinct from is-active by virtue of
-     the row treatment (no row tint, no left border), not the hue. */
+
   color: #4299e4;
   font-size: .7rem;
   margin-right: .15rem;
   margin-left: -.15rem;
 }
 
-/* Per-line source badge in merged view */
 .lvt-merge-badge {
   display: inline-block;
   padding: 2px 7px;
@@ -792,11 +716,6 @@
   white-space: nowrap;
 }
 
-/* ── RESPONSIVE ─────────────────────────────────────────────────────────
-   On narrow viewports the sidebar moves above the main pane, scroll mode
-   switches to natural page scroll (no fixed height on the panel), and
-   internal max-heights take over again so each section gets a sensible
-   chunk of screen real estate. */
 @media (max-width: 800px) {
   #lvtPanelLogs   { height: auto; min-height: 0; }
   .lvt-logs-layout { flex-direction: column; min-height: 0; }
@@ -804,7 +723,6 @@
   .lvt-log-content { max-height: 60vh; flex: none; }
 }
 
-/* ── LIGHT THEME OVERRIDES ───────────────────────────────────────────── */
 .lvt-light .lvt-logs-layout       { background: var(--lvt-surface); }
 .lvt-light .lvt-sidebar           { background: rgba(0,0,0,.03); }
 .lvt-light .lvt-source:hover,
@@ -823,25 +741,6 @@
   background: rgba(0,0,0,.025);
 }
 
-/* ───────────────────────────────────────────────────────────────────────
-   Unraid native-button override hardening (ID-scoped).
-
-   The header pills and the Filter dropdown items are <button> elements, so
-   the Unraid dynamix theme paints them with its own button chrome (orange
-   border / text). Its rule carries enough specificity (and in some states
-   !important) to beat our plain class rules, even the ones that already use
-   !important on the border. Re-asserting the same declarations under the
-   #lvtPanelLogs ID lifts our specificity above any class-based theme rule so
-   our colours win in every state (base / hover / focus / active). This is the
-   same battle .lvt-mode already won; the pills, dropdown and icon buttons
-   just needed the same lift.
-   ─────────────────────────────────────────────────────────────────────── */
-
-/* Severity pills: subtle background, border follows the text colour.
-   min-width:0 cancels the Unraid native button min-width that was padding the
-   shorter pills (INFO / ERROR) with empty space on the right; width is now
-   driven purely by content, so each pill grows with its digit count. Sizes
-   are ~20% smaller than the first pass per design. */
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count {
   box-sizing: border-box !important;
   display: inline-flex !important;
@@ -864,13 +763,11 @@
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--critical { color: var(--lvt-text-muted) !important; }
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--critical.has-count { color: var(--lvt-sev-critical) !important; }
 
-/* Active (filled) pill states, re-asserted at ID specificity */
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--info.is-active     { background: var(--lvt-sev-info)     !important; border-color: var(--lvt-sev-info)     !important; color: #fff !important; }
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--warning.is-active  { background: var(--lvt-sev-warn)     !important; border-color: var(--lvt-sev-warn)     !important; color: #1a1a1a !important; }
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--error.is-active    { background: var(--lvt-sev-error)    !important; border-color: var(--lvt-sev-error)    !important; color: #fff !important; }
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--critical.is-active { background: var(--lvt-sev-critical) !important; border-color: var(--lvt-sev-critical) !important; color: #fff !important; }
 
-/* Filter dropdown trigger button */
 #lvtPanelLogs .lvt-filter-dd__btn {
   box-sizing: border-box !important;
   display: inline-flex !important;
@@ -897,8 +794,6 @@
   color: var(--lvt-accent) !important;
 }
 
-/* Filter dropdown items: flat, no native chrome, transparent border so the
-   layout does not jump when hover/active paints a background */
 #lvtPanelLogs .lvt-filter-dd__item {
   background: transparent !important;
   border: 1px solid transparent !important;
@@ -913,9 +808,6 @@
   color: var(--lvt-accent) !important;
 }
 
-/* Icon buttons (merge clear) in the tool bars.
-   Pin the border neutral in every interaction state so the theme cannot
-   repaint it accent-orange on focus or active. */
 #lvtPanelLogs .lvt-iconbtn,
 #lvtPanelLogs .lvt-iconbtn:focus,
 #lvtPanelLogs .lvt-iconbtn:active,
@@ -930,8 +822,6 @@
   color: var(--lvt-text) !important;
 }
 
-/* Filter-bar clear (X) button: pin neutral in every state, same as icon
-   buttons, so the theme cannot repaint its border accent-orange. */
 #lvtPanelLogs .lvt-filter-bar__clear,
 #lvtPanelLogs .lvt-filter-bar__clear:focus,
 #lvtPanelLogs .lvt-filter-bar__clear:active,
@@ -946,16 +836,12 @@
   color: var(--lvt-text) !important;
 }
 
-/* Merge "clear selection" button: destructive action, so it turns red on
-   hover instead of the usual neutral grey. */
 #lvtPanelLogs #lvtMergeClear:hover {
   background: rgba(212,58,58,.15) !important;
   border-color: var(--lvt-sev-error) !important;
   color: var(--lvt-sev-error) !important;
 }
 
-/* Merge chip remove (x) button: Unraid's native button chrome was stretching
-   it wide and painting it orange. Pin it to a compact, neutral square. */
 #lvtPanelLogs .lvt-merge-chip__x,
 #lvtPanelLogs .lvt-merge-chip__x:focus,
 #lvtPanelLogs .lvt-merge-chip__x:active {
@@ -978,25 +864,6 @@
   color: var(--lvt-sev-error) !important;
 }
 
-/* ==========================================================================
-   Shared button system (moved here from the former tool-saved.css when the
-   Saved and Pinned tabs were removed). Used by the Logs tool bars: merge /
-   refresh / download, and the .lvt-btn primary/danger/
-   ghost variants.
-   ========================================================================== */
-/* ── BUTTONS ─────────────────────────────────────────────────────────────
-   The Tool page button system mirrors the Settings footer Apply / Reset /
-   Done pattern: subtle tinted background, colored border, solid colored
-   text, identical size/shape across variants. Semantic colors:
-     base (Done)        -- neutral grey, used by Cancel and other dismissive
-                           actions
-     --primary (Apply)  -- green, used by create/save/run actions
-                           (New filter, Save filter, Create your first filter)
-     --danger  (Reset)  -- accent orange, used by destructive actions
-                           (Clear all)
-     --ghost            -- even quieter variant of the neutral, for low-
-                           emphasis dismiss actions inside compact layouts
-*/
 .lvt-btn {
   display: inline-flex;
   align-items: center;
@@ -1014,10 +881,7 @@
   cursor: pointer;
   white-space: nowrap;
   transition: background .2s, border-color .2s, color .2s, opacity .12s;
-  /* !important on the color triplet matches the Settings footer pattern:
-     Unraid's native button styling otherwise leaks accent colors through
-     onto our buttons. The defense is per-variant so each one stays in its
-     intended lane. */
+
   background: var(--lvt-bg-subtle) !important;
   border: 1px solid var(--lvt-border-strong) !important;
   color: var(--lvt-text-mid) !important;
@@ -1064,7 +928,6 @@
   color: var(--lvt-text-mid) !important;
 }
 
-/* Compact 28x28 icon button used in filter rows */
 .lvt-iconbtn {
   width: 28px;
   height: 28px;
@@ -1073,11 +936,7 @@
   justify-content: center;
   padding: 0;
   background: transparent;
-  /* !important on the border matches the .lvt-mode / .lvt-btn pattern.
-     Without it, Unraid's native button:focus rule repaints the border
-     accent-orange the moment the button is clicked (see merge/filter
-     clear buttons). The variants below re-assert their own border-color
-     with !important so they are not flattened by this base rule. */
+
   border: 1px solid var(--lvt-border) !important;
   border-radius: 4px;
   color: var(--lvt-text-mid);
@@ -1089,15 +948,12 @@
   box-shadow: none !important;
 }
 .lvt-iconbtn:hover { background: var(--lvt-border-subtle); color: var(--lvt-text); border-color: var(--lvt-text-muted) !important; }
-/* Mouse focus stays neutral; keyboard focus gets a subtle grey ring (never
-   the orange Unraid default). box-shadow:none kills any inset focus glow. */
+
 .lvt-iconbtn:focus { outline: none !important; box-shadow: none !important; }
 .lvt-iconbtn:focus:not(:focus-visible) { border-color: var(--lvt-border) !important; }
 .lvt-iconbtn:focus-visible { outline: 2px solid var(--lvt-text-dim) !important; outline-offset: 1px; }
 .lvt-iconbtn:active:not(:disabled) { transform: scale(.96); }
-/* Play action: adopts the Apply-style green from the Settings footer,
-   adapted to the 28x28 icon-button footprint (no min-width, no padding
-   change). Hover deepens the tint without changing color hue. */
+
 .lvt-iconbtn--play {
   background: var(--lvt-btn-green-bg) !important;
   border-color: var(--lvt-btn-green-border) !important;
@@ -1111,10 +967,6 @@
 .lvt-iconbtn--alert-on  { color: var(--lvt-sev-success); border-color: rgba(76,175,80,.40) !important; }
 .lvt-iconbtn--alert-off { color: var(--lvt-text-mid); }
 
-/* ==========================================================================
-   Right-click context menu for log lines (moved here from the former
-   tool-pinned.css when the Pinned tab was removed). Used by the Logs view.
-   ========================================================================== */
 .lvt-ctxmenu {
   position: fixed;
   z-index: 6000;
@@ -1162,6 +1014,5 @@
   text-transform: uppercase;
 }
 
-/* Context menu - light theme */
 .lvt-light .lvt-ctxmenu            { background: #ffffff; border-color: rgba(0,0,0,.18); }
 .lvt-light .lvt-ctxmenu__item:hover{ background: rgba(244,125,66,.12); }

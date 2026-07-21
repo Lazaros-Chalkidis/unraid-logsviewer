@@ -3,16 +3,20 @@ Icon="img/logsviewermain.png"
 Title="Logs Viewer Settings"
 ---
 <?php
+/* ============================================================================
+   LOGS VIEWER
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
+   ========================================================================= */
+
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 require_once '/usr/local/emhttp/plugins/logsviewer/include/logsviewer_api.php';
 
 $plugin_name = 'logsviewer';
 $cfg_file = "/boot/config/plugins/{$plugin_name}/{$plugin_name}.cfg";
 
-// Fixed allowlist (only these logs)
 $available_scripts = ['syslog', 'syslog-previous', 'dmesg', 'graphql-api.log', 'nginx-error', 'phplog', 'libvirt'];
 
-// Display name mapping
 $script_display_names = [
   'syslog' => 'Syslog',
   'syslog-previous' => 'Syslog Previous',
@@ -23,7 +27,6 @@ $script_display_names = [
   'libvirt' => 'Libvirt',
 ];
 
-// Helpers
 $yn = static function($v, $default = '0') {
   $v = (string)($v ?? $default);
   return ($v === '1') ? '1' : '0';
@@ -44,14 +47,12 @@ $sanitize_hex = static function($v, $fallback = '') {
   return strtolower($v);
 };
 
-// Font family allowlist sanitizer (settings UI)
 $sanitize_font_family = static function($v, $fallback = 'system') {
   $v = strtolower(trim((string)$v));
   $allowed = ['system','monospace','jetbrains','fira','sourcecodepro','ibmplex'];
   return in_array($v, $allowed, true) ? $v : $fallback;
 };
 
-// Whitelist validators for select/enum fields
 $sanitize_interval = static function($v) {
   $v = (string)$v;
   $allowed = ['3','5','10','15','30','60'];
@@ -84,65 +85,46 @@ $sanitize_export_format = static function($v) {
 };
 $sanitize_font_size = static function($v) {
   $v = trim((string)$v);
-  // Only two sizes are exposed in the UI now: 1.125rem (Default) and
-  // 1.25rem (Large). Older saved values like 0.75rem / 0.875rem / 1rem
-  // would land outside this allow-list and fall back to the default,
-  // which is the desired graceful upgrade behaviour.
+
   $allowed = ['1.125rem','1.25rem'];
   return in_array($v, $allowed, true) ? $v : '1.125rem';
 };
 
-// Tool live-view auto-refresh interval, in seconds. Exposed as a 3/5/10/20
-// dropdown; anything else snaps back to the 5s default.
 $sanitize_refresh_secs = static function($v) {
   $v = trim((string)$v);
   $allowed = ['3','5','10','20'];
   return in_array($v, $allowed, true) ? $v : '5';
 };
 
-// Tool page export format. The tool can serialise the loaded log as plain
-// text, JSON (severity + line objects) or CSV; anything else snaps to txt.
 $sanitize_tool_export_format = static function($v) {
   $v = strtolower(trim((string)$v));
   $allowed = ['txt','json','csv'];
   return in_array($v, $allowed, true) ? $v : 'txt';
 };
 
-// --- Persist new configuration when the form is submitted ---
-
-// NOTE: Reset to defaults is now handled client-side with JavaScript.
-// The reset button fills the form fields, then user clicks Apply to save.
-
+// settings apply: rebuild the cfg, write it, then sync the cron schedules
 if (isset($_POST['#apply'])) {
-  // Bootstrap existing cfg for safe defaults (used below)
+
   $cfg_existing = parse_plugin_cfg($plugin_name, true);
 
-  // ── Resolve ENABLED_SYSTEM_LOGS first (from Sources tab) ──
-  // This is the authoritative list; Dashboard/Tool derive from it.
   $enabled_system_logs_raw = $_POST['ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['ENABLED_SYSTEM_LOGS'] ?? '');
 
-  // ── Dashboard ENABLED_SCRIPTS ──
-  // If ENABLED_SCRIPTS[] checkboxes exist in POST, use them (legacy support).
-  // Otherwise, derive from the Sources tab's ENABLED_SYSTEM_LOGS.
   if (!empty($_POST['ENABLED_SCRIPTS']) && is_array($_POST['ENABLED_SCRIPTS'])) {
     $selected = array_map('trim', $_POST['ENABLED_SCRIPTS']);
   } else {
-    // No script picker in form — sync from ENABLED_SYSTEM_LOGS
+
     $selected = array_filter(array_map('trim', explode(',', $enabled_system_logs_raw)));
   }
 
-  // Keep only allowed values
   $allow_map = array_flip($available_scripts);
   $selected = array_values(array_filter($selected, function($v) use ($allow_map) {
     return isset($allow_map[$v]);
   }));
 
-  // If nothing selected, default to syslog
   if (empty($selected)) $selected = ['syslog'];
 
-  // Defaults: keep current behavior; extras OFF until user enables
   $new_cfg = [
-    // Dashboard settings
+
     'REFRESH_ENABLED'   => $yn($_POST['REFRESH_ENABLED'] ?? ($cfg_existing['REFRESH_ENABLED'] ?? '1'), '1'),
     'REFRESH_INTERVAL'  => $sanitize_interval($_POST['REFRESH_INTERVAL'] ?? ($cfg_existing['REFRESH_INTERVAL'] ?? '10')),
     'ENABLED_SCRIPTS'   => implode(',', $selected),
@@ -151,7 +133,6 @@ if (isset($_POST['#apply'])) {
     'LOG_BG_COLOR'      => $sanitize_hex($_POST['LOG_BG_COLOR'] ?? ($cfg_existing['LOG_BG_COLOR'] ?? ''), ''),
     'VERSION_OVERRIDE'  => $sanitize_version($_POST['VERSION_OVERRIDE'] ?? ($cfg_existing['VERSION_OVERRIDE'] ?? 'auto')),
 
-    // NEW (extras OFF by default)
     'TAIL_LINES'                 => $clamp_tail($_POST['TAIL_LINES'] ?? ($cfg_existing['TAIL_LINES'] ?? '0')),
     'LOG_FONT_FAMILY'            => $sanitize_font_family($_POST['LOG_FONT_FAMILY'] ?? ($cfg_existing['LOG_FONT_FAMILY'] ?? 'system'), 'system'),
     'THEME_PRESET'               => $sanitize_theme($_POST['THEME_PRESET'] ?? ($cfg_existing['THEME_PRESET'] ?? 'default')),
@@ -177,38 +158,25 @@ if (isset($_POST['#apply'])) {
     'EXPORT_FORMAT'               => $sanitize_export_format($_POST['EXPORT_FORMAT'] ?? ($cfg_existing['EXPORT_FORMAT'] ?? 'log')),
     'EXPORT_INCLUDE_TIMESTAMP'    => $yn($_POST['EXPORT_INCLUDE_TIMESTAMP'] ?? ($cfg_existing['EXPORT_INCLUDE_TIMESTAMP'] ?? '1'), '1'),
 
-    // Tool settings: the current Tool page reads the sidebar source lists
-    // (TOOL_ENABLED_*), the tail line count (TOOL_TAIL_LINES) and the log font
-    // size (TOOL_LOG_FONT_SIZE, applied as a CSS variable on the wrapper so it
-    // scales both the log content and the sidebar source rows). All the other
-    // legacy widget-era keys (refresh interval, fonts, themes, syntax
-    // highlighting, layout toggles, export options, autoscroll) belonged to
-    // the old widget-style Tool implementation and have no consumers in the
-    // redesigned Tool page, so they are intentionally not persisted.
     'TOOL_LOG_FONT_SIZE'             => $sanitize_font_size($_POST['TOOL_LOG_FONT_SIZE'] ?? ($cfg_existing['TOOL_LOG_FONT_SIZE'] ?? '1.125rem')),
     'TOOL_TAIL_LINES'                => $clamp_tail($_POST['TOOL_TAIL_LINES'] ?? ($cfg_existing['TOOL_TAIL_LINES'] ?? '0')),
     'TOOL_REFRESH_SECS'              => $sanitize_refresh_secs($_POST['TOOL_REFRESH_SECS'] ?? ($cfg_existing['TOOL_REFRESH_SECS'] ?? '5')),
     'TOOL_EXPORT_FORMAT'             => $sanitize_tool_export_format($_POST['TOOL_EXPORT_FORMAT'] ?? ($cfg_existing['TOOL_EXPORT_FORMAT'] ?? 'txt')),
 
-    // Log Sources (independent per Dashboard/Tool)
-    // Dashboard sources are independent: do NOT fall back to shared/global keys.
     'DASH_ENABLED_SYSTEM_LOGS'       => $_POST['DASH_ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['DASH_ENABLED_SYSTEM_LOGS'] ?? 'syslog,dmesg,graphql-api.log,nginx-error'),
     'DASH_ENABLED_DOCKER_CONTAINERS' => $_POST['DASH_ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['DASH_ENABLED_DOCKER_CONTAINERS'] ?? ''),
     'DASH_ENABLED_VMS'               => $_POST['DASH_ENABLED_VMS'] ?? ($cfg_existing['DASH_ENABLED_VMS'] ?? ''),
     'DASH_ENABLED_CUSTOM_LOGS'       => $_POST['DASH_ENABLED_CUSTOM_LOGS'] ?? ($cfg_existing['DASH_ENABLED_CUSTOM_LOGS'] ?? ''),
 
-    // Tool defaults: system logs only; docker/vm empty until user enables
     'TOOL_ENABLED_SYSTEM_LOGS'       => $_POST['TOOL_ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['TOOL_ENABLED_SYSTEM_LOGS'] ?? 'syslog,dmesg,graphql-api.log,nginx-error'),
     'TOOL_ENABLED_DOCKER_CONTAINERS' => $_POST['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ''),
     'TOOL_ENABLED_VMS'               => $_POST['TOOL_ENABLED_VMS'] ?? ($cfg_existing['TOOL_ENABLED_VMS'] ?? ''),
     'TOOL_ENABLED_CUSTOM_LOGS'       => $_POST['TOOL_ENABLED_CUSTOM_LOGS'] ?? ($cfg_existing['TOOL_ENABLED_CUSTOM_LOGS'] ?? ''),
 
-    // Log Sources (shared between Dashboard and Tool)
     'ENABLED_SYSTEM_LOGS'        => $_POST['ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['ENABLED_SYSTEM_LOGS'] ?? ''),
     'ENABLED_DOCKER_CONTAINERS'  => $_POST['ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['ENABLED_DOCKER_CONTAINERS'] ?? ''),
     'ENABLED_VMS'                => $_POST['ENABLED_VMS'] ?? ($cfg_existing['ENABLED_VMS'] ?? ''),
 
-    // Backup settings
     'BACKUP_ENABLED'                  => $yn($_POST['BACKUP_ENABLED'] ?? ($cfg_existing['BACKUP_ENABLED'] ?? '0')),
     'BACKUP_RETENTION'                => in_array($_POST['BACKUP_RETENTION'] ?? '', ['1','2','3','4','5','6'], true) ? $_POST['BACKUP_RETENTION'] : ($cfg_existing['BACKUP_RETENTION'] ?? '3'),
     'BACKUP_STORAGE'                  => (strncmp($_POST['BACKUP_STORAGE'] ?? '', '/mnt/user/', 10) === 0 && !preg_match('/\.\./', $_POST['BACKUP_STORAGE'])) ? rtrim($_POST['BACKUP_STORAGE'], '/') : ($cfg_existing['BACKUP_STORAGE'] ?? '/mnt/user/appdata/Logs-Viewer-Backup'),
@@ -218,15 +186,12 @@ if (isset($_POST['#apply'])) {
     'BACKUP_ENABLED_VMS'              => $_POST['BACKUP_ENABLED_VMS'] ?? ($cfg_existing['BACKUP_ENABLED_VMS'] ?? ''),
     'BACKUP_ENABLED_CUSTOM_LOGS'      => $_POST['BACKUP_ENABLED_CUSTOM_LOGS'] ?? ($cfg_existing['BACKUP_ENABLED_CUSTOM_LOGS'] ?? ''),
 
-    // Alerts settings
     'ALERTS_ENABLED'                  => $yn($_POST['ALERTS_ENABLED'] ?? ($cfg_existing['ALERTS_ENABLED'] ?? '0')),
     'ALERTS_INTERVAL'                 => in_array($_POST['ALERTS_INTERVAL'] ?? '', ['1','2','5'], true) ? $_POST['ALERTS_INTERVAL'] : ($cfg_existing['ALERTS_INTERVAL'] ?? '2'),
 
-    // UI state (survives AJAX POST + GET reload cycle)
     'LV_ACTIVE_TAB'              => in_array($_POST['lv_active_tab'] ?? '', ['dash','tool','backup','alerts'], true) ? $_POST['lv_active_tab'] : ($cfg_existing['LV_ACTIVE_TAB'] ?? 'dash'),
   ];
 
-  // Normalize a few options safely
   $allowed_fonts = ['system','monospace','jetbrains','fira','sourcecodepro','ibmplex'];
   if (!in_array($new_cfg['LOG_FONT_FAMILY'], $allowed_fonts, true)) $new_cfg['LOG_FONT_FAMILY'] = 'system';
 
@@ -239,22 +204,19 @@ if (isset($_POST['#apply'])) {
   $allowed_export = ['log','txt','json'];
   if (!in_array($new_cfg['EXPORT_FORMAT'], $allowed_export, true)) $new_cfg['EXPORT_FORMAT'] = 'log';
 
-  // Whitelist remaining free-text fields
   $allowed_version = ['auto','legacy','responsive'];
   if (!in_array($new_cfg['VERSION_OVERRIDE'], $allowed_version, true)) $new_cfg['VERSION_OVERRIDE'] = 'auto';
 
   $allowed_engine = ['hljs','prism'];
   if (!in_array($new_cfg['SYNTAX_ENGINE'] ?? 'hljs', $allowed_engine, true)) $new_cfg['SYNTAX_ENGINE'] = 'hljs';
 
-  // Clamp numeric fields
   $new_cfg['REFRESH_INTERVAL']      = max(1, min(3600, (int)$new_cfg['REFRESH_INTERVAL']));
 
-  // Binary fields: force '0' or '1'
   foreach (['REFRESH_ENABLED','SYNTAX_HIGHLIGHTING'] as $_bf) {
     $new_cfg[$_bf] = ($new_cfg[$_bf] === '1') ? '1' : '0';
   }
 
-  // Serialize cfg (strip control characters to prevent INI injection)
+  // strip control chars from each value before writing the ini
   $ini = '';
   foreach ($new_cfg as $key => $value) {
     $value = preg_replace('/[\x00-\x1f\x7f]/', '', (string)$value);
@@ -263,26 +225,23 @@ if (isset($_POST['#apply'])) {
   }
   file_put_contents($cfg_file, $ini);
 
-  // Cron management - Unraid uses /etc/cron.d/root for all entries
   $cronRoot = '/etc/cron.d/root';
   $cronFlash = '/boot/config/plugins/logsviewer/logsviewer-cron.conf';
   $cronContent = is_file($cronRoot) ? (string)@file_get_contents($cronRoot) : '';
 
-  // Remove existing logsviewer lines
-  $cronContent = preg_replace('/# LogsViewer backup schedule:\n.*logsviewer-backup\.sh.*\n?/', '', $cronContent);
+  $cronContent = preg_replace('/# LogsViewer backup schedule:\n.*logsviewer-backup\.sh.*\n?/', '', $cronContent);  // drop our old lines first, re-add below if still enabled, so other cron entries stay intact
   $cronContent = preg_replace('/# LogsViewer alerts schedule:\n.*logsviewer-alerts\.sh.*\n?/', '', $cronContent);
   $cronContent = rtrim($cronContent) . "\n";
 
   $flashLines = '';
 
-  // Backup cron
   if (($new_cfg['BACKUP_ENABLED'] ?? '0') === '1') {
     $schedHour = (int)($new_cfg['BACKUP_SCHEDULE'] ?? 23);
     $schedMin  = ($schedHour === 23) ? 59 : 0;
     $backupLine = "# LogsViewer backup schedule:\n{$schedMin} {$schedHour} * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-backup.sh >/dev/null 2>&1\n";
     $cronContent .= $backupLine;
     $flashLines .= $backupLine;
-    // Create backup dir + block Samba access via permissions
+
     $backupPath = (string)($new_cfg['BACKUP_STORAGE'] ?? '');
     if ($backupPath !== '' && strncmp($backupPath, '/mnt/user/', 10) === 0) {
       @mkdir($backupPath, 0700, true);
@@ -290,7 +249,6 @@ if (isset($_POST['#apply'])) {
     }
   }
 
-  // Alerts cron
   if (($new_cfg['ALERTS_ENABLED'] ?? '0') === '1') {
     $alertInterval = (int)($new_cfg['ALERTS_INTERVAL'] ?? 5);
     if ($alertInterval < 1) $alertInterval = 5;
@@ -301,18 +259,18 @@ if (isset($_POST['#apply'])) {
 
   @file_put_contents($cronRoot, $cronContent);
   @exec('crontab /etc/cron.d/root 2>/dev/null');
-  // Persist to flash for boot restore
+
   if ($flashLines !== '') {
-    @file_put_contents($cronFlash, $flashLines);
+    @file_put_contents($cronFlash, $flashLines);  // mirror to flash so the schedule survives a reboot (cron.d/root is tmpfs)
   } else {
     if (is_file($cronFlash)) @unlink($cronFlash);
   }
-  // Cleanup old separate cron files
+
+  // clean up cron files from older versions that used separate drop-ins
   foreach (['/etc/cron.d/logsviewer-backup','/etc/cron.d/logsviewer-alerts','/boot/config/plugins/logsviewer/logsviewer-backup.cron','/boot/config/plugins/logsviewer/logsviewer-alerts.cron'] as $_old) {
     if (is_file($_old)) @unlink($_old);
   }
 
-  // Save alert rules JSON (only when alerts tab is active to prevent stale data overwrite)
   $activeTab = $_POST['lv_active_tab'] ?? 'dash';
   $alertRulesRaw = (string)($_POST['ALERT_RULES_JSON'] ?? '');
   if ($activeTab === 'alerts' && $alertRulesRaw !== '') {
@@ -322,7 +280,6 @@ if (isset($_POST['#apply'])) {
     }
   }
 
-  // Save custom log paths JSON (validated against allowed prefixes)
   $customPathsRaw = (string)($_POST['CUSTOM_PATHS_JSON'] ?? '');
   if ($customPathsRaw !== '') {
     $allowedPrefixes = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
@@ -354,10 +311,6 @@ if (isset($_POST['#apply'])) {
   $cfg = parse_plugin_cfg($plugin_name, true);
 }
 
-// ---------------------------------------------------------------------------
-// Migration (B): One-time legacy/global -> DASH_* only (Tool stays clean).
-// Runs only if DASH_* missing and MIGRATED_DASH_SOURCES not set.
-// ---------------------------------------------------------------------------
 if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
   $legacy_sys    = (string)($cfg['ENABLED_SYSTEM_LOGS'] ?? ($cfg['ENABLED_SCRIPTS'] ?? ''));
   $legacy_docker = (string)($cfg['ENABLED_DOCKER_CONTAINERS'] ?? '');
@@ -369,7 +322,6 @@ if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_EN
     $cfg['DASH_ENABLED_VMS']               = $legacy_vms;
     $cfg['MIGRATED_DASH_SOURCES']          = '1';
 
-    // Persist migration to cfg file
     $ini = '';
     foreach ($cfg as $key => $value) {
       $value = preg_replace('/[\x00-\x1f\x7f]/', '', (string)$value);
@@ -380,7 +332,6 @@ if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_EN
   }
 }
 
-// Hide developer-only controls in main release builds
 $branch_meta_file = '/usr/local/emhttp/plugins/logsviewer/branch.meta';
 $is_main_branch = true;
 if (file_exists($branch_meta_file)) {
@@ -393,15 +344,13 @@ if (empty($enabled_scripts_array)) $enabled_scripts_array = ['syslog'];
 
 $bg_default = $cfg['LOG_BG_COLOR'] ?? '';
 
-// Light theme detection
 $_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
 $_theme_name = $_dyn_cfg['display']['theme'] ?? '';
 $lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';
 
-// Active tab persistence: POST (during save) → config file (on GET reload)
 $active_tab = $_POST['lv_active_tab'] ?? ($cfg['LV_ACTIVE_TAB'] ?? 'dash');
 if (!in_array($active_tab, ['dash', 'tool', 'backup', 'alerts'], true)) $active_tab = 'dash';
-// Toggle switch helper
+
 $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = 'Disabled') {
   $v = ($cfg[$name] ?? $default) === '1';
   $cls = $v ? 'on' : 'off';
@@ -409,12 +358,6 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
   return '<label class="lv-toggle"><input type="hidden" name="' . htmlspecialchars($name) . '" value="0"><input type="checkbox" name="' . htmlspecialchars($name) . '" value="1"' . ($v ? ' checked' : '') . '><span class="lv-toggle-track"></span></label><span class="lv-toggle-txt ' . $cls . '">' . $txt . '</span>';
 };
 
-// Plugin version: prefer the VERSION file at the installed plugin directory
-// (written by build.sh on every build). This stays fresh during dev workflows
-// where files are replaced without a full .plg reinstall. Falls back to the
-// .plg ENTITY, then the .txz filename, then the Slackware package metadata,
-// for installs that predate the VERSION file. Same source for the footer
-// badge and the credits modal so they can never disagree.
 $plugin_version = '';
 $_lvVersionFile = '/usr/local/emhttp/plugins/logsviewer/VERSION';
 if (is_readable($_lvVersionFile)) {
@@ -436,8 +379,7 @@ if ($plugin_version === '') {
 if ($plugin_version === '') {
   $_lvPkgs = @glob('/var/log/packages/logsviewer-*');
   if (is_array($_lvPkgs) && !empty($_lvPkgs)) {
-    // Sort by mtime descending so the freshest install wins even if a stale
-    // package file was left behind by an older install.
+
     usort($_lvPkgs, function($a, $b) { return @filemtime($b) - @filemtime($a); });
     if (preg_match('/^logsviewer-(\d{4}\.\d{2}\.\d{2}[a-z]?(?:-[a-z0-9]+)?)/i', basename($_lvPkgs[0]), $_lvM)) {
       $plugin_version = $_lvM[1];
@@ -447,7 +389,6 @@ if ($plugin_version === '') {
 if ($plugin_version === '') $plugin_version = 'dev';
 
 ?>
-
 
 <style>.logsviewer-settings{visibility:hidden;}</style>
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/settings.css?v=<?php echo @filemtime('/usr/local/emhttp/plugins/logsviewer/css/settings.css') ?: time(); ?>">
@@ -473,7 +414,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
 
   <div id="lvToolPanel" style="<?php echo ($active_tab === 'tool') ? '' : 'display:none;'; ?>">
 
-    <!-- Performance -->
     <div class="lv-sec">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Performance</span>
@@ -494,7 +434,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Log display -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Log display</span>
@@ -535,7 +474,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Log Source Options (Tool) -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Log source options</span>
@@ -632,7 +570,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
                 Allowed prefixes: <code>/var/log/</code>, <code>/mnt/user/</code>, <code>/mnt/cache/</code>.
               </p>
               <div class="lv-custom-paths-list">
-                <!-- Rows rendered by JS -->
+
               </div>
               <div class="lv-source-actions" style="margin-top:8px;">
                 <button type="button" class="lv-action-btn lv-custom-paths-add-btn"><i class="fa fa-plus"></i> Add row</button>
@@ -649,12 +587,10 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-  </div><!-- /lvToolPanel -->
-
+  </div>
 
   <div id="lvBackupPanel" style="<?php echo ($active_tab === 'backup') ? '' : 'display:none;'; ?>">
 
-    <!-- General -->
     <div class="lv-sec">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>General</span>
@@ -701,7 +637,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Backup Sources -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Backup sources</span>
@@ -789,7 +724,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Backup Calendar -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Backup calendar</span>
@@ -824,12 +758,10 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-  </div><!-- /lvBackupPanel -->
-
+  </div>
 
   <div id="lvAlertsPanel" style="<?php echo ($active_tab === 'alerts') ? '' : 'display:none;'; ?>">
 
-    <!-- General -->
     <div class="lv-sec">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>General</span>
@@ -857,7 +789,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Alert Rules -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Alert rules</span>
@@ -878,7 +809,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Alert History -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Alert history</span>
@@ -898,14 +828,12 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-  </div><!-- /lvAlertsPanel -->
+  </div>
 
-
-    <!-- Credits Modal -->
     <div id="lvCreditsModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
       <div class="lv-credits-modal-box lv-credits-modal-v2">
         <div class="lv-credits-grid">
-          <!-- Left: avatar column -->
+
           <div class="lv-credits-left">
             <span class="lv-credits-accent-stripe"></span>
             <div class="lv-credits-avatar-wrap">
@@ -914,7 +842,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
             <div class="lv-credits-name">Lazaros Chalkidis</div>
             <div class="lv-credits-role">Developer</div>
           </div>
-          <!-- Right: info + links -->
+
           <div class="lv-credits-right">
             <div class="lv-credits-title-row">
               <span class="lv-credits-title">Logs Viewer</span>
@@ -924,9 +852,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
             <div class="lv-credits-links">
               <a href="https://github.com/Lazaros-Chalkidis" target="_blank" rel="noopener" class="lv-credits-link">
                 <i class="fa fa-github"></i><span>GitHub Profile</span><i class="fa fa-external-link lv-credits-link-ext"></i>
-              </a>
-              <a href="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/" target="_blank" rel="noopener" class="lv-credits-link">
-                <i class="fa fa-comments-o"></i><span>Plugin Support Thread</span><i class="fa fa-external-link lv-credits-link-ext"></i>
               </a>
               <a href="https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues" target="_blank" rel="noopener" class="lv-credits-link">
                 <i class="fa fa-exclamation-circle"></i><span>GitHub Issues</span><i class="fa fa-external-link lv-credits-link-ext"></i>
@@ -941,7 +866,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Reset Confirmation Modal -->
     <div id="lvResetModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
       <div class="lv-reset-modal-box">
         <div class="lv-reset-body">
@@ -957,7 +881,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Clear History Confirmation Modal -->
     <div id="lvClearHistoryModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
       <div class="lv-reset-modal-box">
         <div class="lv-reset-body">
@@ -974,10 +897,8 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-
     <div id="lvDashboardPanel" style="<?php echo ($active_tab === 'dash') ? '' : 'display:none;'; ?>">
 
-    <!-- General -->
     <div class="lv-sec">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Behavior</span>
@@ -1005,7 +926,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Log Display -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Log display</span>
@@ -1092,7 +1012,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Tools -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Tools</span>
@@ -1134,7 +1053,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Layout -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Layout</span>
@@ -1180,7 +1098,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Autoscroll -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Autoscroll</span>
@@ -1208,7 +1125,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Performance -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Performance</span>
@@ -1229,7 +1145,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    <!-- Log Source Options (Dashboard) -->
     <div class="lv-sec closed">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
         <span>Log source options</span>
@@ -1326,7 +1241,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
                 Allowed prefixes: <code>/var/log/</code>, <code>/mnt/user/</code>, <code>/mnt/cache/</code>.
               </p>
               <div class="lv-custom-paths-list">
-                <!-- Rows rendered by JS -->
+
               </div>
               <div class="lv-source-actions" style="margin-top:8px;">
                 <button type="button" class="lv-action-btn lv-custom-paths-add-btn"><i class="fa fa-plus"></i> Add row</button>
@@ -1343,11 +1258,10 @@ if ($plugin_version === '') $plugin_version = 'dev';
       </div>
     </div>
 
-    </div><!-- /lvDashboardPanel -->
+    </div>
 
-    </div><!-- /content -->
+    </div>
 
-    <!-- Shared state for Custom log paths (used by both Tool & Dashboard sub-cards) -->
     <input type="hidden" name="CUSTOM_PATHS_JSON" id="lvCustomPathsJson" value="<?php
       $_lvCp = is_file('/boot/config/plugins/logsviewer/custom-paths.json')
         ? (string)@file_get_contents('/boot/config/plugins/logsviewer/custom-paths.json')
@@ -1378,14 +1292,10 @@ if ($plugin_version === '') $plugin_version = 'dev';
     </div>
     <?php endif; ?>
 
-  </div><!-- /lv-settings-panel -->
+  </div>
 
   <div class="lv-footer-row">
     <div class="lv-footer-links">
-      <a href="https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/"
-         id="lvSupportLink" class="lv-footer-link"
-         target="_blank" rel="noopener noreferrer">Support Forum</a>
-      <span class="lv-footer-sep" aria-hidden="true"></span>
       <a href="https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues"
          id="lvGithubIssuesLink" class="lv-footer-link"
          target="_blank" rel="noopener noreferrer">GitHub Issues</a>
@@ -1407,7 +1317,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
     }
     (function () {
 
-      // Toggle switch: update text label on change
       document.addEventListener('change', function(e) {
         var cb = e.target;
         if (cb.type !== 'checkbox') return;
@@ -1422,7 +1331,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         txt.className = 'lv-toggle-txt ' + (on ? 'on' : 'off');
       });
 
-      // Store on/off labels from initial state
       document.querySelectorAll('.lv-toggle-txt').forEach(function(txt) {
         var isOn = txt.classList.contains('on');
         var text = txt.textContent.trim();
@@ -1435,7 +1343,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         }
       });
 
-      // Color picker sync
       function normalizeHex(v){
         v = (v || '').trim();
         if (!v) return '';
@@ -1445,7 +1352,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         return v.toLowerCase();
       }
 
-      // Dashboard color picker
       const picker = document.getElementById('lvBgColorPicker');
       const hex = document.getElementById('lvBgColorHex');
       const hidden = document.getElementById('lvBgColorHidden');
@@ -1483,7 +1389,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       }
     })();
 
-    // Reset to Defaults
     (function() {
       const resetBtn = document.getElementById('lvResetDefaults');
       if (!resetBtn) return;
@@ -1504,9 +1409,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
         EXPORT_FORMAT:'log', EXPORT_INCLUDE_TIMESTAMP:'1', VERSION_OVERRIDE:'auto'
       };
       const toolDefaults = {
-        // TOOL_TAIL_LINES + TOOL_LOG_FONT_SIZE are the keys with UI knobs.
-        // The source-list resets (TOOL_ENABLED_*) are handled separately
-        // further down via the explicit jQuery setters below.
+
         TOOL_TAIL_LINES: '0',
         TOOL_LOG_FONT_SIZE: '1.125rem',
         TOOL_REFRESH_SECS: '5',
@@ -1516,12 +1419,12 @@ if ($plugin_version === '') $plugin_version = 'dev';
       function resetFieldsFromDefaults(form, defs, colorIds) {
         Object.keys(defs).forEach(function(fieldName) {
           var value = defs[fieldName];
-          // Toggle switch (hidden+checkbox pair)
+
           var hiddenEl = form.querySelector('input[type="hidden"][name="' + fieldName + '"]');
           var cbEl = form.querySelector('input[type="checkbox"][name="' + fieldName + '"]');
           if (hiddenEl && cbEl) {
             cbEl.checked = (value === '1');
-            // Sync toggle text
+
             var tog = cbEl.closest('.lv-toggle');
             if (tog) {
               var txt = tog.parentElement.querySelector('.lv-toggle-txt');
@@ -1534,13 +1437,13 @@ if ($plugin_version === '') $plugin_version = 'dev';
             }
             return;
           }
-          // Select
+
           var select = form.querySelector('select[name="' + fieldName + '"]');
           if (select) { select.value = value; return; }
-          // Hidden only
+
           if (hiddenEl) { hiddenEl.value = value; }
         });
-        // Color picker sync
+
         if (colorIds) {
           var cpicker = document.getElementById(colorIds.picker);
           var chex = document.getElementById(colorIds.hex);
@@ -1589,8 +1492,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
           var sc = form.querySelector('select[name="BACKUP_SCHEDULE"]'); if (sc) sc.value = '23';
           try { $('#lvBackupEnabledSystemLogs').val(''); $('#lvBackupEnabledDockerContainers').val(''); $('#lvBackupEnabledVms').val(''); if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Backup'); } catch(_){}
         } else if (isToolTabActive()) {
-          // Tool tab only has TOOL_TAIL_LINES + source-list state to reset.
-          // No color picker, no font/theme/highlight settings any more.
+
           resetFieldsFromDefaults(form, toolDefaults);
           try { $('#lvToolEnabledSystemLogs').val('syslog,dmesg,graphql-api.log,nginx-error'); $('#lvToolEnabledDockerContainers').val(''); $('#lvToolEnabledVms').val(''); } catch(_){}
           if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Tool', function(){ enableApplyAndMarkDirty(form); });
@@ -1607,7 +1509,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         lvShowResetModal();
       });
 
-      // Tab switching
       (function(){
         var tabDash = document.getElementById('lvTabDashboard');
         var tabTool = document.getElementById('lvTabTool');
@@ -1631,7 +1532,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
           if (resetDefaultsBtn) resetDefaultsBtn.style.display = '';
           if (which === 'dash' && !dashPanel._sourcesLoaded) { dashPanel._sourcesLoaded = true; lvLoadSourcesScoped('Dash'); }
           if (which === 'tool' && !toolPanel._sourcesLoaded) { toolPanel._sourcesLoaded = true; lvLoadSourcesScoped('Tool'); }
-          // Custom paths are shared between Tool & Dashboard: re-render so freshly switched tab shows current state
+
           if ((which === 'tool' || which === 'dash') && typeof lvRenderCustomPaths === 'function') { lvRenderCustomPaths(); }
           if (which === 'backup' && backupPanel && !backupPanel._sourcesLoaded) { backupPanel._sourcesLoaded = true; lvLoadSourcesScoped('Backup'); lvLoadBackupCalendar(); }
           if (which === 'alerts' && alertsPanel && !alertsPanel._loaded) { alertsPanel._loaded = true; lvLoadAlertRules(); lvLoadAlertHistory(); }
@@ -1657,7 +1558,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         } catch(e) {}
       })();
 
-      // Tab persistence on Apply
       (function(){
         function getCurrentTab() {
           var tabInput = document.getElementById('lvActiveTabInput');
@@ -1677,24 +1577,22 @@ if ($plugin_version === '') $plugin_version = 'dev';
         if (form) form.addEventListener('submit', syncAll);
       })();
 
-      // ── Intercept form submit via AJAX (StreamViewer-style Apply animation) ──
       (function(){
         var form     = document.querySelector('form[name="scriptlogs_settings"]');
         var applyBtn = document.getElementById('lvApplyBtn');
         if (!form || !applyBtn) return;
 
+        // save over ajax so the page doesn't reload, then refresh the dirty state
         function ajaxSubmitForm(e) {
           if (e) e.preventDefault();
 
-          // Disable button + spinner while saving
           applyBtn.disabled = true;
           applyBtn.classList.add('disabled');
           applyBtn.innerHTML = '<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> Saving\u2026';
 
-          // Serialize the form (works reliably with Unraid .page files)
           var params = (window.jQuery ? window.jQuery(form).serialize() : '');
           if (!params) {
-            // Fallback: build manually if jQuery is missing for any reason
+
             try {
               var fd = new FormData(form);
               var parts = [];
@@ -1702,10 +1600,10 @@ if ($plugin_version === '') $plugin_version = 'dev';
               params = parts.join('&');
             } catch(_) {}
           }
-          params += '&%23apply=apply'; // add #apply (URL-encoded)
+          params += '&%23apply=apply';
 
           if (!window.jQuery) {
-            // Plain XHR fallback
+
             var xhr = new XMLHttpRequest();
             xhr.open('POST', window.location.pathname, true);
             xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
@@ -1724,7 +1622,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
               data:    params,
               timeout: 20000,
               success: function() {
-                // Preserve active tab across reload via hash (already synced by previous IIFE)
+
                 var hash = '';
                 try {
                   var tab = sessionStorage.getItem('logsviewer_active_tab') || '';
@@ -1749,7 +1647,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         form.addEventListener('submit', ajaxSubmitForm);
       })();
 
-      // Log Sources discovery
       function lvFormatSize(bytes) {
         if (!bytes || bytes <= 0) return '0 B';
         if (bytes < 1024) return bytes + ' B';
@@ -1791,6 +1688,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
           $('#lv' + scope + 'EnabledCustomLogs').val(custom.join(','));
         }
       }
+      // discover the available log sources for one scope (dash vs tool) and render the checkboxes
       function lvLoadSourcesScoped(scope, doneCb) {
         var sysSet    = lvCsvToSet($('#lv' + scope + 'EnabledSystemLogs').val());
         var dkSet     = lvCsvToSet($('#lv' + scope + 'EnabledDockerContainers').val());
@@ -1852,8 +1750,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
               $('#lv' + scope + 'VmUnavailable').show();
             }
 
-            // Custom logs are rendered client-side from _lvCustomPaths state
-            // (so newly-added rows appear before the user clicks Apply).
             if (typeof lvRenderCustomLogCheckboxes === 'function') {
               lvRenderCustomLogCheckboxes(scope);
             }
@@ -1867,7 +1763,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         });
       }
 
-      // Source checkbox changes
       $(document).on('change', '#lvDashSystemLogsList .lv-source-check, #lvDashDockerLogsList .lv-source-check, #lvDashVmLogsList .lv-source-check, #lvDashCustomLogsList .lv-source-check', function() {
         lvSyncScopedInputs('Dash'); var f=document.forms['scriptlogs_settings']; if(f&&typeof enableApplyAndMarkDirty==='function') enableApplyAndMarkDirty(f);
       });
@@ -1878,7 +1773,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f&&typeof enableApplyAndMarkDirty==='function') enableApplyAndMarkDirty(f);
       });
 
-      // Dashboard Sources buttons
       $('#lvDashDockerSelectAll').on('click', function(){ $('#lvDashDockerLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Dash'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       $('#lvDashDockerDeselectAll').on('click', function(){ $('#lvDashDockerLogsList .lv-source-check:not(:disabled)').prop('checked',false); lvSyncScopedInputs('Dash'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       $('#lvDashSystemSelectAll').on('click', function(){ $('#lvDashSystemLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Dash'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
@@ -1888,7 +1782,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       $('#lvDashDockerScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Dash',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
       $('#lvDashVmScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Dash',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
 
-      // Tool Sources buttons
       $('#lvToolDockerSelectAll').on('click', function(){ $('#lvToolDockerLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Tool'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       $('#lvToolDockerDeselectAll').on('click', function(){ $('#lvToolDockerLogsList .lv-source-check:not(:disabled)').prop('checked',false); lvSyncScopedInputs('Tool'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       $('#lvToolSystemSelectAll').on('click', function(){ $('#lvToolSystemLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Tool'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
@@ -1898,7 +1791,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
       $('#lvToolDockerScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Tool',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
       $('#lvToolVmScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Tool',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
 
-      // Backup Sources buttons
       $('#lvBackupDockerSelectAll').on('click', function(){ $('#lvBackupDockerLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       $('#lvBackupDockerDeselectAll').on('click', function(){ $('#lvBackupDockerLogsList .lv-source-check:not(:disabled)').prop('checked',false); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       $('#lvBackupSystemSelectAll').on('click', function(){ $('#lvBackupSystemLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs('Backup'); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
@@ -1908,15 +1800,14 @@ if ($plugin_version === '') $plugin_version = 'dev';
       $('#lvBackupDockerScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Backup',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
       $('#lvBackupVmScan').on('click', function(){ var $i=$(this).find('i.fa'),s=Date.now(); $i.addClass('fa-spin'); lvLoadSourcesScoped('Backup',function(){ setTimeout(function(){$i.removeClass('fa-spin');},Math.max(0,400-(Date.now()-s))); }); });
 
-      // Custom Logs Select/Deselect (Tool, Dash, Backup)
       ['Tool','Dash','Backup'].forEach(function(scope){
         $('#lv' + scope + 'CustomSelectAll').on('click', function(){ $('#lv' + scope + 'CustomLogsList .lv-source-check:not(:disabled)').prop('checked',true); lvSyncScopedInputs(scope); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
         $('#lv' + scope + 'CustomDeselectAll').on('click', function(){ $('#lv' + scope + 'CustomLogsList .lv-source-check:not(:disabled)').prop('checked',false); lvSyncScopedInputs(scope); var f=document.forms['scriptlogs_settings']; if(f) enableApplyAndMarkDirty(f); });
       });
 
-      // Backup: Calendar
       var _lvCalYear, _lvCalMonth, _lvCalBackups = [];
 
+      // list the backup zips and paint the ones that exist onto the calendar
       function lvLoadBackupCalendar() {
         $.ajax({
           url: '/plugins/logsviewer/include/logsviewer_api.php',
@@ -1949,20 +1840,17 @@ if ($plugin_version === '') $plugin_version = 'dev';
         var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
         monthLabel.textContent = months[_lvCalMonth] + ' ' + _lvCalYear;
 
-        // Remove old day cells (keep 7 header cells)
         while (grid.children.length > 7) grid.removeChild(grid.lastChild);
 
         var firstDay = new Date(_lvCalYear, _lvCalMonth, 1).getDay();
-        var startOffset = (firstDay === 0) ? 6 : firstDay - 1; // Monday-based
+        var startOffset = (firstDay === 0) ? 6 : firstDay - 1;
         var daysInMonth = new Date(_lvCalYear, _lvCalMonth + 1, 0).getDate();
         var today = new Date();
         var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
 
-        // Build set of available dates
         var availSet = {};
         _lvCalBackups.forEach(function(b) { availSet[b.date] = b; });
 
-        // Empty cells for offset
         for (var i = 0; i < startOffset; i++) {
           var empty = document.createElement('div');
           empty.className = 'lv-cal-day lv-cal-day--empty';
@@ -2014,7 +1902,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         dlPanel.style.display = 'flex';
       }
 
-      // Calendar navigation
       $('#lvCalPrev').on('click', function() {
         _lvCalMonth--;
         if (_lvCalMonth < 0) { _lvCalMonth = 11; _lvCalYear--; }
@@ -2028,12 +1915,11 @@ if ($plugin_version === '') $plugin_version = 'dev';
         lvRenderCalendar();
       });
 
-      // ═══════════ CUSTOM LOG PATHS ═══════════
-
       var _lvCustomPaths = [];
       var _lvCustomPathsLoaded = false;
       var LV_ALLOWED_PREFIXES = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
 
+      // mirror the server-side path check so the user gets feedback before saving
       function lvValidateCustomPath(path) {
         if (!path || typeof path !== 'string') return false;
         if (path[0] !== '/') return false;
@@ -2065,7 +1951,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
           _lvCustomPaths.forEach(function(e, i) { html += lvRenderCustomPathRow(e, i); });
         }
         $('.lv-custom-paths-list').html(html);
-        // After a definition change, re-render the per-tab enable lists in Tool/Dash/Backup
+
         ['Tool','Dash','Backup'].forEach(function(scope) {
           if ($('#lv' + scope + 'CustomLogsList').length) lvRenderCustomLogCheckboxes(scope);
         });
@@ -2077,12 +1963,9 @@ if ($plugin_version === '') $plugin_version = 'dev';
         var $empty   = $('#lv' + scope + 'CustomEmpty');
         if (!$list.length) return;
 
-        // Read current enabled set from hidden input (preserves user intent
-        // across re-renders even if the user hasn't clicked Apply yet).
         var enabledRaw = String($('#lv' + scope + 'EnabledCustomLogs').val() || '');
         var enabledSet = lvCsvToSet(enabledRaw);
 
-        // Build keys from current _lvCustomPaths state (definitions)
         var defs = [];
         _lvCustomPaths.forEach(function(e) {
           if (!e || !e.label || !e.path) return;
@@ -2102,22 +1985,21 @@ if ($plugin_version === '') $plugin_version = 'dev';
         var html = '';
         defs.forEach(function(d) {
           var checked = !!enabledSet[d.key];
-          // Size unknown until next Apply+reload; pass 0 with no disabled state
+
           html += lvRenderSourceRow(d.key, d.name, d.path, 0, checked, false, '');
         });
         $list.html(html);
         $actions.css('display', 'flex');
       }
 
+      // pack the custom path rows into the hidden field as json for the POST
       function lvSerializeCustomPaths() {
-        // State-driven: _lvCustomPaths is the source of truth, hidden input mirrors it.
-        // DOM rows are kept in sync via lvRenderCustomPaths() which renders to ALL .lv-custom-paths-list containers.
+
         if (_lvCustomPathsLoaded) {
           $('#lvCustomPathsJson').val(JSON.stringify(_lvCustomPaths));
         }
       }
 
-      // Load initial state from hidden input (populated server-side)
       (function() {
         try {
           var raw = $('#lvCustomPathsJson').val() || '[]';
@@ -2133,7 +2015,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
       $('.lv-custom-paths-add-btn').on('click', function() {
         _lvCustomPaths.push({ label: '', path: '' });
         lvRenderCustomPaths();
-        // Focus the newly added label input
+
         $('.lv-custom-paths-list .lv-custom-paths-row').last().find('.lv-custom-paths-label').focus();
         lvSerializeCustomPaths();
         var f = document.forms['scriptlogs_settings'];
@@ -2159,7 +2041,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
             label: String($row.find('.lv-custom-paths-label').val() || '').trim(),
             path:  String($row.find('.lv-custom-paths-path').val()  || '').trim()
           };
-          // Re-render only this row for validation feedback (defer to avoid input focus loss)
+
           var pathVal = _lvCustomPaths[idx].path;
           var invalid = pathVal !== '' && !lvValidateCustomPath(pathVal);
           $row.toggleClass('is-invalid', invalid);
@@ -2173,11 +2055,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
       });
 
-      // ═══════════ NEW BADGE TRACKING (rule editor Tags field) ═══════════
-      // Strategy: show the "NEW" badge until the user interacts with any
-      // tags input (focus or typing). Persists via localStorage, so once
-      // dismissed it stays dismissed across browser sessions.
-
       var LV_TAGS_BADGE_KEY = 'logsviewer_tags_badge_dismissed';
 
       function lvIsTagsBadgeDismissed() {
@@ -2187,17 +2064,14 @@ if ($plugin_version === '') $plugin_version = 'dev';
       }
 
       function lvDismissTagsBadge() {
-        try { localStorage.setItem(LV_TAGS_BADGE_KEY, '1'); } catch (e) { /* ignore */ }
-        // Hide all currently-rendered badges without re-rendering rules
+        try { localStorage.setItem(LV_TAGS_BADGE_KEY, '1'); } catch (e) {  }
+
         $('.lv-tags-new-badge').fadeOut(200, function() { $(this).remove(); });
       }
 
-      // Trigger dismissal on first interaction with any tags input
       $(document).on('focus input', '.lv-alert-rule-tags', function() {
         if (!lvIsTagsBadgeDismissed()) lvDismissTagsBadge();
       });
-
-      // ═══════════ ALERTS ═══════════
 
       var _lvAlertRules = [];
       var _lvAlertRulesLoaded = false;
@@ -2211,13 +2085,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         { name: 'Docker Crash', pattern: 'container died|OOMKilled|exit code', is_regex: true, severity: 'warning', sources: ['docker'], cooldown: '300' }
       ];
 
-      // MITRE ATT&CK techniques relevant to what LogsViewer can actually see
-      // in the logs Unraid produces (syslog, dmesg, nginx-error, graphql,
-      // phplog, libvirt, docker, custom paths). Curated rather than the full
-      // catalogue - only techniques where a sensible regex over these logs
-      // can plausibly detect activity. Grouped by ATT&CK tactic so the
-      // dropdown renders with <optgroup>s. To extend: add a new item to an
-      // existing tactic, or push a new {tactic, items: [...]} object.
       var _lvMitreTechniques = [
         { tactic: 'Initial Access', items: [
           { id: 'T1078',     label: 'Valid Accounts' },
@@ -2267,11 +2134,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
         ]}
       ];
 
-      // Build the MITRE picker <select> markup once and reuse it across
-      // every rule's tags row. The "+ Add MITRE technique..." entry is the
-      // placeholder; the change handler resets the picker to it after each
-      // selection so the dropdown reads as an additive action rather than
-      // a stateful value bound to the rule.
+      // build the att&ck technique picker for alert rule tagging
       function lvBuildMitrePickerOptions() {
         var html = '<option value="">+ Add MITRE technique...</option>';
         _lvMitreTechniques.forEach(function(group) {
@@ -2355,7 +2218,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
           var chk = (selected.indexOf(key) !== -1) ? ' checked' : '';
           html += '<label class="lv-alert-src-chk"><input type="checkbox" value="' + key + '"' + chk + '> ' + (sysNames[key] || key) + '</label>';
         });
-        // Custom paths (loaded from hidden CUSTOM_PATHS_JSON, parsed once)
+
         try {
           var raw = $('#lvCustomPathsJson').val() || '[]';
           var arr = JSON.parse(raw);
@@ -2369,7 +2232,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
               html += '<label class="lv-alert-src-chk lv-alert-src-custom"><input type="checkbox" value="' + key + '"' + chk + '> ' + lvEscAttr(c.label) + '</label>';
             });
           }
-        } catch (e) { /* ignore parse errors */ }
+        } catch (e) {  }
         var dkChk = (selected.indexOf('docker') !== -1) ? ' checked' : '';
         html += '<label class="lv-alert-src-chk lv-alert-src-sep"><input type="checkbox" value="docker"' + dkChk + '> Docker (all containers)</label>';
         return html;
@@ -2434,14 +2297,13 @@ if ($plugin_version === '') $plugin_version = 'dev';
           });
         }
         $('#lvAlertRulesList').html(html);
-        // Store rule IDs
+
         $('#lvAlertRulesList .lv-alert-rule').each(function(i) {
           $(this).data('rule-id', _lvAlertRules[i].id || lvGenRuleId());
         });
         lvSerializeRules();
       }
 
-      // Add rule
       $('#lvAlertAddRule').on('click', function() {
         if (!_lvAlertRulesLoaded) return;
         _lvAlertRules.push({ id: lvGenRuleId(), name: '', pattern: '', is_regex: false, severity: 'warning', sources: ['syslog'], cooldown: '3600', enabled: true });
@@ -2449,7 +2311,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         var f = document.forms['scriptlogs_settings']; if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
       });
 
-      // Add preset rules
       $('#lvAlertAddPresets').on('click', function() {
         if (!_lvAlertRulesLoaded) return;
         var existingNames = {};
@@ -2470,7 +2331,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         }
       });
 
-      // Remove rule
       $(document).on('click', '.lv-alert-rule-remove', function() {
         var idx = $(this).closest('.lv-alert-rule').data('index');
         _lvAlertRules.splice(idx, 1);
@@ -2478,19 +2338,11 @@ if ($plugin_version === '') $plugin_version = 'dev';
         var f = document.forms['scriptlogs_settings']; if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
       });
 
-      // Rule field changes trigger serialize + dirty
       $(document).on('change input', '.lv-alert-rule input, .lv-alert-rule select', function() {
         lvSerializeRules();
         var f = document.forms['scriptlogs_settings']; if (f && typeof enableApplyAndMarkDirty === 'function') enableApplyAndMarkDirty(f);
       });
 
-      // MITRE technique picker: when the user selects a technique from the
-      // dropdown above the tags input, append the technique ID to the
-      // comma-separated tags input below (if not already present), then
-      // reset the picker back to its placeholder so it reads as an
-      // additive action. Triggers 'input' on the tags input so the
-      // existing serialize+dirty handler above re-runs with the new value.
-      // Brief visual flash on the tags input confirms the add to the user.
       $(document).on('change', '.lv-alert-rule-mitre-picker', function() {
         var $picker = $(this);
         var techId = String($picker.val() || '').trim();
@@ -2502,32 +2354,23 @@ if ($plugin_version === '') $plugin_version = 'dev';
                         .map(function(t) { return t.trim(); })
                         .filter(Boolean);
 
-        // Case-insensitive dedupe so adding "t1110" then T1110 from the
-        // picker does not produce a duplicate entry.
         var already = current.some(function(t) { return t.toLowerCase() === techId.toLowerCase(); });
         if (!already) {
           current.push(techId);
           $tagsInput.val(current.join(', ')).trigger('input');
 
-          // Subtle flash on the input border to confirm the technique
-          // was added. Inline so the rule does not need its own keyframes.
           var origBorder = $tagsInput[0].style.borderColor;
           $tagsInput.css('border-color', 'var(--lv-accent)');
           setTimeout(function() { $tagsInput.css('border-color', origBorder || ''); }, 350);
         }
 
-        // Always reset the picker back to the placeholder, even on dedupe.
         $picker.val('');
       });
 
-      // Alert History
       var _lvAlertMutes = {};
 
       function lvIsMitreTag(t) { return /^T\d{4}(\.\d{3})?$/.test(String(t).trim()); }
 
-      // Build the official MITRE ATT&CK URL for a technique ID
-      // Main:   T1110     -> https://attack.mitre.org/techniques/T1110/
-      // Sub:    T1110.001 -> https://attack.mitre.org/techniques/T1110/001/
       function lvMitreUrl(t) {
         var s = String(t).trim();
         if (!lvIsMitreTag(s)) return null;
@@ -2583,7 +2426,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
       }
 
       function lvLoadAlertHistory() {
-        // Load mutes first so we can render the muted-state indicator
+
         lvLoadAlertMutes(function() {
           $.ajax({
             url: '/plugins/logsviewer/include/logsviewer_api.php',
@@ -2645,16 +2488,11 @@ if ($plugin_version === '') $plugin_version = 'dev';
         '</div>';
       }
 
-      // Open/close 3-dot menu.
-      // The menu uses position:fixed and its coordinates are computed from the
-      // button's getBoundingClientRect() on open. This way it escapes any
-      // ancestor with overflow:hidden / scrollable container, so it can never
-      // be clipped at the bottom of the alert-history list.
       function lvCloseAllAlertMenus() {
         $('.lv-alert-row-menu.is-open').each(function() {
           var $m = $(this);
           $m.removeClass('is-open lv-alert-row-menu--up');
-          // Clear inline positioning so it doesn't leak between opens
+
           this.style.top = '';
           this.style.left = '';
           this.style.right = '';
@@ -2666,14 +2504,13 @@ if ($plugin_version === '') $plugin_version = 'dev';
 
       function lvPositionAlertMenu(btn, $menu) {
         var menu      = $menu[0];
-        // Reset any stale positioning before measuring
+
         menu.style.top = '';
         menu.style.left = '';
         menu.style.right = '';
         menu.style.bottom = '';
         menu.style.maxHeight = '';
 
-        // Make the menu measurable without flashing on screen
         var prevVis = menu.style.visibility;
         var prevDis = menu.style.display;
         menu.style.visibility = 'hidden';
@@ -2685,22 +2522,19 @@ if ($plugin_version === '') $plugin_version = 'dev';
         var vpW        = window.innerWidth || document.documentElement.clientWidth;
         var vpH        = window.innerHeight || document.documentElement.clientHeight;
         var gap        = 4;
-        var safePad    = 8; // keep at least this many px from viewport edges
+        var safePad    = 8;
 
-        // Horizontal: align right edge of menu with right edge of button, but
-        // never cross the viewport edges.
         var left = btnRect.right - menuW;
         if (left < safePad) left = safePad;
         if (left + menuW > vpW - safePad) left = Math.max(safePad, vpW - safePad - menuW);
 
-        // Vertical: prefer below the button, flip above if not enough room.
         var spaceBelow = vpH - btnRect.bottom - gap - safePad;
         var spaceAbove = btnRect.top - gap - safePad;
         var top;
         var flipUp = false;
         if (menuH <= spaceBelow || spaceBelow >= spaceAbove) {
           top = btnRect.bottom + gap;
-          // Cap height if it would overflow the bottom of the viewport
+
           if (menuH > spaceBelow) menu.style.maxHeight = Math.max(120, spaceBelow) + 'px';
         } else {
           flipUp = true;
@@ -2712,7 +2546,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         menu.style.top  = Math.round(top)  + 'px';
         if (flipUp) $menu.addClass('lv-alert-row-menu--up'); else $menu.removeClass('lv-alert-row-menu--up');
 
-        // Restore visibility (display will be controlled by .is-open class)
         menu.style.visibility = prevVis;
         menu.style.display = prevDis;
       }
@@ -2727,19 +2560,17 @@ if ($plugin_version === '') $plugin_version = 'dev';
 
         var wasOpen = $menu.hasClass('is-open');
         lvCloseAllAlertMenus();
-        if (wasOpen) return; // second click on same button closes it
+        if (wasOpen) return;
 
         lvPositionAlertMenu(btn, $menu);
         $menu.addClass('is-open');
         $btn.attr('aria-expanded', 'true');
       });
 
-      // Close on outside click
       $(document).on('click', function() { lvCloseAllAlertMenus(); });
-      // Prevent inner clicks from closing the menu via the outside-click handler
+
       $(document).on('click', '.lv-alert-row-menu', function(e) { e.stopPropagation(); });
-      // Close on scroll/resize so the menu never floats away from its button.
-      // Capture phase + passive listener for performance.
+
       (function() {
         var onScrollOrResize = function() {
           if (document.querySelector('.lv-alert-row-menu.is-open')) lvCloseAllAlertMenus();
@@ -2747,12 +2578,11 @@ if ($plugin_version === '') $plugin_version = 'dev';
         window.addEventListener('scroll', onScrollOrResize, true);
         window.addEventListener('resize', onScrollOrResize);
       })();
-      // Close on Escape
+
       $(document).on('keydown', function(e) {
         if (e.key === 'Escape' || e.keyCode === 27) lvCloseAllAlertMenus();
       });
 
-      // Mute action
       $(document).on('click', '.lv-alert-menu-item[data-action="mute"]', function(e) {
         e.stopPropagation();
         var ruleId   = $(this).data('rule-id');
@@ -2769,7 +2599,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         });
       });
 
-      // Unmute action
       $(document).on('click', '.lv-alert-menu-unmute', function(e) {
         e.stopPropagation();
         var ruleId = $(this).data('rule-id');
@@ -2785,7 +2614,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         });
       });
 
-      // Scan Now button
       $('#lvAlertScanNow').on('click', function() {
         var $btn = $(this);
         if ($btn.prop('disabled')) return;
@@ -2803,7 +2631,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
             $btn.html('<i class="fa fa-check"></i> ' + (n === 0 ? 'No new alerts' : (n + ' new')));
             setTimeout(function() { $btn.html(origHtml).prop('disabled', false).removeClass('disabled'); }, 2500);
             lvLoadAlertHistory();
-            // Lightweight inline toast
+
             var $toast = $('<div class="lv-toast-inline">' + msg + '</div>');
             $btn.closest('.lv-alert-history-actions').append($toast);
             setTimeout(function() { $toast.fadeOut(400, function() { $toast.remove(); }); }, 2500);
@@ -2829,7 +2657,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         if (modal) { modal.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
       });
 
-      // Clear History confirmation modal logic
       (function(){
         var modal = document.getElementById('lvClearHistoryModal');
         if (!modal) return;
@@ -2849,13 +2676,11 @@ if ($plugin_version === '') $plugin_version = 'dev';
         });
       })();
 
-      // Serialize rules on form submit
       var alertForm = document.querySelector('form[name="scriptlogs_settings"]');
       if (alertForm) {
         alertForm.addEventListener('submit', function() { lvSerializeRules(); });
       }
 
-      // Reset confirmation modal
       function lvShowResetModal() {
         var modal = document.getElementById('lvResetModal');
         if (!modal) return;
@@ -2872,7 +2697,6 @@ if ($plugin_version === '') $plugin_version = 'dev';
         document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.style.display === 'flex') close(); });
       })();
 
-      // Credits modal
       (function(){
         var modal = document.getElementById('lvCreditsModal');
         var link  = document.getElementById('lvCreditsLink');
@@ -2890,16 +2714,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
 </form>
 
 <script>
-/*
- * Page width unlocker (same approach as LogsviewerTool.page).
- *
- * The Unraid dynamix template wraps standalone plugin pages in a main
- * content container with a max-width around 1180px. On 2K and 4K monitors
- * this leaves huge gutters. This block walks up from .logsviewer-settings
- * to the document body and removes any max-width constraint on ancestors
- * narrower than the viewport. The wrapper itself uses 80% width with
- * margin auto, so if the script no-ops, layout stays sane and centered.
- */
+
 (function() {
     'use strict';
     function unlockAncestors() {

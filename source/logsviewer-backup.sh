@@ -1,6 +1,11 @@
 #!/bin/bash
-# LogsViewer Backup - Daily cron script
-# Copyright (C) 2026 Lazaros Chalkidis - License: GPLv3
+# ============================================================================
+# LOGS VIEWER
+# Copyright (C) 2026 Lazaros Chalkidis
+# License: GPLv3
+# =========================================================================
+
+# daily cron: zips the selected logs into the backup folder, prunes old ones
 
 CFG="/boot/config/plugins/logsviewer/logsviewer.cfg"
 [ ! -f "$CFG" ] && exit 0

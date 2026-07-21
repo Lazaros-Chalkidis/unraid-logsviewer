@@ -1,58 +1,40 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   Logs Viewer -- Tool Page Shell
+/* ============================================================================
+   LOGS VIEWER
    Copyright (C) 2026 Lazaros Chalkidis
    License: GPLv3
-   /plugins/logsviewer/js/logsviewer-tool.js
-
-   Phase 1a: AJAX loader shell. The Saved and Pinned tabs were removed, so
-   there is no longer a tab strip or hash routing; the shell just loads the
-   single Logs view (logsviewer-tool-logs.js) into the panel.
-   Depends on: jQuery (Unraid)
-   ═══════════════════════════════════════════════════════════════════════════ */
-/* global $ */
+   ========================================================================= */
 
 (function () {
 'use strict';
 
-// Guard against double-init (e.g. partial page reloads)
 if (window.__lvtLoaded) return;
 window.__lvtLoaded = true;
 
-// ── State & Configuration ─────────────────────────────────────────────────
 var _cfg          = window.lvToolConfig || {};
 var _tabLoaderUrl = _cfg.tabLoaderUrl || '/plugins/logsviewer/include/tool-loader.php';
 var _currentTab   = null;
-var _loadingTab   = null; // tab id currently being fetched (for race-condition guard)
-var _tabCache     = {};   // tab id -> HTML (cached after first load)
-var _tabInitDone  = {};   // tab id -> bool (init callback fired once per tab)
+var _loadingTab   = null;
+var _tabCache     = {};
+var _tabInitDone  = {};
 
-// ── DOM refs ──────────────────────────────────────────────────────────────
 var $panel;
 
-// ── Init ──────────────────────────────────────────────────────────────────
-// The Saved and Pinned tabs were removed, so there is no tab strip and no
-// hash routing any more. The shell simply loads the single Logs view into the
-// panel on startup. The loadTab/renderTab/notifyTabReady machinery is kept
-// (the Logs tab still arrives as an AJAX fragment and registers itself via
-// window.LVT_TAB), just without the navigation around it.
 $(function () {
     $panel = $('#lvtPanel');
     if (!$panel.length) return;
     loadTab('logs');
 });
 
-// ── Tab loader ────────────────────────────────────────────────────────────
+// fetch the tab html over ajax, cache it so re-opening is instant
 function loadTab(tab) {
-    if (_loadingTab === tab) return; // already fetching
+    if (_loadingTab === tab) return;
     _loadingTab = tab;
 
-    // Serve from cache when available (saves a roundtrip on tab revisits)
     if (_tabCache[tab]) {
         renderTab(tab, _tabCache[tab]);
         return;
     }
 
-    // Show loading state
     $panel.html(
         '<div class="lvt-loading">' +
           '<div class="lvt-loading__spinner"><i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i></div>' +
@@ -60,7 +42,6 @@ function loadTab(tab) {
         '</div>'
     );
 
-    // Fetch via AJAX
     $.ajax({
         url: _tabLoaderUrl,
         data: { tab: tab },
@@ -70,7 +51,7 @@ function loadTab(tab) {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .done(function (html) {
-        if (_loadingTab !== tab) return; // another tab clicked meanwhile
+        if (_loadingTab !== tab) return;
         _tabCache[tab] = html;
         renderTab(tab, html);
     })
@@ -91,7 +72,7 @@ function loadTab(tab) {
 }
 
 function renderTab(tab, html) {
-    // Notify outgoing tab so it can pause timers, save state, etc.
+
     if (_currentTab && _currentTab !== tab) {
         var prevH = window.LVT_TAB._handlers[_currentTab];
         if (prevH && typeof prevH.hide === 'function') {
@@ -99,7 +80,6 @@ function renderTab(tab, html) {
         }
     }
 
-    // Fade out → swap → fade in
     $panel.addClass('lvt-panel--fade-out');
     setTimeout(function () {
         $panel.html(html);
@@ -112,15 +92,11 @@ function renderTab(tab, html) {
     }, 120);
 }
 
-// ── Tab-ready hook ────────────────────────────────────────────────────────
-// Each tab's own JS (loaded in later phases) can register itself via:
-//   window.LVT_TAB.register('logs', { init: function(){...}, refresh: function(){...} });
-// We call init() the first time the tab is shown, refresh() on subsequent shows.
 window.LVT_TAB = window.LVT_TAB || {
     _handlers: {},
     register: function (tab, handlers) {
         this._handlers[tab] = handlers || {};
-        // If this tab is currently visible, fire its init now
+
         if (_currentTab === tab && !_tabInitDone[tab]) {
             try { handlers.init && handlers.init(); } catch (e) { console.error(e); }
             _tabInitDone[tab] = true;
@@ -128,9 +104,10 @@ window.LVT_TAB = window.LVT_TAB || {
     }
 };
 
+// tell the tab's own script it's now in the dom and visible
 function notifyTabReady(tab) {
     var h = window.LVT_TAB._handlers[tab];
-    if (!h) return; // no handler registered yet (tab JS may load later)
+    if (!h) return;
     try {
         if (!_tabInitDone[tab]) {
             h.init && h.init();
@@ -143,7 +120,6 @@ function notifyTabReady(tab) {
     }
 }
 
-// ── Utilities ─────────────────────────────────────────────────────────────
 function escHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
         return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]);

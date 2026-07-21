@@ -207,7 +207,7 @@ Bug reports, feature requests or general feedback:
 
 ## Author
 
-**Lazaros Chalkidis** — [@Lazaros-Chalkidis](https://github.com/Lazaros-Chalkidis)
+**Lazaros Chalkidis** - [@Lazaros-Chalkidis](https://github.com/Lazaros-Chalkidis)
 
 ## License
 

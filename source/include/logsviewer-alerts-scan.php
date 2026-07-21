@@ -1,18 +1,11 @@
 <?php
-// LogsViewer Alerts - Scan Engine
-// Copyright (C) 2026 Lazaros Chalkidis - License: GPLv3
-//
-// CLI usage (cron):
-//   php -f logsviewer-alerts-scan.php
-//   Echoes the count of new alerts on stdout, exits 0 on success.
-//
-// API usage:
-//   $output = (string)@shell_exec('php -f .../logsviewer-alerts-scan.php 2>/dev/null');
-//   $count  = (int)trim($output);
+/* ============================================================================
+   LOGS VIEWER
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
+   ========================================================================= */
 
 declare(strict_types=1);
-
-// ── Helper functions (also safe to include from API) ─────────────────────
 
 if (!function_exists('lv_alert_get_cfg')) {
     function lv_alert_get_cfg(string $file, string $key): string {
@@ -43,6 +36,7 @@ if (!function_exists('lv_alert_save_json')) {
 }
 
 if (!function_exists('lv_alert_is_allowed_path')) {
+    // same path whitelist as the api, alerts can only scan known log locations
     function lv_alert_is_allowed_path(string $path): bool {
         $allowedPrefixes = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
         if ($path === '' || $path[0] !== '/') return false;
@@ -82,6 +76,7 @@ if (!function_exists('lv_alert_load_custom_logs')) {
 }
 
 if (!function_exists('lv_alert_load_active_mutes')) {
+    // drop expired mutes while loading so a muted rule re-fires once its window passes
     function lv_alert_load_active_mutes(string $mutesFile): array {
         $mutes = lv_alert_load_json($mutesFile, []);
         if (!is_array($mutes) || empty($mutes)) return [];
@@ -102,6 +97,7 @@ if (!function_exists('lv_alert_load_active_mutes')) {
 }
 
 if (!function_exists('lv_alert_safe_regex')) {
+    // user-supplied pattern, run it with a time guard so a bad regex can't hang the scan
     function lv_alert_safe_regex(string $pattern, string $subject): bool {
         if (strlen($pattern) > 500) return false;
         $regex = '/' . str_replace('/', '\/', $pattern) . '/i';
@@ -115,6 +111,7 @@ if (!function_exists('lv_alert_safe_regex')) {
 }
 
 if (!function_exists('lv_alert_send_notify')) {
+    // fires an unraid notification through the dynamix notify script
     function lv_alert_send_notify(string $severity, string $ruleName, string $source, string $matchedLine): void {
         $notifyCmd = '/usr/local/emhttp/webGui/scripts/notify';
         $nsev = match($severity) {
@@ -147,9 +144,8 @@ if (!function_exists('lv_alert_send_notify')) {
     }
 }
 
-// ── Main scan function ──────────────────────────────────────────────────
-
 if (!function_exists('lv_run_alerts_scan')) {
+    // walk every enabled rule against the new tail of each log, notify on matches, return the count
     function lv_run_alerts_scan(): int {
         $rulesFile       = '/boot/config/plugins/logsviewer/alerts-rules.json';
         $historyFile     = '/boot/config/plugins/logsviewer/alerts-history.json';
@@ -193,7 +189,6 @@ if (!function_exists('lv_run_alerts_scan')) {
         });
         if (empty($activeRules)) return 0;
 
-        // --- Scan system + custom logs ---
         foreach ($systemLogs as $srcKey => $logPath) {
             if (!is_file($logPath) || !is_readable($logPath)) continue;
             $fileSize = (int)@filesize($logPath);
@@ -282,7 +277,6 @@ if (!function_exists('lv_run_alerts_scan')) {
             }
         }
 
-        // --- Scan Docker logs ---
         $dockerNeeded = false;
         foreach ($activeRules as $rule) {
             if (in_array('docker', $rule['sources'] ?? [], true)) { $dockerNeeded = true; break; }
@@ -359,10 +353,6 @@ if (!function_exists('lv_run_alerts_scan')) {
         return count($newAlerts);
     }
 }
-
-// ── Entry point ─────────────────────────────────────────────────────────
-// CLI: run scan, echo count, exit. (Cron redirects output to /dev/null.)
-// Include: just defines functions, caller invokes lv_run_alerts_scan().
 
 if (PHP_SAPI === 'cli' && !defined('LV_SCAN_LIBRARY_ONLY')) {
     $count = lv_run_alerts_scan();

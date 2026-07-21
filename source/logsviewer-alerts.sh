@@ -1,6 +1,11 @@
 #!/bin/bash
-# LogsViewer Alerts - Cron wrapper
-# Copyright (C) 2026 Lazaros Chalkidis - License: GPLv3
+# ============================================================================
+# LOGS VIEWER
+# Copyright (C) 2026 Lazaros Chalkidis
+# License: GPLv3
+# =========================================================================
+
+# cron wrapper: runs the alert scan if alerts are enabled
 
 CFG="/boot/config/plugins/logsviewer/logsviewer.cfg"
 [ ! -f "$CFG" ] && exit 0

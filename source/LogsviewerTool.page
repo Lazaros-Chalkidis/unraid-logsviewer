@@ -6,39 +6,34 @@ Tabs="false"
 Title="Logs Viewer"
 ---
 <?php
+/* ============================================================================
+   LOGS VIEWER
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
+   ========================================================================= */
+
 require_once '/usr/local/emhttp/plugins/logsviewer/include/logsviewer_api.php';
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
 $cfg = parse_plugin_cfg('logsviewer', true) ?: [];
 
-// Light theme detection (parallel to StreamViewer pattern)
 $dynamix_cfg  = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
 $unraid_theme = $dynamix_cfg['display']['theme'] ?? '';
-$lvt_light    = in_array($unraid_theme, ['white', 'azure'], true);
+$lvt_light    = in_array($unraid_theme, ['white', 'azure'], true);  // light themes get the lighter syntax stylesheet
 $lightClass   = $lvt_light ? ' lvt-light' : '';
 
-// Log font size: validated against the same two-step ladder the Settings page
-// uses (Default = 1.125rem, Large = 1.25rem). The value is injected as a
-// --lvt-log-font-size CSS custom property on the wrapper so a single source
-// controls both .lvt-log-content (and its children .lvt-log-line / diff panes)
-// and the .lvt-source rows in the sidebar. Older saved values from the
-// previous five-step ladder snap back to the default on render.
 $_lvt_allowed_fs = ['1.125rem', '1.25rem'];
 $lvt_font_size   = $cfg['TOOL_LOG_FONT_SIZE'] ?? '1.125rem';
 if (!in_array($lvt_font_size, $_lvt_allowed_fs, true)) $lvt_font_size = '1.125rem';
 
-// Auto-refresh interval (seconds) for the live log view. 3 / 5 / 10 / 20 are
-// the values exposed in Settings; anything else snaps to the 5s default.
 $_lvt_allowed_refresh = ['3', '5', '10', '20'];
 $lvt_refresh_secs     = (string)($cfg['TOOL_REFRESH_SECS'] ?? '5');
 if (!in_array($lvt_refresh_secs, $_lvt_allowed_refresh, true)) $lvt_refresh_secs = '5';
 
-// Export format for the tool download button: txt / json / csv.
 $_lvt_allowed_export = ['txt', 'json', 'csv'];
 $lvt_export_format   = strtolower((string)($cfg['TOOL_EXPORT_FORMAT'] ?? 'txt'));
 if (!in_array($lvt_export_format, $_lvt_allowed_export, true)) $lvt_export_format = 'txt';
 
-// Bundle config for JS (CSRF token, theme, defaults)
 $tile_config = [
     'lvToken'      => method_exists('LogsViewerEndpoint', 'generateNonce')
                         ? LogsViewerEndpoint::generateNonce()
@@ -59,8 +54,6 @@ $tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES);
 
 <div class="lvt-wrapper<?= $lightClass ?>" style="--lvt-log-font-size: <?= htmlspecialchars($lvt_font_size) ?>;">
 
-  <!-- Single Logs view (Saved and Pinned tabs removed). The panel still hosts
-       AJAX-loaded content, but only the Logs tab exists now. -->
   <div class="lvt-panel" id="lvtPanel">
     <div class="lvt-loading" id="lvtLoading">
       <div class="lvt-loading__spinner"><i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i></div>
@@ -74,23 +67,10 @@ $tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES);
 <script defer src="/plugins/logsviewer/js/logsviewer-tool-logs.js?v=<?= @filemtime('/usr/local/emhttp/plugins/logsviewer/js/logsviewer-tool-logs.js') ?: time() ?>"></script>
 
 <script>
-/*
- * Page width unlocker.
- *
- * The Unraid dynamix template wraps standalone plugin pages in a main
- * content container with a max-width around 1180px. On 2K and 4K monitors
- * this leaves huge gutters around the wrapper. This block walks up from
- * the .lvt-wrapper element to the document body and removes any max-width
- * constraint on ancestors narrower than the viewport. The wrapper itself
- * uses plain 80% width with margin auto, so if the script no-ops (e.g.
- * the wrapper is not in the DOM, or no constraining parent exists), the
- * layout stays sane and centered inside whatever parent it has.
- *
- * Runs only when .lvt-wrapper exists in the DOM. No-op on the widget
- * page or anywhere else that does not host this Tool page.
- */
+
 (function() {
     'use strict';
+    // free the tool from any narrow max-width ancestor so it can use the full width
     function unlockAncestors() {
         var wrap = document.querySelector('.lvt-wrapper');
         if (!wrap) return;
@@ -110,8 +90,7 @@ $tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES);
     } else {
         unlockAncestors();
     }
-    // Re-run on resize so portrait/landscape rotation or browser-window
-    // drag recalculates correctly. Cheap, only touches inline styles.
+
     window.addEventListener('resize', unlockAncestors);
 })();
 </script>

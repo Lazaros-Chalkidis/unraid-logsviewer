@@ -2,19 +2,23 @@ Menu="Dashboard:0"
 Icon="img/logsviewerplugin.png"
 ---
 <?php
+/* ============================================================================
+   LOGS VIEWER
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
+   ========================================================================= */
+
 require_once '/usr/local/emhttp/plugins/logsviewer/include/logsviewer_api.php';
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
 $cfg = parse_plugin_cfg('logsviewer', true);
 
-// Light theme detection — read Unraid's dynamix.cfg
 $_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
 $_theme_name = $_dyn_cfg['display']['theme'] ?? '';
-$lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';
+$lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';  // white and azure are the light themes
 
-// Dashboard (Widget) Sources — use ONLY DASH_* keys.
-// Migration (B) happens automatically: legacy/global -> DASH_* one time.
 $cfg_file = '/boot/config/plugins/logsviewer/logsviewer.cfg';
+// one-time migration: fold the old single-context keys into the new DASH_ keys and persist
 if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
     $legacySystemRaw = (string)($cfg['ENABLED_SYSTEM_LOGS'] ?? ($cfg['ENABLED_SCRIPTS'] ?? ''));
     $legacyDockerRaw = (string)($cfg['ENABLED_DOCKER_CONTAINERS'] ?? '');
@@ -25,7 +29,6 @@ if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_EN
         $cfg['DASH_ENABLED_VMS']               = $legacyVmRaw;
         $cfg['MIGRATED_DASH_SOURCES']          = '1';
 
-        // Persist migration so the rest of the plugin becomes "clean" (no legacy reads).
         $ini = "";
         foreach ($cfg as $k => $v) {
             $v = preg_replace('/[\x00-\x1f\x7f]/', '', (string)$v);
@@ -40,7 +43,6 @@ if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_EN
 $dashSystemRaw = (string)($cfg['DASH_ENABLED_SYSTEM_LOGS'] ?? '');
 $enabledScripts = array_values(array_filter(array_map('trim', explode(',', $dashSystemRaw)), fn($v) => $v !== ''));
 
-// Defaults only when nothing configured at all.
 if (!$enabledScripts && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
     $enabledScripts = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];
 }
@@ -54,10 +56,8 @@ $enabledVms = array_values(array_filter(array_map('trim', explode(',', $dashVmRa
 $dashCustomRaw = (string)($cfg['DASH_ENABLED_CUSTOM_LOGS'] ?? '');
 $enabledCustomLogs = array_values(array_filter(array_map('trim', explode(',', $dashCustomRaw)), fn($v) => $v !== ''));
 
-// Keep for backward compatibility with JS/config naming.
 $enabledSystemLogs = $enabledScripts;
 
-// Docker container states (running/exited/stopped)
 $dockerStates = [];
 if (!empty($enabledDockerContainers)) {
     $raw = @shell_exec('docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
@@ -69,7 +69,6 @@ if (!empty($enabledDockerContainers)) {
     }
 }
 
-// VM states (running/shut off)
 $vmStates = [];
 if (!empty($enabledVms)) {
     $raw = @shell_exec('virsh list --all 2>/dev/null');
@@ -82,13 +81,11 @@ if (!empty($enabledVms)) {
     }
 }
 
-// System log display names
 $systemLogNames = [
     'syslog' => 'Syslog', 'syslog-previous' => 'Syslog Previous', 'dmesg' => 'Dmesg', 'graphql-api.log' => 'GraphQL API',
     'nginx-error' => 'Nginx Errors', 'phplog' => 'PHP Log', 'libvirt' => 'Libvirt',
 ];
 
-// Merge user-defined custom log paths (read-only, display names only)
 $_lvCustomFile = '/boot/config/plugins/logsviewer/custom-paths.json';
 if (is_file($_lvCustomFile)) {
     $_lvCustom = @json_decode((string)@file_get_contents($_lvCustomFile), true);
@@ -119,12 +116,11 @@ if ($version_override === 'legacy') {
 } else {
     $version_data   = @parse_ini_file('/etc/unraid-version');
     $webgui_version = $version_data['version'] ?? '0.0.0';
-    $isResponsiveWebgui = version_compare($webgui_version, '7.2.0-beta', '>=');
+    $isResponsiveWebgui = version_compare($webgui_version, '7.2.0-beta', '>=');  // 7.2 changed the dashboard tile api
 }
 
 $_gf_families = ['jetbrains', 'fira', 'sourcecodepro', 'ibmplex'];
-// Only the widget chooses its font from config; the Tool page uses a hard-coded
-// font stack so its TOOL_LOG_FONT_FAMILY (now removed) no longer factors in.
+
 $_needsGoogleFonts = in_array($cfg['LOG_FONT_FAMILY'] ?? 'system', $_gf_families);
 $googleFontsLink = $_needsGoogleFonts
     ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" media="print" onload="this.media=\'all\'">'
@@ -139,7 +135,7 @@ $tile_config = [
 
     'fontSize'        => $cfg['LOG_FONT_SIZE'] ?? '1.125rem',
     'fontFamily'      => $cfg['LOG_FONT_FAMILY'] ?? 'system',
-    'wrapLines'       => true, // forced: wrap lines always (no UI toggle)
+    'wrapLines'       => true,
 
     'bgColor'         => $cfg['LOG_BG_COLOR'] ?? '',
     'themePreset'     => $cfg['THEME_PRESET'] ?? 'default',
@@ -227,7 +223,7 @@ HTML . $wrapClose;
 };
 
 $render_tabs = static function(string $tabs_aria_label, array $enabledScripts, array $systemLogNames, array $enabledDockerContainers, array $enabledVms, array $enabledCustomLogs, bool $syntaxEnabled, bool $showFilter, array $dockerStates = [], array $vmStates = []): string {
-    // Build system options (ul/li for desktop, native select for mobile)
+
     $sysOpts = ''; $sysNative = '';
     foreach ($enabledScripts as $key) {
         $name = htmlspecialchars($systemLogNames[$key] ?? $key, ENT_QUOTES, 'UTF-8');
@@ -256,7 +252,6 @@ $render_tabs = static function(string $tabs_aria_label, array $enabledScripts, a
         $vmNative .= "<option value=\"{$safe}\">{$safe}</option>\n";
     }
 
-    // Custom logs (per-tab enable list, defined in Custom log paths shared sub-card)
     $customHidden = empty($enabledCustomLogs) ? ' logsviewer-cat-btn--hidden' : '';
     $customOpts = ''; $customNative = '';
     foreach ($enabledCustomLogs as $key) {
@@ -266,7 +261,6 @@ $render_tabs = static function(string $tabs_aria_label, array $enabledScripts, a
         $customNative .= "<option value=\"{$val}\">{$name}</option>\n";
     }
 
-    // Syntax control in tabs-row
     $syntaxHtml = '';
     if ($syntaxEnabled) {
         $syntaxHtml = <<<HTML
@@ -285,7 +279,6 @@ $render_tabs = static function(string $tabs_aria_label, array $enabledScripts, a
 HTML;
     }
 
-    // Filter control in tabs-row
     $filterHtml = '';
     if ($showFilter) {
         $filterHtml = <<<HTML
@@ -304,7 +297,6 @@ HTML;
 HTML;
     }
 
-    // Right-side controls (Syntax + Filter)
     $rightControls = '';
     if ($syntaxHtml || $filterHtml) {
         $rightControls = '<div class="logsviewer-tabs-row__controls">' . $syntaxHtml . $filterHtml . '</div>';
@@ -357,8 +349,6 @@ HTML;
 </div>
 HTML;
 };
-
-// Filter + Syntax are now rendered inside render_tabs (tabs-row)
 
 $render_log_panel = static function(string $log_placeholder, string $last_update_label, bool $showToast = true): string {
     $toastHtml = $showToast
@@ -423,9 +413,9 @@ $render_header = static function(
     string $autoscroll_html,
     string $controls_html
 ): string {
-    // Inputs row: JS injects search UI here when enabled
+
     $inputs_row = '<div class="logsviewer-header__inputs"></div>';
-    
+
     if ($responsive) {
         return <<<HTML
 <span class="tile-header logsviewer-header">
@@ -509,7 +499,6 @@ $tabs_html      = $render_tabs($tabs_aria_label, $enabledScripts, $systemLogName
 $panel_html     = $render_log_panel($log_placeholder, $last_update_label, $tile_config['showToast'] ?? true);
 $config_html    = $render_config($tile_config_json);
 
-// Inject light theme class into widget wrapper divs
 if ($lv_light_class !== '') {
     $tabs_html  = str_replace('class="logsviewer-body"', 'class="logsviewer-body' . $lv_light_class . '"', $tabs_html);
     $panel_html = str_replace('class="logsviewer-body logsviewer-collapsible"', 'class="logsviewer-body logsviewer-collapsible' . $lv_light_class . '"', $panel_html);
@@ -521,7 +510,6 @@ $controls_legacy     = $render_controls(false);
 $header_responsive = $render_header(true,  $tile_title, $compact_html, $autoscroll_html, $controls_responsive);
 $header_legacy     = $render_header(false, $tile_title, $compact_html, $autoscroll_html, $controls_legacy);
 
-// Inject light theme class into headers (header is outside .logsviewer-body in tile markup)
 if ($lv_light_class !== '') {
     $header_responsive = str_replace('class="tile-header logsviewer-header"', 'class="tile-header logsviewer-header' . $lv_light_class . '"', $header_responsive);
     $header_legacy     = str_replace('class="logsviewer-legacy-header"', 'class="logsviewer-legacy-header' . $lv_light_class . '"', $header_legacy);
@@ -547,6 +535,7 @@ $fallback_tile_markup = $isResponsiveWebgui
     ? $render_fallback_tbody(true,  $tile_title, $header_responsive, $tabs_html, $panel_html, $config_html, $googleFontsLink)
     : $render_fallback_tbody(false, $tile_title, $header_legacy,     $tabs_html, $panel_html, $config_html, $googleFontsLink);
 
+// 7.x tile registration, older builds use the fallback markup
 if (function_exists('register_dashboard_tile')) {
     $registration_result = @register_dashboard_tile($tile);
 

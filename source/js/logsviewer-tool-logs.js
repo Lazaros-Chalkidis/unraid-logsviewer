@@ -1,18 +1,8 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   Logs Viewer -- Tool Page :: Logs Tab
+/* ============================================================================
+   LOGS VIEWER
    Copyright (C) 2026 Lazaros Chalkidis
    License: GPLv3
-   /plugins/logsviewer/js/logsviewer-tool-logs.js
-
-   Source nav, log render, polling, mode toggle (Live, Merge),
-   status bar. Sidebar dots reflect source state (server-side) and are not
-   changed on selection.
-
-   Binding strategy: document-level delegation for globals so events survive
-   cached HTML swaps; local rebinds in onShow() for non-bubbling events like
-   scroll.
-   ═══════════════════════════════════════════════════════════════════════════ */
-/* global $ */
+   ========================================================================= */
 
 (function () {
 'use strict';
@@ -23,19 +13,18 @@ window.__lvtLogsLoaded = true;
 var _cfg     = window.lvToolConfig || {};
 var _apiUrl  = _cfg.apiUrl  || '/plugins/logsviewer/include/logsviewer_api.php';
 var _token   = _cfg.lvToken || '';
-var _tokenRetried = false;  // guard: only refresh nonce once per failed fetch
+var _tokenRetried = false;
 
-// ── State ────────────────────────────────────────────────────────────────
-var _active     = null;     // { category, name, label }
-var _currentRow = null;     // last row returned by API (has file_size, total_lines)
-var _rawLines   = [];       // string[] - log lines after unescape
-var _sevs       = [];       // string[] - per-line severity (parallel to _rawLines)
+var _active     = null;
+var _currentRow = null;
+var _rawLines   = [];
+var _sevs       = [];
 var _counts     = { info: 0, warning: 0, error: 0, critical: 0, success: 0 };
 
-var _mode        = 'live';   // 'live' | 'merge'
-var _paused      = false;    // when true, live auto-refresh (polling) is suspended
-var _filterText  = '';       // text filter (set via context-menu "Filter on selection" or a saved preset)
-var _filterLevel = '';       // severity filter (set via the header pills / Filter dropdown)
+var _mode        = 'live';
+var _paused      = false;
+var _filterText  = '';
+var _filterLevel = '';
 var _filterTimer = null;
 
 var _pollTimer   = null;
@@ -52,22 +41,17 @@ var _inFlight    = false;
 var _lastHash    = null;
 var _autoScroll  = true;
 var _visible     = false;
-var _lastUpdate  = null;     // Date object
+var _lastUpdate  = null;
 
-// Context menu state (right-click on a log line)
 var _ctxLine      = '';
 var _ctxSelection = '';
-var _ctxMenuOpen  = false;  // right-click menu is open: hold the hover-pause
-var _pointerInLog = false;  // pointer is currently over the log area
+var _ctxMenuOpen  = false;
+var _pointerInLog = false;
 
-// Merge mode state
-var _mergeSources    = []; // [{ category, name, label }]
+var _mergeSources    = [];
 var _mergeApplyTimer = null;
-var _mergeInFlight   = 0;  // count of pending source fetches
+var _mergeInFlight   = 0;
 
-
-
-// Severity classifiers (first match wins)
 var SEV_RULES = [
     { re: /\b(emerg(?:ency)?|critical|fatal|panic)\b/i, cls: 'critical' },
     { re: /\b(error|err)\b/i,                            cls: 'error'    },
@@ -76,14 +60,6 @@ var SEV_RULES = [
     { re: /\b(info|notice)\b/i,                          cls: 'info'     }
 ];
 
-// Level filter thresholds: which severities to KEEP for each option.
-// Three families:
-//   * "and above" composites (warning / error)       - critical implicitly included
-//   * "only-X" single-severity filters               - one severity only
-//   * legacy 'critical' / 'info'                     - 'critical' doubles as the
-//     new "Critical" single-severity option; 'info' is kept so saved filters
-//     created under the old "Info and above" label still load correctly even
-//     after the dropdown lost that entry.
 var LEVEL_KEEP = {
     'critical':     { critical: 1 },
     'error':        { critical: 1, error: 1 },
@@ -94,20 +70,18 @@ var LEVEL_KEEP = {
     'only-error':   { error: 1 }
 };
 
-// ── Register with the shell ──────────────────────────────────────────────
 window.LVT_TAB = window.LVT_TAB || { _handlers: {}, register: function(t,h){ this._handlers[t]=h; } };
 window.LVT_TAB.register('logs', {
-    init:    function () { onShow(/*firstTime=*/true); },
-    refresh: function () { onShow(/*firstTime=*/false); },
+    init:    function () { onShow(true); },
+    refresh: function () { onShow(false); },
     hide:    function () { onHide(); }
 });
 
-// ── One-time global wiring (runs at script load) ─────────────────────────
 bindGlobal();
 
 function bindGlobal() {
     $(document)
-      // Sidebar source selection
+
       .on('click',   '#lvtSidebar .lvt-source', function () { selectSourceFromEl(this); })
       .on('keydown', '#lvtSidebar .lvt-source', function (e) {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -115,41 +89,33 @@ function bindGlobal() {
               selectSourceFromEl(this);
           }
       })
-      // Download current log -- same icon position the widget uses in its
-      // tile header (refresh, download, tool-link, cog). On the Tool page
-      // the tool-link slot is dropped (we are already here), so download
-      // sits right between refresh and settings. Pulls from _rawLines so
-      // it always reflects what is loaded in the current mode.
+
       .on('click', '#lvtLogsDownload', function (e) {
           e.preventDefault();
           downloadCurrentLog();
       })
-      // Mode toggle (Live / Merge).
+
       .on('click', '.lvt-mode:not(:disabled)', function () {
           var m = $(this).data('mode');
           if (m === _mode) return;
           setMode(m);
       })
-      // Auto-pause: hovering the log area suspends live auto-refresh so the
-      // newest lines do not scroll away while reading / selecting. Leaving
-      // resumes. Only meaningful in live mode with an active source.
+
       .on('mouseenter', '#lvtLogContent', function () {
           _pointerInLog = true;
           setPaused(true);
       })
       .on('mouseleave', '#lvtLogContent', function () {
           _pointerInLog = false;
-          // Do not resume while the right-click menu is open, even though the
-          // pointer moved off the log onto the menu - otherwise new lines
-          // could scroll in and shift what the user is about to copy/filter.
+
           if (!_ctxMenuOpen) setPaused(false);
       })
-      // Severity pill click: toggle a single-severity filter on/off
+
       .on('click', '.lvt-sev-count[data-sev-filter]', function () {
           var lvl = String($(this).data('sev-filter') || '');
           setSeverityFilter(_filterLevel === lvl ? '' : lvl);
       })
-      // Filter dropdown: open / close
+
       .on('click', '#lvtFilterDdBtn', function (e) {
           e.stopPropagation();
           var $menu = $('#lvtFilterDdMenu');
@@ -157,7 +123,7 @@ function bindGlobal() {
           $menu.prop('hidden', !willOpen);
           $('#lvtFilterDdBtn').attr('aria-expanded', willOpen ? 'true' : 'false');
       })
-      // Filter dropdown: pick a cumulative level (toggles off if re-picked)
+
       .on('click', '.lvt-filter-dd__item', function (e) {
           e.stopPropagation();
           var lvl = String($(this).data('level') || '');
@@ -165,7 +131,7 @@ function bindGlobal() {
           $('#lvtFilterDdMenu').prop('hidden', true);
           $('#lvtFilterDdBtn').attr('aria-expanded', 'false');
       })
-      // Text filter input (bar is shown only when a text filter is active)
+
       .on('input',  '#lvtFilterSearch', function () {
           _filterText = String(this.value || '');
           syncSearchInputs(_filterText, this.id);
@@ -175,7 +141,7 @@ function bindGlobal() {
           clearTextFilter();
           applyFilter();
       })
-      // Persistent footer search box (mirrors the filter-bar search)
+
       .on('input', '#lvtFooterSearch', function () {
           _filterText = String(this.value || '');
           syncSearchInputs(_filterText, this.id);
@@ -185,28 +151,25 @@ function bindGlobal() {
           clearTextFilter();
           applyFilter();
       })
-      // Merge bar: clear all selected sources
+
       .on('click', '#lvtMergeClear', function (e) {
           e.preventDefault();
           clearMergeSelection();
       })
-      // Merge bar: remove a single source chip
+
       .on('click', '.lvt-merge-chip__x', function (e) {
           e.preventDefault();
           var key = String($(this).data('key') || '');
           if (key) removeMergeSourceByKey(key);
       });
 
-    // Pause polling when the browser tab is hidden
     document.addEventListener('visibilitychange', function () {
         if (document.hidden) stopPolling();
         else if (_visible && _active) startPolling();
     });
 
-    // Build the context menu element (lives at body level so it floats above everything)
     buildContextMenu();
 
-    // Right-click on a log line → show context menu
     $(document).on('contextmenu', '#lvtLogContent .lvt-log-line', function (e) {
         e.preventDefault();
         _ctxLine = $(this).text();
@@ -215,18 +178,16 @@ function bindGlobal() {
         showContextMenu(e.clientX, e.clientY, $(this));
     });
 
-    // Any click outside the menu closes it
     $(document).on('click', function (e) {
         var $tgt = $(e.target);
         if (!$tgt.closest('#lvtLogCtxMenu').length) hideContextMenu();
-        // Close the Filter dropdown when clicking outside it
+
         if (!$tgt.closest('#lvtFilterDd').length) {
             $('#lvtFilterDdMenu').prop('hidden', true);
             $('#lvtFilterDdBtn').attr('aria-expanded', 'false');
         }
     });
 
-    // Escape closes the menu
     $(document).on('keydown', function (e) {
         if (e.key === 'Escape' && !$('#lvtLogCtxMenu').prop('hidden')) hideContextMenu();
         if (e.key === 'Escape' && !$('#lvtFilterDdMenu').prop('hidden')) {
@@ -235,7 +196,6 @@ function bindGlobal() {
         }
     });
 
-    // Menu item clicks
     $(document).on('click', '#lvtLogCtxMenu .lvt-ctxmenu__item:not(.lvt-ctxmenu__item--disabled)', function (e) {
         e.preventDefault();
         var act = $(this).data('action');
@@ -245,7 +205,6 @@ function bindGlobal() {
     });
 }
 
-// ── Local bindings (DOM is swapped between tab views, so rebind each show) ──
 function bindLocal() {
     var el = document.getElementById('lvtLogContent');
     if (!el) return;
@@ -255,18 +214,15 @@ function bindLocal() {
     };
 }
 
-// ── Show / hide hooks ────────────────────────────────────────────────────
 function onShow(firstTime) {
     _visible = true;
     bindLocal();
 
-    // Pull per-source file sizes into the sidebar (one lightweight call).
     fetchSidebarSizes();
 
     applyModeUI();
     applySevFilterUI();
 
-    // In merge mode, restore selection visuals and re-fetch (no single-source flow)
     if (_mode === 'merge') {
         applyMergeSelectionUI();
         if (_mergeSources.length) scheduleMergeFetch();
@@ -275,7 +231,7 @@ function onShow(firstTime) {
     }
 
     if (_active) {
-        // Returning to the tab — restore visual state in the (possibly fresh) DOM
+
         $('#lvtSidebar .lvt-source').removeClass('is-active');
         $('#lvtSidebar .lvt-source[data-cat="' + _active.category + '"][data-name="' + cssEsc(_active.name) + '"]')
             .addClass('is-active');
@@ -284,26 +240,21 @@ function onShow(firstTime) {
         _paused = false;
         updatePollIndicator();
 
-        // Restore the text filter bar if a text filter is active (set earlier
-        // via context-menu or preset), and reflect the current severity
-        // filter on the header pills / Filter dropdown.
         if (_filterText) {
             $('#lvtFilterSearch').val(_filterText);
             $('#lvtFilterBar').prop('hidden', false);
         }
         applySevFilterUI();
 
-        // If we already have data in memory, render it immediately while a fresh
-        // fetch is in flight — avoids a "Loading…" flash on tab re-entry.
         if (_rawLines.length) {
             renderVisible();
             updateStatusbar();
         }
 
-        fetchOnce(/*resetHash=*/true);
+        fetchOnce(true);
         startPolling();
     } else {
-        // No source chosen yet — auto-select the first one in the sidebar.
+
         var $first = $('#lvtSidebar .lvt-source').first();
         if ($first.length) selectSourceFromEl($first[0]);
     }
@@ -314,11 +265,11 @@ function onHide() {
     stopPolling();
 }
 
-// ── Mode toggle ──────────────────────────────────────────────────────────
+// switch between single-log view and merge view
 function setMode(m) {
     if (m !== 'live' && m !== 'merge') return;
     _mode = m;
-    _paused = false; // a view-mode switch always starts a fresh (un-paused) view
+    _paused = false;
     applyModeUI();
 
     if (m === 'merge') {
@@ -328,21 +279,11 @@ function setMode(m) {
         if (_mergeSources.length === 0) renderMergeEmpty();
         else scheduleMergeFetch();
     } else {
-        // 'live' — clear text filter, drop selection visuals, resume polling.
-        // The severity filter (_filterLevel) is intentionally preserved across
-        // mode switches so a chosen Info/Warning/etc. filter survives a trip
-        // through Merge and back.
+
         clearTextFilter();
         $('#lvtSidebar .lvt-source').removeClass('is-merge-selected');
         if (_active) {
-            // Merge repurposes the shared single-source buffers
-            // (_rawLines / _sevs / _counts) for its merged payload, and
-            // renderMergeEmpty clears them outright. So on the way back to
-            // Live the buffer is often empty even though a source is still
-            // active, which left the log pane blank until the user manually
-            // hit Refresh. If the buffer is gone, re-fetch from scratch (same
-            // as the Refresh button); if it survived, just re-render in place
-            // with no network round-trip.
+
             if (_rawLines.length === 0) {
                 _lastHash = null;
                 $('#lvtLogContent').html(
@@ -351,7 +292,7 @@ function setMode(m) {
                       '<div>Loading…</div>' +
                     '</div>'
                 );
-                fetchOnce(/*resetHash=*/true);
+                fetchOnce(true);
             } else {
                 renderVisible();
             }
@@ -367,12 +308,8 @@ function setMode(m) {
     }
 }
 
-// ── Auto-pause (hover over the log area) ─────────────────────────────────
-// Pause is no longer a button: it engages while the pointer is over the log
-// area and releases when it leaves. The footer badge reflects the state,
-// flipping to an amber "PAUSE" while held and back to green "live" on release.
 function setPaused(paused) {
-    // Only meaningful in live mode with an active source.
+
     if (_mode !== 'live' || !_active) return;
     if (paused === _paused) return;
     _paused = paused;
@@ -380,15 +317,12 @@ function setPaused(paused) {
     if (_paused) {
         stopPolling();
     } else {
-        // Resume: pull once immediately so the user is not staring at stale
-        // content, then resume the polling interval.
-        fetchOnce(/*resetHash=*/false);
+
+        fetchOnce(false);
         startPolling();
     }
 }
 
-// Footer live/pause badge. Hidden unless we are in live mode with an active
-// source; green "live" while polling, amber "PAUSE" while hover-paused.
 function updatePollIndicator() {
     var $ind = $('#lvtPollIndicator');
     if (_mode !== 'live' || !_active) {
@@ -396,34 +330,30 @@ function updatePollIndicator() {
         return;
     }
     $ind.prop('hidden', false).toggleClass('lvt-poll-indicator--paused', _paused);
-    // Dot pulses once per refresh interval (via a CSS custom property), so the
-    // blink visually matches the chosen cadence.
+
     $ind.css('--lvt-poll-pulse', _refreshSecs + 's');
     $('#lvtPollLabel').text(_paused ? 'paused' : (_refreshSecs + 'sec · LIVE'));
 }
 
-// ── Severity filter (header pills + Filter dropdown) ─────────────────────
 function setSeverityFilter(lvl) {
     _filterLevel = String(lvl || '');
     applySevFilterUI();
-    // Severity filtering applies to the single-source live view; merge
-    // has its own rendering path.
+
     if (_mode === 'live') {
-        // Picking a filter is a deliberate action: jump to the newest matching
-        // lines at the bottom even if the user had scrolled up earlier.
+
         _autoScroll = true;
         renderVisible();
     }
 }
 
 function applySevFilterUI() {
-    // Single-severity pills: only-info / only-warning / only-error / critical
+
     $('.lvt-sev-count[data-sev-filter]').each(function () {
         var $b = $(this);
         var on = _filterLevel !== '' && String($b.data('sev-filter')) === _filterLevel;
         $b.toggleClass('is-active', on).attr('aria-pressed', on ? 'true' : 'false');
     });
-    // Cumulative levels live in the dropdown: info / warning / error
+
     var isCumulative = (_filterLevel === 'info' || _filterLevel === 'warning' || _filterLevel === 'error');
     $('#lvtFilterDdBtn').toggleClass('is-active', isCumulative);
     $('.lvt-filter-dd__item').each(function () {
@@ -441,9 +371,6 @@ function clearTextFilter() {
     $('#lvtFilterCount').prop('hidden', true);
 }
 
-// Keep the filter-bar search and the persistent footer search in lockstep.
-// `originId` is the input the user is typing in, so we skip writing back to it
-// (avoids cursor jumps). Also toggles the footer clear (x) button.
 function syncSearchInputs(text, originId) {
     if (originId !== 'lvtFilterSearch') {
         var $b = $('#lvtFilterSearch'); if ($b.length) $b.val(text);
@@ -461,7 +388,7 @@ function applyModeUI() {
         $b.toggleClass('is-active', on).attr('aria-pressed', on ? 'true' : 'false');
     });
     $('#lvtMergeBar').prop('hidden',  _mode !== 'merge');
-    // Filter bar visibility is driven by _filterText (text filter), not mode.
+
     updatePollIndicator();
 }
 
@@ -474,7 +401,6 @@ function applyFilter() {
     if (_mode === 'live') renderVisible();
 }
 
-// ── Source selection ─────────────────────────────────────────────────────
 function selectSourceFromEl(el) {
     var $el = $(el);
     var cat   = $el.data('cat');
@@ -482,7 +408,6 @@ function selectSourceFromEl(el) {
     var label = $el.data('label') || name;
     if (!cat || !name) return;
 
-    // In merge mode, sidebar clicks toggle a source in/out of the merge set
     if (_mode === 'merge') {
         toggleMergeSource(String(cat), String(name), String(label));
         return;
@@ -502,9 +427,7 @@ function selectSourceFromEl(el) {
 
     $('#lvtBreadcrumbCategory').text(prettyCategory(cat));
     $('#lvtBreadcrumbSource').text(label);
-    // A source pick is a fresh start: clear any hover-pause and show the live
-    // badge. The pointer is on the sidebar at this point, not the log area, so
-    // auto-pause re-engages naturally if the user moves back over the log.
+
     _paused = false;
     updatePollIndicator();
 
@@ -514,9 +437,9 @@ function selectSourceFromEl(el) {
           '<div>Loading…</div>' +
         '</div>'
     );
-    updateStatusbar(); // reset counters to zero
+    updateStatusbar();
 
-    fetchOnce(/*resetHash=*/true);
+    fetchOnce(true);
     startPolling();
 }
 
@@ -524,17 +447,16 @@ function prettyCategory(cat) {
     return ({ system:'System', docker:'Docker Containers', vm:'VMs', custom:'Custom' })[cat] || cat;
 }
 
-// ── Polling ──────────────────────────────────────────────────────────────
 function startPolling() {
     stopPolling();
     if (!_active) return;
-    _pollTimer = setInterval(function () { fetchOnce(/*resetHash=*/false); }, _pollMs);
+    _pollTimer = setInterval(function () { fetchOnce(false); }, _pollMs);
 }
 function stopPolling() {
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
 }
 
-// ── Fetch ────────────────────────────────────────────────────────────────
+// pull the current source once, skip the redraw if the content hash didn't change
 function fetchOnce(resetHash) {
     if (!_active || _inFlight) return;
     _inFlight = true;
@@ -579,10 +501,7 @@ function fetchOnce(resetHash) {
         updateStatusbar();
     })
     .fail(function (xhr) {
-        // Nonce TTL is 1h on the server; expired tokens come back as 403
-        // (the API never emits 401). Refresh once and retry the original
-        // fetch so the user does not see a transient "HTTP 403" when the
-        // Tool page sat idle past the token's lifetime.
+
         if (xhr && xhr.status === 403 && !_tokenRetried) {
             _tokenRetried = true;
             refreshTokenAndRetry();
@@ -594,6 +513,7 @@ function fetchOnce(resetHash) {
     .always(function () { _inFlight = false; });
 }
 
+// nonce expired mid-poll, get a fresh one and retry the request
 function refreshTokenAndRetry() {
     $.ajax({
         url: _apiUrl,
@@ -611,12 +531,11 @@ function refreshTokenAndRetry() {
     });
 }
 
-// ── Ingest a row from the API into our parallel arrays ──────────────────
 function ingestRow(row) {
     _currentRow = row;
     var raw = unescapeHtml(String(row.log || ''));
     var lines = raw.split('\n');
-    // Drop a trailing empty line that the server-side trim()+split can produce
+
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
 
     _rawLines = lines;
@@ -629,7 +548,7 @@ function ingestRow(row) {
     }
 }
 
-// ── Render: single-source view with severity + text filters applied ────
+// only render the rows passing the current severity/text filter
 function renderVisible() {
     var $log = $('#lvtLogContent');
     if (!_rawLines.length) {
@@ -647,9 +566,6 @@ function renderVisible() {
         var line = _rawLines[i];
         var sev  = _sevs[i] || '';
 
-        // Severity filter (pills / Filter dropdown) and text filter
-        // (context-menu / preset) both apply here, in every view, not just a
-        // dedicated filter mode.
         if (keep && !(sev && keep[sev])) continue;
         if (ftext && line.toLowerCase().indexOf(ftext) === -1) continue;
 
@@ -670,8 +586,6 @@ function renderVisible() {
         $log.html(html);
     }
 
-    // The count chip only belongs to the text-filter bar; show it when a
-    // text filter is active so the user sees how many lines matched.
     if (ftext) {
         $('#lvtFilterCount').prop('hidden', false)
             .text(shown + ' of ' + _rawLines.length + ' lines');
@@ -718,7 +632,6 @@ function renderError(msg) {
     );
 }
 
-// ── Status bar ───────────────────────────────────────────────────────────
 function updateStatusbar() {
     var total = (_currentRow && _currentRow.total_lines != null) ? _currentRow.total_lines : _rawLines.length;
     $('#lvtTotalLines').text(formatNumber(total));
@@ -727,22 +640,13 @@ function updateStatusbar() {
     $('#lvtCountErr').text(formatNumber(_counts.error));
     $('#lvtCountCrit').text(formatNumber(_counts.critical));
 
-    // Highlight the critical chip only when there are any
     $('.lvt-sev-count--critical').toggleClass('has-count', _counts.critical > 0);
 
-    // File size moved out of the footer and onto each sidebar row. When the
-    // active source reports a fresh size, update its row so the open log stays
-    // current without waiting for the next bulk discover_sources sweep.
     if (_active && _currentRow && _currentRow.file_size != null) {
         setSidebarSize(_active.category, _active.name, _currentRow.file_size);
     }
 }
 
-// ── Sidebar per-source file size ─────────────────────────────────────────
-// The file size used to live in the footer for the active log only. It now
-// shows on the right of every sidebar row. fetchSidebarSizes() pulls all
-// sizes in one lightweight call (discover_sources returns sizes without log
-// bodies); setSidebarSize() keeps the active row fresh between sweeps.
 function setSidebarSize(cat, name, bytes) {
     if (bytes == null) return;
     var $row = $('#lvtSidebar .lvt-source[data-cat="' + cssEsc(String(cat)) + '"][data-name="' + cssEsc(String(name)) + '"]');
@@ -761,10 +665,7 @@ function applySidebarSizes(states) {
         var group = states[cat];
         if (!group || !group.sources || !group.sources.length) return;
         group.sources.forEach(function (s) {
-            // System / custom rows carry the key in data-name; docker / vm carry
-            // the name. Match on either so we do not need per-category logic.
-            // System / custom report the file size as "size"; docker / vm report
-            // it as "log_size" (their log files live under /var/lib/docker, etc).
+
             var bytes = (s.size != null) ? s.size : s.log_size;
             $('#lvtSidebar .lvt-source[data-cat="' + cat + '"]').each(function () {
                 var dn = String($(this).data('name'));
@@ -780,6 +681,7 @@ function applySidebarSizes(states) {
     });
 }
 
+// the sidebar size badges refresh on their own slower cadence than the log body
 function fetchSidebarSizes() {
     $.ajax({
         url: _apiUrl,
@@ -793,11 +695,6 @@ function fetchSidebarSizes() {
     });
 }
 
-// ── Sidebar dot for the active source ────────────────────────────────────
-// Recent activity rule: if any of the last 10 lines is error/critical, dot is
-// red; else if there's a warning in the last 10, dot is stale (amber); else
-// dot is active (green).
-// ── Merge mode ───────────────────────────────────────────────────────────
 function mergeKey(cat, name) { return String(cat) + ':' + String(name); }
 
 function toggleMergeSource(cat, name, label) {
@@ -878,7 +775,7 @@ function renderMergeEmpty() {
           '<p>Pick two or more sources from the sidebar to view a timestamp-ordered merged log.</p>' +
         '</div>'
     );
-    // Status reset
+
     _rawLines = []; _sevs = []; _counts = { info:0, warning:0, error:0, critical:0, success:0 };
     _currentRow = null;
     updateStatusbar();
@@ -889,10 +786,11 @@ function scheduleMergeFetch() {
     _mergeApplyTimer = setTimeout(fetchMerge, 600);
 }
 
+// pull each selected source, interleave the lines by timestamp
 function fetchMerge() {
     if (!_mergeSources.length) return;
 
-    var sources = _mergeSources.slice(); // snapshot — selection may change while we wait
+    var sources = _mergeSources.slice();
     $('#lvtBreadcrumbCategory').text('Merge');
     $('#lvtBreadcrumbSource').text(sources.length + ' sources');
     $('#lvtPollIndicator').prop('hidden', true);
@@ -925,7 +823,7 @@ function fetchMerge() {
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .done(function (resp) {
-            if (_mode !== 'merge') return; // user switched modes mid-fetch
+            if (_mode !== 'merge') return;
             var rows = Array.isArray(resp) ? resp : [];
             var match = null;
             for (var i = 0; i < rows.length; i++) {
@@ -947,7 +845,7 @@ function fetchMerge() {
                         line:   line,
                         ts:     parseLineTimestampJS(line),
                         sev:    classify(line),
-                        idx:    li, // stable secondary sort key per source
+                        idx:    li,
                     });
                 }
             }
@@ -963,7 +861,7 @@ function fetchMerge() {
 }
 
 function renderMerged(items, anyFailed, sources) {
-    // Sort: timestamped lines by ts; untimestamped float to the top (oldest first within source)
+
     items.sort(function (a, b) {
         if (a.ts == null && b.ts == null) return a.idx - b.idx;
         if (a.ts == null) return -1;
@@ -984,7 +882,6 @@ function renderMerged(items, anyFailed, sources) {
         return;
     }
 
-    // Fill the parallel state used by the status bar
     _rawLines = []; _sevs = []; _counts = { info:0, warning:0, error:0, critical:0, success:0 };
     var html = '';
     var totalSize = 0;
@@ -1007,7 +904,6 @@ function renderMerged(items, anyFailed, sources) {
     var $log = $('#lvtLogContent');
     $log.html(html);
 
-    // Synthesize a row-like object so the status bar shows merged totals
     _currentRow = { total_lines: totalLines, file_size: totalSize };
     _lastUpdate = new Date();
     updateStatusbar();
@@ -1018,7 +914,7 @@ function renderMerged(items, anyFailed, sources) {
     }
 
     if (anyFailed) {
-        // Append a small warning at the top
+
         var $warn = $(
             '<div class="lvt-log-empty" style="padding:.5rem;color:var(--lvt-sev-warn);justify-content:flex-start">' +
               '<i class="fa fa-exclamation-triangle"></i>' +
@@ -1034,7 +930,7 @@ function truncateLabel(s, n) {
     return s.length <= n ? s : s.slice(0, n - 1) + '…';
 }
 
-// Deterministic color per source from a small palette
+// stable colour per source in merge view, derived from the key
 function sourceColor(key) {
     var palette = ['#378ADD', '#4caf50', '#EF9F27', '#9c27b0', '#00bcd4', '#ff5722', '#e91e63', '#607d8b'];
     var h = 0;
@@ -1042,10 +938,6 @@ function sourceColor(key) {
     return palette[Math.abs(h) % palette.length];
 }
 
-// Build a readable source-badge style: a soft tint of the source color as the
-// background with the full color as the text. This stays legible across the
-// whole palette (including light greens/cyans) where solid fills with white
-// text washed out, and matches the tag look used elsewhere in the tool.
 function sourceBadgeStyle(hex) {
     var c = String(hex).replace('#', '');
     if (c.length === 3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
@@ -1055,25 +947,15 @@ function sourceBadgeStyle(hex) {
            'border:1px solid rgba(' + r + ',' + g + ',' + b + ',.45)';
 }
 
-// Client-side timestamp parser used by Merge mode to order lines from
-// multiple sources before display. Since the plugin is public and users wire
-// up arbitrary custom logs, this recognizes several common shapes, not just
-// the Unraid syslog: BSD syslog, ISO 8601 / RFC3339 (bracketed or not, with
-// or without a Z/offset, timezone-aware), slash-separated dates, and the
-// Apache/nginx common log format. Docker lines are normalized server-side
-// into the BSD shape. Anything unrecognized returns null and floats to the
-// top of the merge rather than landing in a wrong position.
 function parseLineTimestampJS(line) {
     if (!line) return null;
     var months = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
     var m;
 
-    // Helper: build epoch from local wall-clock components (no timezone info).
     function localEpoch(y, mo0, d, h, mi, s) {
         return new Date(y, mo0, d, h, mi, s).getTime();
     }
-    // Helper: syslog-style year inference (formats with no year). Pick the
-    // current year, but if that lands in the future, it belongs to last year.
+
     function inferYearEpoch(mo0, d, h, mi, s) {
         var y = new Date().getFullYear();
         var t = localEpoch(y, mo0, d, h, mi, s);
@@ -1081,16 +963,11 @@ function parseLineTimestampJS(line) {
         return t;
     }
 
-    // 1. BSD syslog: "May 15 14:03:29" (no year). Used by the Unraid system
-    //    log and by Docker lines after server-side normalization.
     m = line.match(/^([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})/);
     if (m && months[m[1]] != null) {
         return inferYearEpoch(months[m[1]], parseInt(m[2],10), parseInt(m[3],10), parseInt(m[4],10), parseInt(m[5],10));
     }
 
-    // 2. ISO 8601 / RFC3339, optionally bracketed: "2026-05-15T14:03:29",
-    //    "2026-05-15 14:03:29", "[2026-05-15 14:03:29]", with optional
-    //    fractional seconds and Z / +hh:mm timezone. Timezone-aware.
     m = line.match(/^\[?(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/);
     if (m) {
         if (m[8]) {
@@ -1103,17 +980,12 @@ function parseLineTimestampJS(line) {
                           parseInt(m[4],10), parseInt(m[5],10), parseInt(m[6],10));
     }
 
-    // 3. Slash-separated date, optionally bracketed: "2026/05/15 14:03:29".
-    //    Common in some application logs. Treated as local.
     m = line.match(/^\[?(\d{4})\/(\d{2})\/(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
     if (m) {
         return localEpoch(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10),
                           parseInt(m[4],10), parseInt(m[5],10), parseInt(m[6],10));
     }
 
-    // 4. Apache / nginx common log format: "[15/May/2026:14:03:29 +0200]".
-    //    May appear after a leading client-IP prefix, so this one is not
-    //    anchored to the start of the line. Honors the offset if present.
     m = line.match(/\[(\d{1,2})\/([A-Z][a-z]{2})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})(?:\s*([+-]\d{4}))?\]/);
     if (m && months[m[2]] != null) {
         if (m[7]) {
@@ -1130,7 +1002,6 @@ function parseLineTimestampJS(line) {
 }
 function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
-// ── Context menu (right-click on a log line) ─────────────────────────────
 function buildContextMenu() {
     if (document.getElementById('lvtLogCtxMenu')) return;
     var html =
@@ -1150,7 +1021,6 @@ function showContextMenu(x, y, $line) {
     var $m = $('#lvtLogCtxMenu');
     if (!$m.length) return;
 
-    // Filter-on-selection only works when there's a non-empty text selection
     var $f = $('#lvtCtxFilter');
     if (_ctxSelection) {
         $f.removeClass('lvt-ctxmenu__item--disabled')
@@ -1161,7 +1031,6 @@ function showContextMenu(x, y, $line) {
           .html('<i class="fa fa-filter" aria-hidden="true"></i> Filter on selection');
     }
 
-    // Reveal first so we can measure size
     $m.prop('hidden', false).css({ left: '-9999px', top: '-9999px' });
 
     var menuW = $m.outerWidth();
@@ -1171,10 +1040,8 @@ function showContextMenu(x, y, $line) {
     var py = Math.min(y, vh - menuH - 6);
     $m.css({ left: Math.max(4, px) + 'px', top: Math.max(4, py) + 'px' });
 
-    // Remember the clicked line element for the success flash
     $m.data('source-line', $line);
 
-    // Hold the live view still while the menu is open so nothing scrolls away.
     _ctxMenuOpen = true;
     setPaused(true);
 }
@@ -1182,15 +1049,13 @@ function showContextMenu(x, y, $line) {
 function hideContextMenu() {
     var $m = $('#lvtLogCtxMenu');
     if ($m.length) $m.prop('hidden', true).removeData('source-line');
-    // Menu closed: release the hold. Stay paused only if the pointer is still
-    // over the log (normal hover-pause); resume if it has moved away.
+
     _ctxMenuOpen = false;
     setPaused(_pointerInLog);
 }
 
 function copyCurrentLine() {
-    // If the user has a text selection (one or many lines), copy that;
-    // otherwise fall back to the single right-clicked line.
+
     var sel = '';
     try { sel = String(window.getSelection ? window.getSelection().toString() : ''); } catch (e) { sel = ''; }
     var text = sel.replace(/\u00a0/g, ' ').trim() ? sel : _ctxLine;
@@ -1210,15 +1075,13 @@ function copyFallback(text) {
     ta.style.left = '-9999px';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+    try { document.execCommand('copy'); } catch (e) {  }
     document.body.removeChild(ta);
 }
 
 function filterOnSelection() {
     if (!_ctxSelection) return;
-    // Right-click "Filter on selection" only sets a text filter now - there
-    // is no separate filter mode. It applies on top of whatever view/severity
-    // filter is active. Only meaningful on the single-source live view.
+
     if (_mode !== 'live') return;
     _filterText = _ctxSelection;
     var $s = $('#lvtFilterSearch');
@@ -1229,12 +1092,11 @@ function filterOnSelection() {
 }
 
 function bumpPinnedBadge() {
-    // Pinned tab removed; no-op kept defensively in case anything still calls it.
+
 }
 
 function truncate(s, n) { s = String(s); return s.length <= n ? s : s.slice(0, n - 1) + '…'; }
 
-// ── Severity classification ──────────────────────────────────────────────
 function classify(line) {
     if (!line) return '';
     for (var i = 0; i < SEV_RULES.length; i++) {
@@ -1243,13 +1105,6 @@ function classify(line) {
     return '';
 }
 
-// ── Download ─────────────────────────────────────────────────────────────
-// Mirrors the widget's export feature (Logsviewer.page header icon) but
-// keeps things plain: a single .log file containing what is loaded in
-// _rawLines (Live, Filter, Merge modes will all have meaningful content
-// there). No format toggle, no JSON variant -- the widget already covers
-// that case; the Tool-page button is for quickly grabbing the on-screen
-// log as a file.
 function sanitizeFilenamePart(s) {
     return String(s || 'log')
         .replace(/[^a-zA-Z0-9._-]+/g, '_')
@@ -1271,10 +1126,8 @@ function downloadTextFile(text, filename) {
 }
 
 function downloadCurrentLog() {
-    if (!_rawLines.length) return;  // nothing loaded yet -- silent no-op like the widget
+    if (!_rawLines.length) return;
 
-    // Filename: prefer the active source's label; fall back to mode name in
-    // merge mode where there's no single active source.
     var base;
     if (_mode === 'merge' && _mergeSources && _mergeSources.length) {
         base = 'merge_' + _mergeSources.length + '_sources';
@@ -1312,19 +1165,13 @@ function downloadCurrentLog() {
     downloadTextFile(text, filename);
 }
 
-// ── Utilities ────────────────────────────────────────────────────────────
 function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
         return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]);
     });
 }
 function unescapeHtml(s) {
-    // PHP htmlspecialchars(..., ENT_QUOTES) emits the apostrophe as the numeric
-    // entity &#039; (with the leading zero) since PHP 5.4. Older PHP and our own
-    // escapeHtml above use &#39; (no leading zero). The regex matches both so
-    // the round-trip from PHP → JS rawLines → JS escapeHtml → DOM works for
-    // either source. &amp; is decoded LAST so we don't accidentally re-decode
-    // any ampersand that was part of a pre-encoded entity.
+
     return String(s)
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
@@ -1340,7 +1187,7 @@ function formatNumber(n) {
     return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 function formatBytes(b) {
-    if (b == null || b < 0) return '—';
+    if (b == null || b < 0) return '-';
     if (b < 1024)        return b + ' B';
     if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
     if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';

@@ -1,11 +1,9 @@
-/* ==========================================================================
-   LOGS VIEWER - Settings Page Styles (Redesigned)
+/* ============================================================================
+   LOGS VIEWER
    Copyright (C) 2026 Lazaros Chalkidis
    License: GPLv3
-   /plugins/logsviewer/css/settings.css
-   ========================================================================== */
+   ========================================================================= */
 
-/* -- CSS CUSTOM PROPERTIES ------------------------------------------------- */
 :root {
   --lv-c-text:          rgba(255,255,255,.87);
   --lv-c-text-mid:      rgba(255,255,255,.60);
@@ -79,12 +77,8 @@
   --lv-green:          #2e7d32;
 }
 
-
-/* -- FOUC PREVENTION ------------------------------------------------------- */
 .logsviewer-settings { visibility: visible !important; }
 
-
-/* -- BUTTON BASELINE (override Unraid width:100%) -------------------------- */
 .logsviewer-settings button,
 .logsviewer-settings input[type="button"],
 .logsviewer-settings input[type="submit"] {
@@ -93,18 +87,6 @@
   flex-shrink: 0 !important;
 }
 
-
-/* -- WRAPPER & RESPONSIVE --------------------------------------------------
-   Width follows the same convention as the Tool page and Stream Viewer:
-   80% of the viewport on desktop (10% gutter each side) and 95% on
-   tablet/mobile below 768px. The Unraid dynamix template imposes a
-   ~1180px max-width on standalone plugin pages; that constraint is lifted
-   at runtime by the inline unlocker script at the bottom of
-   LogsviewerSettings.page, which walks up the ancestor chain and removes
-   any max-width on parents narrower than the viewport. When the script is
-   not active (e.g. on widgets), layout stays sane inside whatever parent
-   it has, since we use plain percentages and standard centering.
-*/
 .logsviewer-settings {
   width: 80%;
   max-width: 80%;
@@ -121,8 +103,6 @@
   }
 }
 
-
-/* -- SETTINGS PANEL -------------------------------------------------------- */
 .logsviewer-settings .lv-settings-panel {
   background: var(--lv-panel-bg);
   border: 1px solid var(--lv-c-border);
@@ -130,11 +110,6 @@
   overflow: hidden;
   padding: 0;
 }
-
-
-/* ══════════════════════════════════════════════════════════════════════════
-   TOP TABS (preserved)
-   ══════════════════════════════════════════════════════════════════════════ */
 
 .logsviewer-settings .lv-tabs {
   display: flex !important;
@@ -144,6 +119,7 @@
   flex-wrap: wrap;
 }
 
+/* tabs */
 .lv-tab {
   display: inline-flex;
   align-items: center;
@@ -183,11 +159,7 @@
   .lv-tab { padding: 7px 12px; font-size: 12px; }
 }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   COLLAPSIBLE SECTIONS
-   ══════════════════════════════════════════════════════════════════════════ */
-
+/* collapsible sections */
 .lv-sec {
   border-bottom: 1px solid var(--lv-c-border);
 }
@@ -242,11 +214,6 @@
   white-space: nowrap;
   line-height: 1.6;
 }
-
-
-/* ══════════════════════════════════════════════════════════════════════════
-   TABLE-CELL ROWS with ZEBRA STRIPING
-   ══════════════════════════════════════════════════════════════════════════ */
 
 .lv-r {
   display: flex;
@@ -313,11 +280,6 @@
   }
 }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   TOGGLE SWITCH (32x17px)
-   ══════════════════════════════════════════════════════════════════════════ */
-
 .lv-toggle {
   position: relative;
   display: inline-flex;
@@ -375,11 +337,6 @@
 .lv-toggle-txt.on { color: var(--lv-green); }
 .lv-toggle-txt.off { color: var(--lv-c-text-faint); }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   STYLED SELECT (compact, auto-width)
-   ══════════════════════════════════════════════════════════════════════════ */
-
 .lv-select {
   appearance: none;
   -webkit-appearance: none;
@@ -411,11 +368,6 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='rgba(0,0,0,0.35)'/%3E%3C/svg%3E");
 }
 .lv-light .lv-select option { background: #fff; color: rgba(0,0,0,.85); }
-
-
-/* ══════════════════════════════════════════════════════════════════════════
-   COLOR PICKER ROW
-   ══════════════════════════════════════════════════════════════════════════ */
 
 .lv-color-row {
   display: flex;
@@ -456,11 +408,7 @@
   line-height: 1.6;
 }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   FOOTER (native Unraid buttons, centered, preserved)
-   ══════════════════════════════════════════════════════════════════════════ */
-
+/* footer bar (apply / reset / version) */
 .lv-footer {
   display: flex;
   align-items: center;
@@ -531,38 +479,23 @@
   border-color: rgba(244,125,66,.5) !important;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   FOOTER ROW (support / github / credits links cluster + version badge)
-   Mirrors the DiskViewer footer styling so the two plugins read as a set:
-   inline-flex links cluster, thin CSS-drawn vertical separators (no literal
-   pipe characters), hardened text-decoration rules, and a slightly tighter
-   vertical rhythm.
-   ══════════════════════════════════════════════════════════════════════════ */
 .lv-footer-row {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Vertical gap between the links row and the version badge below.
-     8px keeps them clearly related but visually distinct. */
+
   gap: 8px;
   padding: 10px 0 6px;
   font-size: 11px;
 }
 
-/* Links cluster: inline-flex so the separators sit inline with the links
-   and gap controls the spacing on either side of each separator. */
 .lv-footer-links {
   display: inline-flex;
   align-items: center;
-  /* gap is the breathing room on EACH side of the separator. 0.7ch lands
-     visually as roughly one character of space, matching the "space on
-     the left and right of the |" effect without using a literal pipe. */
+
   gap: 0.7ch;
 }
 
-/* Shared link style. No hover underline anywhere - text colour shifts
-   slightly on hover for affordance, nothing more. !important on the
-   text-decoration defends against the Unraid theme's anchor underline. */
 .lv-footer-link,
 .lv-footer-link:link,
 .lv-footer-link:visited {
@@ -581,10 +514,6 @@
   outline: none;
 }
 
-/* Thin CSS divider between links. 1px wide, 10px tall, vertically centred
-   by virtue of the inline-flex parent. Subtle muted colour so it doesn't
-   fight with the link text. The markup is an empty <span aria-hidden>;
-   no literal pipe character is rendered. */
 .lv-footer-sep {
   display: inline-block;
   width: 1px;
@@ -605,11 +534,6 @@
   color: var(--lv-accent);
   line-height: 1.6;
 }
-
-
-/* ══════════════════════════════════════════════════════════════════════════
-   LOG SOURCES SUB-CARDS
-   ══════════════════════════════════════════════════════════════════════════ */
 
 .lv-sources-wrap {
   padding: 10px 16px;
@@ -802,11 +726,6 @@
 }
 .lv-source-unavailable .fa { font-size: 11px; opacity: 0.7; }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   CREDITS MODAL (harmonized neutral greys)
-   ══════════════════════════════════════════════════════════════════════════ */
-
 #lvCreditsModal {
   display: none;
   position: fixed;
@@ -816,8 +735,6 @@
   align-items: center;
   justify-content: center;
 }
-
-/* -- CREDITS MODAL (v2: identity card) ------------------------------------- */
 
 .lv-credits-modal-box {
   width: 460px;
@@ -838,7 +755,6 @@
   gap: 0;
 }
 
-/* Left column: avatar + identity */
 .lv-credits-left {
   position: relative;
   padding: 26px 16px 22px;
@@ -888,7 +804,6 @@
   opacity: 0.85;
 }
 
-/* Right column: info + links */
 .lv-credits-right {
   padding: 20px 22px;
 }
@@ -960,7 +875,6 @@
   opacity: 0.5;
 }
 
-/* Footer */
 .lv-credits-footer {
   padding: 12px 22px;
   background: var(--lv-footer-bg);
@@ -993,7 +907,6 @@
   border-color: #d56a35 !important;
 }
 
-/* Light theme adjustments */
 .lv-light .lv-credits-modal-box {
   background: #fff;
   color: rgba(0,0,0,.85);
@@ -1013,7 +926,6 @@
   border-top-color: rgba(0,0,0,.10);
 }
 
-/* Mobile */
 @media (max-width: 520px) {
   .lv-credits-grid { grid-template-columns: 1fr; }
   .lv-credits-left {
@@ -1022,8 +934,6 @@
   }
   .lv-credits-accent-stripe { width: 100%; height: 3px; bottom: auto; }
 }
-
-/* -- RESET CONFIRMATION MODAL ---------------------------------------------- */
 
 .lv-reset-modal-box {
   width: 380px;
@@ -1086,11 +996,6 @@
   border-top-color: rgba(0,0,0,.10);
 }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   FORM CONTROL OVERRIDE
-   ══════════════════════════════════════════════════════════════════════════ */
-
 .logsviewer-settings .form-control {
   background: var(--lv-ctrl-bg);
   border: 1px solid var(--lv-ctrl-border);
@@ -1110,11 +1015,6 @@
   border-color: rgba(0,0,0,.18);
 }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   DEVELOPER SECTION (hidden on release)
-   ══════════════════════════════════════════════════════════════════════════ */
-
 .lv-dev-section {
   margin: 12px 16px;
   padding: 10px 14px;
@@ -1123,11 +1023,6 @@
   background: var(--lv-c-bg-faint);
 }
 .lv-dev-section .lv-r { border-radius: 4px; }
-
-
-/* ══════════════════════════════════════════════════════════════════════════
-   MOBILE (max-width 600px)
-   ══════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 600px) {
   .logsviewer-settings { width: 100% !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; }
@@ -1151,9 +1046,6 @@
   .lv-action-btn, .lv-scan-btn { font-size: 10px !important; padding: 2px 6px !important; }
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   RESPONSIVE: PHONE (≤480px) — fine-tuning
-   ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 480px) {
   .logsviewer-settings { padding: 0 !important; }
   .lv-sec-hd { padding: 6px 8px !important; padding-right: 24px !important; font-size: 12px !important; }
@@ -1184,8 +1076,6 @@
   .lv-r-label { font-size: 10px !important; }
   .lv-select { font-size: 11px !important; }
 }
-
-/* -- ALERT RULES EDITOR ------------------------------------------------- */
 
 .lv-alert-rules-list { display: flex; flex-direction: column; gap: 8px; }
 .lv-alert-rules-actions, .lv-alert-history-actions {
@@ -1252,10 +1142,6 @@
 }
 .lv-alert-rule-pattern:focus { border-color: var(--lv-accent) !important; outline: none !important; }
 
-/* Generic boxed text input, same chrome as the alert rule Pattern field.
-   Used for path/text settings (e.g. Backup Logs storage location) so they
-   read as proper boxes instead of the underline-only native input. The
-   !important set defeats Unraid dynamix.css input styling on specificity. */
 .lv-text-box {
   background: var(--lv-ctrl-bg) !important;
   border: 1px solid var(--lv-ctrl-border) !important;
@@ -1292,8 +1178,6 @@
 }
 .lv-alert-src-chk input { width: 13px; height: 13px; accent-color: #3b82f6; }
 .lv-alert-src-sep { margin-top: 4px; padding-top: 5px; border-top: 1px solid var(--lv-c-border-row); flex-basis: 100%; }
-
-/* -- ALERT HISTORY ------------------------------------------------------ */
 
 .lv-alert-history-list { display: flex; flex-direction: column; gap: 0; }
 
@@ -1341,8 +1225,6 @@
   .lv-alert-rule-severity, .lv-alert-rule-cooldown { min-width: auto; width: 100%; }
   .lv-alert-history-time { min-width: auto; }
 }
-
-/* -- BACKUP CALENDAR --------------------------------------------------- */
 
 .lv-cal { padding: 8px 4px; }
 
@@ -1428,12 +1310,6 @@
   .lv-cal-month { font-size: 11px; min-width: 100px; }
 }
 
-/* ==========================================================================
-   v2026.05.11a — Custom log paths, Tags field, MITRE badges, mute menu,
-   scan-now button, inline toast.
-   ========================================================================== */
-
-/* -- CUSTOM LOG PATHS -- */
 .lv-custom-paths-list { display: flex; flex-direction: column; gap: 6px; }
 .lv-custom-paths-row {
   display: grid;
@@ -1489,19 +1365,12 @@
   margin-top: 2px;
 }
 
-/* -- TAGS FIELD IN RULE EDITOR -- */
 .lv-alert-rule-row--tags { display: block !important; }
 .lv-alert-rule-row--tags .lv-alert-rule-lbl {
   display: inline-flex; align-items: center; gap: 6px;
   margin-bottom: 6px;
 }
 
-/* MITRE technique picker. Sits between the Tags label and the free-text
-   input. Same visual language as .lv-select but full-width so the user
-   reads it as a stacked control above the tags input. Selecting a
-   technique pushes its ID into the tags input below, then the picker
-   resets to its placeholder. Custom tags are still added by typing
-   directly into the input below. */
 .lv-alert-rule-row--tags .lv-alert-rule-mitre-picker {
   display: block !important;
   width: 100% !important;
@@ -1585,7 +1454,6 @@
   line-height: 1.5;
 }
 
-/* NEW badge (auto-fade after 3 opens via localStorage) */
 .lv-tags-new-badge {
   display: inline-block;
   background: var(--lv-accent);
@@ -1599,7 +1467,6 @@
   vertical-align: middle;
 }
 
-/* -- ALERT TAGS / MITRE BADGES (history rows) -- */
 .lv-alert-tags { display: inline-flex; gap: 4px; margin-left: 6px; flex-wrap: wrap; vertical-align: middle; }
 .lv-tag {
   display: inline-block;
@@ -1617,7 +1484,7 @@
   border-color: var(--lv-accent-border);
   font-family: 'JetBrains Mono', Consolas, monospace;
 }
-/* When MITRE badge is rendered as a link to attack.mitre.org */
+
 a.lv-tag--mitre {
   display: inline-flex;
   align-items: center;
@@ -1644,7 +1511,6 @@ a.lv-tag--mitre:visited { color: var(--lv-accent); }
 }
 a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
 
-/* -- ALERT HISTORY MUTE BUTTON & MENU -- */
 .lv-alert-history-actions-cell {
   position: relative;
   display: inline-flex;
@@ -1692,7 +1558,7 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   border-color: var(--lv-c-text-mid);
 }
 .lv-alert-row-menu-btn[aria-expanded="true"] .lv-amb-caret { transform: rotate(180deg); }
-/* Muted-rule variant: subtle accent so users see "this rule is currently muted" */
+
 .lv-alert-row-menu-btn--muted {
   border-color: var(--lv-accent);
   color: var(--lv-accent);
@@ -1707,8 +1573,8 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
 }
 .lv-alert-row-menu {
   display: none;
-  position: fixed;            /* escapes ancestor overflow:hidden */
-  top: 0; left: 0;            /* coords are set inline by JS on open */
+  position: fixed;
+  top: 0; left: 0;
   background: var(--lv-sec-hd-bg);
   border: 1px solid var(--lv-c-border-strong);
   border-radius: 6px;
@@ -1716,11 +1582,10 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   min-width: 200px;
   z-index: 10000;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  overflow-y: auto;           /* in case JS sets max-height for tight viewports */
+  overflow-y: auto;
 }
 .lv-alert-row-menu.is-open { display: block; }
-/* Flip-up variant: only the shadow direction needs to change; coordinates are
-   already computed by JS so we don't override top/bottom here. */
+
 .lv-alert-row-menu.lv-alert-row-menu--up {
   box-shadow: 0 -4px 12px rgba(0,0,0,0.4);
 }
@@ -1766,7 +1631,6 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
 .lv-alert-menu-unmute:hover { background: var(--lv-accent-dim); color: var(--lv-accent); }
 .lv-alert-menu-unmute .fa { font-size: 13px; }
 
-/* Muted-state indicator */
 .lv-alert-muted-pill {
   display: inline-flex;
   align-items: center;
@@ -1782,7 +1646,6 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
 }
 .lv-alert-history-row.is-muted { opacity: 0.65; }
 
-/* -- SCAN NOW BUTTON (accent variant) -- */
 .lv-action-btn--accent {
   border-color: var(--lv-accent-border) !important;
   color: var(--lv-accent) !important;
@@ -1793,7 +1656,6 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
 .lv-action-btn--accent.disabled,
 .lv-action-btn--accent[disabled] { opacity: 0.7; cursor: wait; }
 
-/* -- INLINE TOAST (feedback for scan-now) -- */
 .lv-toast-inline {
   display: inline-flex;
   align-items: center;
@@ -1821,13 +1683,11 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* -- ALERT SRC CUSTOM marker -- */
 .lv-alert-src-chk.lv-alert-src-custom {
   border-left: 2px solid var(--lv-accent-border);
   padding-left: 8px;
 }
 
-/* -- MOBILE -- */
 @media (max-width: 768px) {
   .lv-custom-paths-row {
     grid-template-columns: 1fr 1fr 36px;
@@ -1844,19 +1704,12 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   .lv-toast-inline { display: block; margin: 8px 0 0; }
 }
 
-/* ==========================================================================
-   v2026.05.11a — Light theme overrides for new components
-   (White & Azure Unraid themes)
-   ========================================================================== */
-
-/* Muted pill: white-on-white invisible in light mode */
 .lv-light .lv-alert-muted-pill {
   background: rgba(0,0,0,0.03);
   color: var(--lv-c-text-muted);
   border-color: var(--lv-c-border);
 }
 
-/* Toast: tone down saturated green/red for light backgrounds */
 .lv-light .lv-toast-inline {
   background: rgba(46, 125, 50, 0.10);
   color: #1e7e34;
@@ -1868,7 +1721,6 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   border-color: rgba(220, 53, 69, 0.30);
 }
 
-/* Custom paths invalid-state */
 .lv-light .lv-custom-paths-row.is-invalid {
   background: rgba(220, 53, 69, 0.05);
   border-color: rgba(220, 53, 69, 0.30);
@@ -1878,35 +1730,22 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
 }
 .lv-light .lv-custom-paths-err { color: #b02a37; }
 
-/* Danger menu item */
 .lv-light .lv-alert-menu-item--danger:hover {
   background: rgba(220, 53, 69, 0.08);
   color: #b02a37;
 }
 .lv-light .lv-alert-menu-item--danger:hover .fa { color: #b02a37; }
 
-/* Dropdown menu shadow softer on light */
 .lv-light .lv-alert-row-menu {
   box-shadow: 0 4px 12px rgba(0,0,0,0.12);
 }
 
-/* MITRE tag: keep accent color but verify contrast with light bg */
 .lv-light .lv-tag--mitre {
   background: rgba(244,125,66,.10);
   color: #c1601f;
   border-color: rgba(244,125,66,.40);
 }
 
-/* NEW badge: same accent, dark text already legible on orange */
-
-/* Tags field hint already uses --lv-c-text-mid → auto-switches */
-
-/* ==========================================================================
-   v2026.05.11a — Sub-card "Shared" pill + link icon + callout box
-   (Used by the Custom log paths sub-card in Tool & Dashboard tabs)
-   ========================================================================== */
-
-/* Sub-card header that hosts a pill: keep title left, pill right (before the arrow) */
 .lv-sub-card-hd--has-pill {
   justify-content: flex-start;
   gap: 8px;
@@ -1918,7 +1757,6 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   flex: 0 1 auto;
 }
 
-/* "Shared" pill variant: same shape as .lv-pill but with accent treatment */
 .lv-pill--shared {
   margin-left: auto;
   margin-right: 8px;
@@ -1938,7 +1776,6 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
 }
 .lv-pill--shared .fa { font-size: 9px; }
 
-/* Shared callout box (info banner) — accent left border, subtle bg */
 .lv-shared-callout {
   display: flex;
   align-items: flex-start;
@@ -1964,9 +1801,6 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   font-weight: 600;
 }
 
-/* Body padding for the custom-paths sub-card specifically (other sub-cards
-   like System/Docker/VM Logs have their own bar-style notes/actions and
-   must not be affected). Scoped via parent class. */
 .lv-sub-card--custom-paths .lv-sub-card-bd > .lv-sources-note {
   margin: 0 12px 10px;
   padding: 0;
@@ -1983,13 +1817,11 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   border: none;
 }
 
-/* Light theme adjustment */
 .lv-light .lv-shared-callout {
   background: rgba(244,125,66,.08);
   color: var(--lv-c-text);
 }
 
-/* Mobile: tighter callout */
 @media (max-width: 480px) {
   .lv-shared-callout {
     margin: 8px 8px 10px 8px;

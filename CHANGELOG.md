@@ -1,6 +1,10 @@
 
 # Logs Viewer
 
+## 2026.07.21
+
+Changed: support links now point to GitHub Issues, and the README wording was tightened
+
 ## 2026.06.06
 
 This release is a big one. The Tool page has been completely rebuilt into a full log viewer, and there are new tools on the Alerts side plus a lot of polish across the plugin.

@@ -1,26 +1,17 @@
 <?php
-/**
- * Tool tab: Logs
- * /plugins/logsviewer/include/tool-tab-logs.php
- *
- * Sidebar (source navigation), main pane (log content), breadcrumb, mode
- * toggle and status bar. Severity sparkline / density bar removed.
- */
+/* ============================================================================
+   LOGS VIEWER
+   Copyright (C) 2026 Lazaros Chalkidis
+   License: GPLv3
+   ========================================================================= */
 
-// Pull enabled sources from plugin config (TOOL_ prefixed keys)
 $enabledSystemLogs       = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_SYSTEM_LOGS'] ?? ''))));
 $enabledDockerContainers = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ''))));
 $enabledVms              = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_VMS'] ?? ''))));
 $enabledCustomLogs       = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_CUSTOM_LOGS'] ?? ''))));
 
-if (!$enabledSystemLogs) $enabledSystemLogs = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];
+if (!$enabledSystemLogs) $enabledSystemLogs = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];  // sources come from the TOOL_ keys, with a sane default if none are set
 
-// "Hide empty logs" rule, applied server-side so it holds from the very first
-// page load (the dashboard widget applies the same rule). A system source
-// whose file is missing, unreadable, or 0 bytes is dropped from the sidebar.
-// This is why e.g. dmesg does not show: /var/log/dmesg is 0B on a standard
-// Unraid box, so it would otherwise render a "log not found" error. Custom
-// logs keep their own keys and are left untouched here.
 $systemLogPaths = [
     'syslog'          => '/var/log/syslog',
     'syslog-previous' => '/boot/logs/syslog-previous',
@@ -31,12 +22,11 @@ $systemLogPaths = [
     'libvirt'         => '/var/log/libvirt/libvirtd.log',
 ];
 $enabledSystemLogs = array_values(array_filter($enabledSystemLogs, function ($key) use ($systemLogPaths) {
-    if (!isset($systemLogPaths[$key])) return true; // unknown/custom key: leave as-is
+    if (!isset($systemLogPaths[$key])) return true;
     $p = $systemLogPaths[$key];
-    return @is_file($p) && @is_readable($p) && (int)@filesize($p) > 0;
+    return @is_file($p) && @is_readable($p) && (int)@filesize($p) > 0;  // hide empty logs server-side so e.g. dmesg (0B on a stock box) doesn't show a not-found error
 }));
 
-// Friendly labels for system log identifiers
 $systemLogNames = [
     'syslog'          => 'Syslog',
     'syslog-previous' => 'Syslog Previous',
@@ -47,9 +37,8 @@ $systemLogNames = [
     'libvirt'         => 'Libvirt',
 ];
 
-// Merge user-defined custom log paths (label only — JS doesn't need the path)
 $_customFile = '/boot/config/plugins/logsviewer/custom-paths.json';
-$customLogLabels = []; // slug -> label
+$customLogLabels = [];
 if (is_file($_customFile)) {
     $_arr = @json_decode((string)@file_get_contents($_customFile), true);
     if (is_array($_arr)) {
@@ -70,7 +59,6 @@ if (is_file($_customFile)) {
     }
 }
 
-// Docker container states (running/exited/stopped) for visual indication
 $dockerStates = [];
 if (!empty($enabledDockerContainers)) {
     $raw = @shell_exec('docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
@@ -82,7 +70,6 @@ if (!empty($enabledDockerContainers)) {
     }
 }
 
-// VM states
 $vmStates = [];
 if (!empty($enabledVms)) {
     $raw = @shell_exec('virsh list --all 2>/dev/null');
@@ -95,7 +82,6 @@ if (!empty($enabledVms)) {
     }
 }
 
-// Helper to render a single source row
 $renderSource = function(string $category, string $name, string $label, string $stateClass = 'lvt-dot--idle', string $stateTitle = ''): string {
     $nameAttr  = htmlspecialchars($name,  ENT_QUOTES);
     $labelHtml = htmlspecialchars($label, ENT_QUOTES);
@@ -109,7 +95,6 @@ $renderSource = function(string $category, string $name, string $label, string $
          . '</div>';
 };
 
-// Total counts per group for badges
 $systemCount = count($enabledSystemLogs);
 $dockerCount = count($enabledDockerContainers);
 $vmCount     = count($enabledVms);
@@ -117,7 +102,6 @@ $customCount = count($enabledCustomLogs);
 ?>
 <div class="lvt-tab-panel" id="lvtPanelLogs">
 
-  <!-- Tab header -->
   <div class="lvt-header">
     <div class="lvt-header__left">
       <img src="/plugins/logsviewer/img/logsviewermain.png" class="lvt-header__icon" alt="">
@@ -134,10 +118,8 @@ $customCount = count($enabledCustomLogs);
     </div>
   </div>
 
-  <!-- Layout: sidebar + main pane -->
   <div class="lvt-logs-layout">
 
-    <!-- Sidebar -->
     <aside class="lvt-sidebar" id="lvtSidebar" aria-label="Log sources">
 
       <?php if ($systemCount > 0): ?>
@@ -148,9 +130,7 @@ $customCount = count($enabledCustomLogs);
         </div>
         <?php foreach ($enabledSystemLogs as $name):
           $label = $systemLogNames[$name] ?? ($customLogLabels[$name] ?? ucfirst($name));
-          // Default to "active" (green) so every source ships with a coloured
-          // indicator from page-load. The JS updateActiveSourceDot() refines
-          // this to amber/red after the first fetch if severity warrants it.
+
           echo $renderSource('system', $name, $label, 'lvt-dot--active', 'Available');
         endforeach; ?>
       </div>
@@ -197,7 +177,7 @@ $customCount = count($enabledCustomLogs);
         </div>
         <?php foreach ($enabledCustomLogs as $name):
           $label = $customLogLabels['custom:' . $name] ?? $customLogLabels[$name] ?? $name;
-          // Same "default to active" treatment as system logs above.
+
           echo $renderSource('custom', $name, $label, 'lvt-dot--active', 'Available');
         endforeach; ?>
       </div>
@@ -212,7 +192,6 @@ $customCount = count($enabledCustomLogs);
 
     </aside>
 
-    <!-- Main pane -->
     <main class="lvt-main">
 
       <div class="lvt-main__header">
@@ -238,10 +217,6 @@ $customCount = count($enabledCustomLogs);
         </div>
       </div>
 
-      <!-- Text filter bar: shown only while a text filter is active (set via
-           right-click "Filter on selection" or a saved preset). Severity
-           filtering now lives in the header pills + Filter dropdown, so the
-           old level <select> was removed from here. -->
       <div class="lvt-filter-bar" id="lvtFilterBar" hidden>
         <div class="lvt-filter-bar__input">
           <i class="fa fa-search" aria-hidden="true"></i>
@@ -253,7 +228,6 @@ $customCount = count($enabledCustomLogs);
         </button>
       </div>
 
-      <!-- Merge bar (hidden by default; shown when Merge mode is active) -->
       <div class="lvt-merge-bar" id="lvtMergeBar" hidden>
         <div class="lvt-merge-bar__info">
           <i class="fa fa-link" aria-hidden="true"></i>
@@ -272,7 +246,6 @@ $customCount = count($enabledCustomLogs);
         </div>
       </div>
 
-      <!-- Status bar -->
       <div class="lvt-statusbar" id="lvtStatusbar">
         <div class="lvt-statusbar__left">
           <span class="lvt-statusbar__item"><i class="fa fa-list-ol" aria-hidden="true"></i> <strong id="lvtTotalLines">0</strong> lines</span>

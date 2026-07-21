@@ -1,12 +1,10 @@
-/* ==========================================================================
-   LOGS VIEWER — Widget CSS
+/* ============================================================================
+   LOGS VIEWER
    Copyright (C) 2026 Lazaros Chalkidis
    License: GPLv3
-   Shared by Dashboard widget, Tool page and Settings page.
-   tool.css and settings.css layer on top with page-specific overrides.
-   ========================================================================== */
+   ========================================================================= */
 
-/* ── LIGHT / DARK THEME VARIABLES ─────────────────────────────────────────── */
+/* colours and tokens */
 :root {
   --lv-c-text:          rgba(255,255,255,.85);
   --lv-c-text-mid:      rgba(255,255,255,.65);
@@ -20,6 +18,7 @@
   --lv-c-resizer:       rgba(255,255,255,.25);
   --lv-c-panel-bg:      rgba(0,0,0,.20);
 }
+/* light themes (white, azure) */
 .lv-light {
   --lv-c-text:          rgba(0,0,0,.85);
   --lv-c-text-mid:      rgba(0,0,0,.65);
@@ -34,9 +33,7 @@
   --lv-c-panel-bg:      rgba(0,0,0,.03);
 }
 
-
-/* ── 1. SCOPE & CSS TOKENS ────────────────────────────────────────────────── */
-
+/* widget body + layout */
 .logsviewer-body{
   isolation:isolate;
   display:flex;
@@ -74,7 +71,6 @@
   --logsviewer-white-space:pre-wrap;
 }
 
-/* Light theme: override ALL logsviewer tokens */
 .lv-light.logsviewer-body,
 .lv-light .logsviewer-body{
   --logsviewer-bg:#f5f5f5;
@@ -103,9 +99,6 @@
   --logsviewer-tab-hover-bg:#d8d8d8;
 }
 
-/* Header lives OUTSIDE .logsviewer-body in dashboard tile markup.
-   The .lv-light class on the header itself (dashboard) or on the
-   tool-wrapper ancestor (tool page) provides these tokens. */
 .lv-light.logsviewer-header,
 .lv-light .logsviewer-header,
 .lv-light.logsviewer-legacy-header,
@@ -122,7 +115,6 @@
   --logsviewer-toggle-on:#486dba;
 }
 
-/* Header inherits tokens with toggle override */
 .logsviewer-header,
 .logsviewer-legacy-header{
   --logsviewer-toggle-on:#486dba;
@@ -131,18 +123,13 @@
   min-width:0;
 }
 
-/* Header flex sides */
 .logsviewer-header .tile-header-left,
 .logsviewer-header__left{ min-width:0; flex-shrink:1; }
 .logsviewer-header .tile-header-right,
 .logsviewer-header__right{ min-width:0; flex-shrink:1; }
 
-/* Gap reset for all body variants */
 .logsviewer-body--responsive,
 .logsviewer-body--legacy{ gap:0 !important; }
-
-
-/* ── 2. HEADER LAYOUT ─────────────────────────────────────────────────────── */
 
 .logsviewer-header__left{ flex:1; flex-direction:column; gap:0.25rem; }
 .logsviewer-header__top{ display:inline-flex; gap:1rem; }
@@ -152,7 +139,6 @@
 .logsviewer-header__controls{ display:inline-flex; flex-wrap:nowrap; gap:0.75rem; align-items:center; justify-content:flex-end; width:100%; min-width:0; }
 .logsviewer-header__inputs{ display:flex; align-items:center; gap:0.6rem; justify-content:flex-end; width:100%; }
 
-/* Legacy header */
 .logsviewer-legacy-header{ display:flex; gap:0.75rem; align-items:flex-start; justify-content:space-between; margin-bottom:0.75rem; }
 .logsviewer-legacy-header__left{ flex:1; display:flex; flex-direction:column; gap:0.25rem; }
 .logsviewer-legacy-header__top{ display:inline-flex; gap:1rem; align-items:center; }
@@ -161,7 +147,6 @@
 .logsviewer-legacy-controls{ display:flex; flex-direction:column; align-items:flex-end; gap:0.28rem; }
 .logsviewer-legacy-controls__controls{ display:inline-flex; align-items:center; }
 
-/* Control icon buttons */
 #logsviewer-settings-icon,
 #logsviewer-export-icon{
   width:2.25rem; height:2.25rem;
@@ -176,16 +161,12 @@
 #logsviewer-export-icon:focus-visible{ outline:2px solid var(--logsviewer-accent,#4aa3ff); outline-offset:2px; }
 #logsviewer-manual-refresh.disabled{ opacity:0.5; pointer-events:none; cursor:not-allowed; }
 
-
-/* ── 3. AUTOSCROLL TOGGLE ─────────────────────────────────────────────────── */
-
 .logsviewer-autoscroll-container{ display:inline-flex; align-items:center; gap:12px; justify-self:start; margin-top:0.35rem; }
 .logsviewer-autoscroll-title{ user-select:none; line-height:1; font-weight:600; font-size:1.8rem; color:var(--lv-c-text-mid); }
 .logsviewer-autoscroll-state{ font-weight:700; }
 .logsviewer-autoscroll-state--off{ color:var(--lv-c-text-mid); }
 .logsviewer-autoscroll-state--on{ color:#0088cc; font-size:1.8rem; }
 
-/* Autoscroll aligned under header title */
 .logsviewer-header__left .logsviewer-autoscroll-container,
 .logsviewer-legacy-header__left .logsviewer-autoscroll-container{
   margin-top:-5px !important;
@@ -194,7 +175,6 @@
   transform-origin:left top;
 }
 
-/* Toggle switch */
 .logsviewer-switch{
   width:38px !important; height:22px !important;
   position:relative !important; display:inline-block !important;
@@ -233,15 +213,10 @@
 .logsviewer-switch input:checked + .logsviewer-switch-slider:after{ transform:translateX(16px) translateY(-50%) !important; }
 .logsviewer-switch input:focus-visible + .logsviewer-switch-slider{ outline:2px solid var(--logsviewer-tab-focus-ring); outline-offset:2px; }
 
-
-/* ── 4. CATEGORY TABS RAIL ────────────────────────────────────────────────── */
-
-/* Tabs-row: dissolve body wrapper box to eliminate gap between tabs and log panel */
 .logsviewer-body:has(> .logsviewer-tabs-row){ display:contents !important; }
 #db-logsviewer{ border-collapse:collapse; border-spacing:0; max-width:100%; width:100%; overflow:hidden; }
 .logsviewer-body.logsviewer-collapsible{ margin-top:0 !important; padding-top:0 !important; }
 
-/* Rail container */
 .logsviewer-tabs-row{
   display:flex; align-items:center; gap:0; width:100%; padding:0.35rem 0.5rem;
   background:var(--lv-c-bg-subtle);
@@ -253,7 +228,6 @@
 .logsviewer-tabs-row__spacer{ flex:1; }
 .logsviewer-tabs-row__controls{ display:flex; align-items:center; gap:0.3rem; flex-shrink:0; }
 
-/* Tab group (recessed container) */
 .logsviewer-category-tabs{
   display:flex; gap:1px; align-items:center; flex-shrink:0;
   background:var(--lv-c-border-subtle);
@@ -261,7 +235,6 @@
   padding:5px;
 }
 
-/* Category tab button */
 .logsviewer-cat-btn{
   position:relative; display:inline-flex; align-items:center; gap:0.46rem;
   padding:0.50rem 1.10rem;
@@ -285,10 +258,8 @@
 }
 .logsviewer-cat-btn.logsviewer-cat-btn--hidden{ display:none; }
 
-/* Tab underlines: removed in new design */
 .logsviewer-cat-btn::after{ display:none; }
 
-/* Colored category dot */
 .logsviewer-cat-btn__dot{
   width:11px; height:11px; border-radius:50%; flex-shrink:0;
 }
@@ -302,7 +273,6 @@
 .logsviewer-cat-btn:hover .logsviewer-cat-btn__caret{ opacity:0.55; }
 .logsviewer-cat-btn.logsviewer-cat-btn--active .logsviewer-cat-btn__caret{ opacity:0.55; }
 
-/* Custom dropdown list */
 .logsviewer-cat-dropdown{
   display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:9999;
   width:max-content; max-width:260px;
@@ -327,7 +297,6 @@
 .logsviewer-cat-dropdown li:last-child{ border-bottom:none; }
 .logsviewer-cat-dropdown li:hover{ background:var(--lv-c-bg-hover); color:var(--logsviewer-text-primary); }
 
-/* Active item in dropdown */
 .logsviewer-cat-dropdown li.lv-item--active{
   color:var(--logsviewer-text-primary); font-weight:500;
 }
@@ -335,11 +304,11 @@
   content:""; display:inline-block; width:8px; height:8px; border-radius:50%;
   background:#378ADD; margin-right:0.45rem; vertical-align:middle;
 }
-/* Hide active dot when status dot is present */
+
 .logsviewer-cat-dropdown li.lv-item--active:has(.lv-drop-dot)::before{ display:none; }
 .logsviewer-cat-dropdown li.lv-item--active:hover{ background:var(--lv-c-bg-hover); }
 
-/* Dropdown status dots (Docker/VM running/stopped) */
+/* docker/vm state dots */
 .lv-drop-dot{
   display:inline-block; width:6px; height:6px; min-width:6px; min-height:6px;
   border-radius:50%; margin-right:0.4rem; vertical-align:middle; flex-shrink:0;
@@ -348,7 +317,6 @@
 .lv-drop-dot--stopped{ background:#e74c3c; }
 .logsviewer-cat-dropdown li.lv-item--active .lv-drop-dot{ box-shadow:0 0 0 2px rgba(55,138,221,0.5); }
 
-/* Native select: transparent overlay for mobile tap target */
 .logsviewer-cat-native{
   display:none; position:absolute; inset:0; width:100%; height:100%;
   opacity:0.001; cursor:pointer; font-size:16px; z-index:5;
@@ -356,7 +324,6 @@
   border:none; background:transparent;
 }
 
-/* Syntax/Filter controls in tabs rail */
 .logsviewer-tabs-row__controls .logsviewer-tabrow-ctrl{
   display:inline-flex; align-items:center; gap:0.25rem;
   padding:0.48rem 0.80rem;
@@ -376,7 +343,6 @@
 .logsviewer-tabrow-ctrl__label{ pointer-events:none; font-weight:500; }
 .logsviewer-tabrow-ctrl__caret{ font-size:0.73em; opacity:0.35; pointer-events:none; }
 
-/* Hidden select overlay for Syntax/Filter controls */
 .logsviewer-tabrow-ctrl .logsviewer-filter-select,
 .logsviewer-tabrow-ctrl .logsviewer-syntax-select{
   position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:1.06rem;
@@ -384,13 +350,9 @@
 .logsviewer-tabrow-ctrl .logsviewer-filter-select option,
 .logsviewer-tabrow-ctrl .logsviewer-syntax-select option{ background:var(--logsviewer-tab-bg,#2c2c2c); color:var(--logsviewer-text-primary,#e0e0e0); font-size:1.06rem; }
 
-/* Legacy sizing */
 .logsviewer-body--legacy .logsviewer-cat-btn{ font-size:1.04rem; padding:0.40rem 0.78rem; }
 .logsviewer-body--legacy .logsviewer-cat-dropdown li{ font-size:1.04rem; }
 .logsviewer-body--legacy .logsviewer-tabrow-ctrl{ font-size:0.95rem; padding:0.37rem 0.68rem; }
-
-
-/* ── 5. LOG PANEL ─────────────────────────────────────────────────────────── */
 
 .logsviewer-collapsible{ display:block; margin:0 !important; padding:0 !important; }
 .logsviewer-tabs:not(:empty) + .logsviewer-collapsible{ display:block; margin:0 !important; padding:0 !important; }
@@ -418,7 +380,6 @@
 
 #logsviewer-container{ position:relative; overflow-x:hidden; }
 
-/* Custom scrollbar */
 .logsviewer-log::-webkit-resizer{
   background:linear-gradient(135deg,transparent 60%,var(--lv-c-resizer) 60%,var(--lv-c-resizer) 65%,transparent 65%,transparent 72%,var(--lv-c-resizer) 72%,var(--lv-c-resizer) 77%,transparent 77%,transparent 84%,var(--lv-c-resizer) 84%);
 }
@@ -427,7 +388,6 @@
 .logsviewer-log::-webkit-scrollbar-thumb{ background:var(--logsviewer-tab-border,#3c3c3c); border-radius:3px; }
 .logsviewer-log::-webkit-scrollbar-thumb:hover{ background:var(--logsviewer-tab-hover-border); }
 
-/* Log pre element */
 #logsviewer-logs{
   margin:0; padding:0; border:none;
   background-color:transparent !important; background-image:none !important;
@@ -441,9 +401,6 @@
   white-space:var(--logsviewer-white-space);
   word-break:break-word; overflow:visible; max-height:none;
 }
-
-
-/* ── 6. SEARCH ────────────────────────────────────────────────────────────── */
 
 .logsviewer-search{ display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; justify-content:flex-end; margin-left:auto; }
 .logsviewer-search input{
@@ -462,11 +419,9 @@
 }
 .logsviewer-search button:hover{ border-color:var(--logsviewer-tab-hover-border); background-color:var(--logsviewer-tab-hover-bg); }
 
-/* Search in header */
 .logsviewer-search--header{ margin-left:0; justify-content:flex-end; flex-wrap:nowrap; min-width:0; overflow:hidden; }
 .logsviewer-search--header input{ min-width:0; width:10.5rem; max-width:100%; }
 
-/* Header inputs row — right-aligned search */
 .logsviewer-header__right .logsviewer-header__inputs{
   display:flex !important; flex-direction:row !important; flex-wrap:nowrap !important;
   align-items:center !important; justify-content:flex-end !important; gap:0.45rem !important;
@@ -474,13 +429,8 @@
 .logsviewer-header__right .logsviewer-header__inputs .logsviewer-search{ flex:0 0 auto !important; width:auto !important; }
 .logsviewer-header__right .logsviewer-header__inputs .logsviewer-search input{ width:10.5rem !important; min-width:5.5rem !important; }
 
-/* Search hit highlight */
 .logsviewer-search-hit--visible{ background:rgba(255,221,87,0.22); border:1px solid rgba(255,221,87,0.28); border-radius:4px; padding:0 .12em; }
 
-
-/* ── 7. TOAST SYSTEM ──────────────────────────────────────────────────────── */
-
-/* Toast panel in footer (bottom row, black background) */
 .logsviewer-toast-panel{
   width:100%;
   padding:0.40rem 1rem 0.40rem 0.7rem;
@@ -495,7 +445,6 @@
 }
 .logsviewer-toast-panel.lv-toast-hidden{ display:none !important; }
 
-/* Left toast slot */
 .logsviewer-toast-line{
   min-height:1.92rem; display:flex; align-items:center; gap:0.5rem;
   overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
@@ -504,13 +453,13 @@
   flex:1; min-width:0;
 }
 
-/* Right toast slot */
 .logsviewer-toast-right{
   display:flex; align-items:center; gap:0.4rem;
   white-space:nowrap; flex-shrink:0;
   font-family:var(--logsviewer-font-family); font-size:1.05rem;
 }
 .logsviewer-toast-right:empty{ display:none; }
+/* status toasts */
 .lv-toast-sep{ width:1px; height:0.9rem; background:rgba(255,255,255,0.25); }
 .lv-light .lv-toast-sep{ background:rgba(0,0,0,0.20); }
 .lv-toast-size{ color:rgba(255,255,255,0.30); }
@@ -520,7 +469,6 @@
 .lv-toast-newcritical{ color:#D43A3A; }
 .lv-toast-paused{ color:rgba(195,134,0,1); }
 
-/* Toasts reset to static when inside panel */
 .logsviewer-toast-panel #logsviewer-search-toast,
 .logsviewer-toast-panel #logsviewer-perf-toast,
 .logsviewer-toast-panel #logsviewer-login-toast{
@@ -530,7 +478,6 @@
   pointer-events:none; background:transparent;
 }
 
-/* Search toast */
 .logsviewer-search-toast{
   position:sticky; top:0.2rem; right:0.1rem; margin-left:auto; z-index:5;
   width:fit-content; padding:0.05rem 0.15rem; border-radius:0.35rem;
@@ -541,11 +488,9 @@
 .logsviewer-search-toast .lv-toast-label{ color:var(--logsviewer-text-primary); }
 .logsviewer-search-toast .lv-toast-num{ color:rgba(30,144,255,1); }
 
-/* Perf and login toast colours */
 #logsviewer-perf-toast{ color:rgba(195,134,0,1); }
 #logsviewer-login-toast{ color:rgba(255,170,0,1); font-weight:600; }
 
-/* Selected log toast */
 .logsviewer-selected-toast{
   font-size:1.15rem;
   color:var(--logsviewer-toast-selected, rgba(255,255,255,0.45));
@@ -554,16 +499,12 @@
   padding:0 0.25rem;
 }
 
-/* Toast flash animation */
 .logsviewer-toast-flash{ animation:logsviewerToastFlash 2.6s ease-in-out forwards; }
 @keyframes logsviewerToastFlash{
   0%{ opacity:0.2; }
   50%{ opacity:1; }
   100%{ opacity:0.2; }
 }
-
-
-/* ── 8. FOOTER ────────────────────────────────────────────────────────────── */
 
 .logsviewer-footer{
   display:flex; flex-direction:column;
@@ -574,7 +515,6 @@
   border-top:none;
 }
 
-/* Proportion strip (full width, top of footer) */
 .logsviewer-proportion-strip{
   display:flex; height:3.2px; overflow:hidden; width:100%; margin-bottom:4px;
 }
@@ -585,12 +525,10 @@
 .logsviewer-proportion-strip__seg--error{ background:rgba(229,98,42,0.65); }
 .logsviewer-proportion-strip__seg--critical{ background:rgba(163,45,45,0.5); }
 
-/* Footer row: lines left, badges center, clock right */
 .logsviewer-footer__row{
   display:flex; align-items:center; padding:0.5rem 0.7rem; gap:0.4rem; margin-bottom:4px;
 }
 
-/* Total lines meta */
 .logsviewer-title-meta{
   display:inline-flex; align-items:center; gap:0.45rem;
   font-size:0.93rem; font-weight:600;
@@ -600,7 +538,6 @@
 .logsviewer-title-meta__label{ display:none; }
 .logsviewer-title-meta__value{ font-variant-numeric:tabular-nums; color:var(--logsviewer-text-primary); font-weight:600; }
 
-/* Pulse dot */
 .logsviewer-title-meta .logsviewer-pulse{
   width:8px; height:8px; flex:0 0 auto;
   display:inline-block; border-radius:999px; background:#2ecc71;
@@ -614,7 +551,6 @@
   100%{ opacity:0.15; transform:scale(0.92); }
 }
 
-/* Badges (centered via flex wrapper) */
 .logsviewer-badges-wrap{ flex:1; display:flex; justify-content:center; }
 .logsviewer-badges{ margin:0; display:flex; gap:6px; justify-content:center; align-items:center; flex-wrap:wrap; min-width:0; }
 .logsviewer-badge.is-zero{ opacity:0.45; }
@@ -639,7 +575,6 @@
 .logsviewer-badge:active{ transform:translateY(1px); }
 .logsviewer-badge:focus-visible{ outline:2px solid var(--logsviewer-tab-focus-ring); outline-offset:2px; }
 
-/* Selected badge (active filter) */
 .logsviewer-badge.logsviewer-badge--selected{ opacity:1 !important; }
 .logsviewer-badge--info.logsviewer-badge--selected{ background:rgba(55,138,221,0.25) !important; border-color:rgba(55,138,221,0.5) !important; color:#5aadff !important; }
 .logsviewer-badge--warning.logsviewer-badge--selected{ background:rgba(239,159,39,0.25) !important; border-color:rgba(239,159,39,0.5) !important; color:#f5b84a !important; }
@@ -653,16 +588,12 @@
 .logsviewer-count--error{ color:#E5622A; }
 .logsviewer-count--critical{ color:#D43A3A; }
 
-/* Timestamp (clock icon + time) */
 .logsviewer-timestamp-container{
   display:flex; gap:0.45rem; align-items:center; white-space:nowrap;
   font-size:0.9rem; flex-shrink:0;
 }
 .logsviewer-ts-icon{ color:var(--lv-c-text-muted); flex-shrink:0; opacity:0.7; }
 #logsviewer-timestamp{ font-variant-numeric:tabular-nums; color:var(--lv-c-text); }
-
-
-/* ── 9. LOG LEVEL HIGHLIGHTS ──────────────────────────────────────────────── */
 
 .logsviewer-lvl-trace,
 .logsviewer-lvl-debug{ color:#8a8a8a; font-weight:700; }
@@ -677,7 +608,6 @@
 .logsviewer-lvl-fatal,
 .logsviewer-lvl-panic{ color:#800020; font-weight:700; }
 
-/* Level colors override syntax highlighting */
 .hljs .logsviewer-lvl-trace,
 .hljs .logsviewer-lvl-debug{ color:#8a8a8a !important; font-weight:700 !important; }
 .hljs .logsviewer-lvl-info{ color:#1e90ff !important; font-weight:700 !important; }
@@ -698,9 +628,6 @@
 .logsviewer-hdr{ color:#aaa !important; }
 .lv-light .logsviewer-hdr{ color:#777 !important; }
 
-
-/* ── 10. COMPACT INDICATORS ───────────────────────────────────────────────── */
-
 .logsviewer-compact{ display:none; width:100%; box-sizing:border-box; padding-left:3rem; flex-direction:column; align-items:flex-start; gap:0.5rem; }
 .logsviewer-compact-indicators{ width:100%; display:flex; flex-wrap:wrap; align-items:stretch; gap:0.3rem; padding:0; }
 .logsviewer-compact-indicator{
@@ -717,13 +644,7 @@
 .logsviewer-compact-indicator--running{ color:#4ade80; border-color:var(--logsviewer-tab-running-border); }
 .logsviewer-compact-indicator--running::before{ background-color:var(--logsviewer-success-border,#2f6f2a); }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   RESPONSIVE: TABLET & MOBILE
-   Consolidated breakpoints for all widget components.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* ── TABLET LANDSCAPE (≤1024px) ─────────────────────────────────────────── */
+/* responsive */
 @media (max-width:1024px){
   .logsviewer-header__title{ font-size:1.3rem; }
   .logsviewer-legacy-title{ font-size:1.3rem; }
@@ -731,9 +652,8 @@
   .logsviewer-cat-btn__dot{ width:9px; height:9px; min-width:9px; min-height:9px; }
 }
 
-/* ── TABLET PORTRAIT (≤768px) ───────────────────────────────────────────── */
 @media (max-width:768px){
-  /* Header: stack vertically */
+
   .logsviewer-header,
   .tile-header.logsviewer-header{
     flex-direction:column !important; align-items:stretch !important;
@@ -752,7 +672,6 @@
     justify-content:flex-start !important; gap:0.5rem !important;
   }
 
-  /* Legacy header: stack */
   .logsviewer-legacy-header{
     flex-direction:column !important; gap:0.4rem !important;
   }
@@ -760,13 +679,11 @@
     flex-direction:row !important; align-items:center !important; justify-content:flex-start !important;
   }
 
-  /* Autoscroll: reduce scale and positioning */
   .logsviewer-header__left .logsviewer-autoscroll-container,
   .logsviewer-legacy-header__left .logsviewer-autoscroll-container{
     margin-left:3.5rem !important; transform:translateY(-5px) scale(0.42) !important;
   }
 
-  /* Tabs row: wrap tabs and controls */
   .logsviewer-tabs-row{
     flex-wrap:wrap !important; gap:0.3rem !important; padding:0.3rem 0.4rem !important;
   }
@@ -775,17 +692,13 @@
     width:100% !important; justify-content:flex-start !important;
   }
 
-  /* Category tabs: shrink */
   .logsviewer-cat-btn{ font-size:0.95rem; padding:0.38rem 0.7rem; }
   .logsviewer-cat-btn__dot{ width:8px; height:8px; min-width:8px; min-height:8px; }
 
-  /* Syntax/Filter: shrink */
   .logsviewer-tabrow-ctrl{ font-size:0.9rem !important; padding:0.35rem 0.6rem !important; }
 
-  /* Log panel: reduce height */
   .logsviewer-log{ height:250px !important; max-height:60vh !important; }
 
-  /* Footer: stack to center */
   .logsviewer-footer__row{
     flex-wrap:wrap !important; justify-content:center !important; gap:0.4rem !important;
     padding:0.4rem 0.5rem !important;
@@ -794,7 +707,6 @@
   .logsviewer-badges-wrap{ flex-basis:100% !important; justify-content:center !important; }
   .logsviewer-timestamp-container{ width:auto !important; }
 
-  /* Toast: wrap text */
   .logsviewer-toast-panel{ padding:0.3rem 0.5rem !important; width:100% !important; max-width:100% !important; box-sizing:border-box; }
   .logsviewer-toast-line{
     white-space:normal !important; word-break:break-word !important;
@@ -803,20 +715,17 @@
   }
   .logsviewer-selected-toast{ font-size:1rem !important; white-space:normal !important; }
 
-  /* Dropdown: switch to native select on touch devices */
   .logsviewer-cat-dropdown{ display:none !important; pointer-events:none !important; }
   .logsviewer-cat-native{ display:block; }
 }
 
-/* ── LARGE PHONE (≤560px) ───────────────────────────────────────────────── */
 @media (max-width:560px){
-  /* Header: compact */
+
   .logsviewer-header__title{ font-size:1.1rem !important; }
   .logsviewer-legacy-title{ font-size:1.1rem !important; }
   .logsviewer-header__icon{ width:24px !important; height:24px !important; }
   .logsviewer-header__top{ gap:0.5rem !important; }
 
-  /* Controls: compact */
   .logsviewer-header__controls{
     gap:0.3rem !important;
   }
@@ -825,31 +734,25 @@
   #logsviewer-manual-refresh,
   #logsviewer-toolpage-icon{ width:1.6rem !important; height:1.6rem !important; }
 
-  /* Autoscroll: hide on very small */
   .logsviewer-header__left .logsviewer-autoscroll-container,
   .logsviewer-legacy-header__left .logsviewer-autoscroll-container{
     margin-left:2.5rem !important; transform:translateY(-4px) scale(0.38) !important;
   }
 
-  /* Category tabs: smaller */
   .logsviewer-cat-btn{ font-size:0.85rem !important; padding:0.32rem 0.55rem !important; gap:0.3rem !important; }
   .logsviewer-cat-btn__dot{ width:7px !important; height:7px !important; min-width:7px !important; min-height:7px !important; }
   .logsviewer-category-tabs{ padding:3px !important; border-radius:0.45rem !important; }
 
-  /* Syntax/Filter: smaller */
   .logsviewer-tabrow-ctrl{ font-size:0.82rem !important; padding:0.28rem 0.5rem !important; }
 
-  /* Search input */
   .logsviewer-search input,
   .logsviewer-search--header input,
   .logsviewer-header__right .logsviewer-header__inputs .logsviewer-search input{
     min-width:0 !important; width:7rem !important;
   }
 
-  /* Log panel */
   .logsviewer-log{ height:220px !important; font-size:0.85rem !important; }
 
-  /* Footer: compact */
   .logsviewer-footer__row{ padding:0.35rem 0.4rem !important; }
   .logsviewer-title-meta{ font-size:0.82rem !important; }
   .logsviewer-badge{ font-size:0.85rem !important; }
@@ -857,26 +760,21 @@
   .logsviewer-timestamp-container{ font-size:0.78rem !important; }
 }
 
-/* ── PHONE PORTRAIT (≤480px) ────────────────────────────────────────────── */
 @media (max-width:480px){
-  /* Header: minimal */
+
   .logsviewer-header,
   .tile-header.logsviewer-header{ padding:0.3rem 0.4rem !important; }
   .logsviewer-header__title{ font-size:1rem !important; }
   .logsviewer-legacy-title{ font-size:1rem !important; }
 
-  /* Body gap reset */
   .logsviewer-body{ gap:0 !important; }
 
-  /* Tabs row: full compact */
   .logsviewer-tabs-row{ padding:0.25rem 0.3rem !important; }
   .logsviewer-cat-btn{ font-size:0.78rem !important; padding:0.28rem 0.45rem !important; }
   .logsviewer-tabrow-ctrl{ font-size:0.75rem !important; padding:0.25rem 0.4rem !important; }
 
-  /* Log panel: shorter */
   .logsviewer-log{ height:180px !important; min-height:120px !important; font-size:0.8rem !important; padding:0.5rem 0.3rem 0.3rem !important; }
 
-  /* Footer: fully stacked */
   .logsviewer-footer__row{
     flex-direction:column !important; align-items:center !important; gap:0.3rem !important;
     padding:0.3rem !important;
@@ -887,12 +785,10 @@
   .logsviewer-timestamp-container{ font-size:0.72rem !important; }
   .logsviewer-pulse{ width:6px !important; height:6px !important; }
 
-  /* Toast: compact */
   .logsviewer-toast-line{ font-size:0.88rem !important; min-height:1.4rem !important; }
   .logsviewer-selected-toast{ font-size:0.88rem !important; }
 }
 
-/* ── SMALL PHONE (≤360px) ───────────────────────────────────────────────── */
 @media (max-width:360px){
   .logsviewer-header__title{ font-size:0.9rem !important; }
   .logsviewer-legacy-title{ font-size:0.9rem !important; }
