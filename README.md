@@ -204,7 +204,6 @@ See [CHANGELOG.md](CHANGELOG.md)
 
 Bug reports, feature requests or general feedback:
 - [GitHub Issues](https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues)
-- [Unraid Forum Thread](https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/)
 
 ## Author
 

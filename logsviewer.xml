@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Container>
-  <Plugin>True</Plugin>
+<Plugin>
+  <Name>Logs Viewer</Name>
+  <Overview><![CDATA[Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page for Log Backups and System Alerts. Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.]]></Overview>
   <PluginURL>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/logsviewer.plg</PluginURL>
   <PluginAuthor>Lazaros Chalkidis</PluginAuthor>
-  <Beta>false</Beta>
-  <Category>Tools:Utilities Tools:System</Category>
-  <Name>Logs Viewer</Name>
-  <Description><![CDATA[Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page - Log Backups and System Alerts. Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.]]>
-  </Description>
+  <Support>https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues</Support>
   <Project>https://github.com/Lazaros-Chalkidis/unraid-logsviewer</Project>
-  <Support>https://forums.unraid.net/topic/197621-plugin-logs-viewer-real-time-log-viewer-dashboard-widget-for-unraid/</Support>
+  <ReadMe>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/README.md</ReadMe>
+  <Category>Tools:Utilities Tools:System</Category>
   <Icon>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/source/img/logsviewerplugin.png</Icon>
   <License>GPL v3</License>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-dashboard-full-settings-syntax-on-docker.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-tool-page-full-settings-syntax-on.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/screenshots/pc/pc-settings-page.png</Screenshot>
-</Container>
+</Plugin>
