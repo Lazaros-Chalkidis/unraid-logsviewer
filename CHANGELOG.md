@@ -1,6 +1,19 @@
 
 # Logs Viewer
 
+## 2026.07.22
+
+### Fixed
+
+- Log lines containing angle brackets (like kernel tags or emails such as root@tower in brackets) no longer show as raw codes like &amp;lt; in the dashboard widget.
+- Logs exported from the dashboard widget now contain the real characters instead of codes like &amp;#039; and &amp;lt;.
+
+### Improvements
+
+- Temporary cache files created by the plugin are now private to the system, so log content in them cannot be read by anything else on the server.
+- Custom log paths now follow symbolic links before checking them, so a link can never point outside the allowed locations. This applies to viewing, alerts and backups.
+- Hardened how the plugin embeds its settings into the Dashboard and Tool pages.
+
 ## 2026.07.21
 
 Changed: support links now point to GitHub Issues, and the README wording was tightened

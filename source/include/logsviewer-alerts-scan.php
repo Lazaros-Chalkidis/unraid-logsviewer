@@ -41,8 +41,10 @@ if (!function_exists('lv_alert_is_allowed_path')) {
         $allowedPrefixes = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
         if ($path === '' || $path[0] !== '/') return false;
         if (strpos($path, '..') !== false) return false;
+        $real = @realpath($path);
+        $check = ($real !== false) ? $real : $path;
         foreach ($allowedPrefixes as $prefix) {
-            if (strpos($path, $prefix) === 0) return true;
+            if (strpos($check, $prefix) === 0) return true;
         }
         return false;
     }
@@ -165,7 +167,7 @@ if (!function_exists('lv_run_alerts_scan')) {
             'libvirt'         => '/var/log/libvirt/libvirtd.log',
         ];
 
-        if (!is_dir('/tmp/logsviewer_cache')) @mkdir('/tmp/logsviewer_cache', 0755, true);
+        if (!is_dir('/tmp/logsviewer_cache')) @mkdir('/tmp/logsviewer_cache', 0700, true);
 
         $systemLogs = lv_alert_load_custom_logs($customPathsFile, $systemLogs);
 

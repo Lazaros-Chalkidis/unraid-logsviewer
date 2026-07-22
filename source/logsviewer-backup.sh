@@ -102,9 +102,13 @@ if [ -n "$CUSTOM_LOGS" ]; then
                 fpath="${CUSTOM_PATHS_MAP[$slug]:-}"
                 [ -z "$fpath" ] && continue
                 [ -f "$fpath" ] || continue
+                # resolve symlinks so a link can't pull files from outside the whitelist
+                rpath=$(readlink -f "$fpath" 2>/dev/null)
+                [ -z "$rpath" ] && continue
+                case "$rpath" in /var/log/*|/mnt/user/*|/mnt/cache/*) ;; *) continue ;; esac
                 safe=$(echo "$slug" | tr -cd 'a-zA-Z0-9._-')
                 [ -z "$safe" ] && continue
-                cp "$fpath" "$TMPDIR/custom/${safe}.log" && HAS_FILES=1
+                cp "$rpath" "$TMPDIR/custom/${safe}.log" && HAS_FILES=1
                 ;;
         esac
     done

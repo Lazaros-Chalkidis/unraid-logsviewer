@@ -45,7 +45,7 @@ $tile_config = [
     'refreshSecs'  => (int)$lvt_refresh_secs,
     'exportFormat' => $lvt_export_format,
 ];
-$tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES);
+$tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
 ?>
 
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/tool.css?v=<?= @filemtime('/usr/local/emhttp/plugins/logsviewer/css/tool.css') ?: time() ?>">

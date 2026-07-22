@@ -53,7 +53,9 @@ final class LogsViewerEndpoint
     public function __construct()
     {
         if (!is_dir(self::CACHE_DIR)) {
-            @mkdir(self::CACHE_DIR, 0755, true);
+            @mkdir(self::CACHE_DIR, 0700, true);
+        } else {
+            @chmod(self::CACHE_DIR, 0700);
         }
     }
 
@@ -62,8 +64,12 @@ final class LogsViewerEndpoint
     {
         if ($path === '' || $path[0] !== '/') return false;
         if (strpos($path, '..') !== false) return false;
+        // resolve symlinks so a link can't point outside the whitelist,
+        // paths that don't exist yet fall back to the string check
+        $real = @realpath($path);
+        $check = ($real !== false) ? $real : $path;
         foreach (self::ALLOWED_CUSTOM_PREFIXES as $prefix) {
-            if (strpos($path, $prefix) === 0) return true;
+            if (strpos($check, $prefix) === 0) return true;
         }
         return false;
     }
@@ -164,7 +170,7 @@ final class LogsViewerEndpoint
 
     public static function generateNonce(): string
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0755, true);
+        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0700, true);
         $file = self::NONCE_FILE;
         $now  = time();
 
@@ -226,6 +232,7 @@ final class LogsViewerEndpoint
 
         $data['count']++;
         @file_put_contents($file, json_encode($data), LOCK_EX);
+        @chmod($file, 0600);
 
         if ((int)$data['count'] > self::RATE_LIMIT_MAX) {
             header('Retry-After: 60');
@@ -1334,11 +1341,15 @@ final class LogsViewerEndpoint
 
     private function cachePut(array $cfg, string $json): void
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0755, true);
+        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0700, true);
         $path = $this->cachePath($this->cacheKey($cfg));
         $tmp  = $path . '.' . getmypid() . '.tmp';
-        if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $path);
-        else @unlink($tmp);
+        if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+            @chmod($tmp, 0600);
+            @rename($tmp, $path);
+        } else {
+            @unlink($tmp);
+        }
 
         if (mt_rand(1, 100) !== 1) return;
         $now   = time();

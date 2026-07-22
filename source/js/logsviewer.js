@@ -1501,8 +1501,6 @@ function logsviewer_sanitizeHTML(html) {
         return '<span>';
     });
 
-    html = html.replace(/&lt;/g, '&amp;lt;').replace(/&gt;/g, '&amp;gt;');
-
     return html;
 }
 
@@ -1701,7 +1699,8 @@ function logsviewer_exportCurrentLog() {
     if (!logsviewer_activeLogContent) return;
 
     const scriptName = logsviewer_getSelectedScriptName();
-    const text = String(logsviewer_activeLogContent || '');
+    // stored content is server-escaped, decode it so the file gets real characters
+    const text = logsviewer_decodeHtmlEntities(String(logsviewer_activeLogContent || ''));
     if (!text.trim()) return;
 
     const fmt = (logsviewer_cfg.exportFormat || 'log').toLowerCase();
