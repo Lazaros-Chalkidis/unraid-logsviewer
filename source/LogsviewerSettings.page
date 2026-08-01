@@ -181,6 +181,7 @@ if (isset($_POST['#apply'])) {
     'BACKUP_RETENTION'                => in_array($_POST['BACKUP_RETENTION'] ?? '', ['1','2','3','4','5','6'], true) ? $_POST['BACKUP_RETENTION'] : ($cfg_existing['BACKUP_RETENTION'] ?? '3'),
     'BACKUP_STORAGE'                  => (strncmp($_POST['BACKUP_STORAGE'] ?? '', '/mnt/user/', 10) === 0 && !preg_match('/\.\./', $_POST['BACKUP_STORAGE'])) ? rtrim($_POST['BACKUP_STORAGE'], '/') : ($cfg_existing['BACKUP_STORAGE'] ?? '/mnt/user/appdata/Logs-Viewer-Backup'),
     'BACKUP_SCHEDULE'                 => in_array($_POST['BACKUP_SCHEDULE'] ?? '', ['0','2','4','6','23'], true) ? $_POST['BACKUP_SCHEDULE'] : ($cfg_existing['BACKUP_SCHEDULE'] ?? '23'),
+    'BACKUP_INTERVAL_DAYS'            => in_array($_POST['BACKUP_INTERVAL_DAYS'] ?? '', ['1','2','3','4'], true) ? $_POST['BACKUP_INTERVAL_DAYS'] : ($cfg_existing['BACKUP_INTERVAL_DAYS'] ?? '1'),
     'BACKUP_ENABLED_SYSTEM_LOGS'      => $_POST['BACKUP_ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['BACKUP_ENABLED_SYSTEM_LOGS'] ?? ''),
     'BACKUP_ENABLED_DOCKER_CONTAINERS'=> $_POST['BACKUP_ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['BACKUP_ENABLED_DOCKER_CONTAINERS'] ?? ''),
     'BACKUP_ENABLED_VMS'              => $_POST['BACKUP_ENABLED_VMS'] ?? ($cfg_existing['BACKUP_ENABLED_VMS'] ?? ''),
@@ -216,14 +217,7 @@ if (isset($_POST['#apply'])) {
     $new_cfg[$_bf] = ($new_cfg[$_bf] === '1') ? '1' : '0';
   }
 
-  // strip control chars from each value before writing the ini
-  $ini = '';
-  foreach ($new_cfg as $key => $value) {
-    $value = preg_replace('/[\x00-\x1f\x7f]/', '', (string)$value);
-    $value = str_replace('"', '\"', $value);
-    $ini .= "{$key}=\"{$value}\"\n";
-  }
-  file_put_contents($cfg_file, $ini);
+  LogsViewerEndpoint::atomicWrite($cfg_file, LogsViewerEndpoint::cfgToIni($new_cfg));
 
   $cronRoot = '/etc/cron.d/root';
   $cronFlash = '/boot/config/plugins/logsviewer/logsviewer-cron.conf';
@@ -257,11 +251,11 @@ if (isset($_POST['#apply'])) {
     $flashLines .= $alertLine;
   }
 
-  @file_put_contents($cronRoot, $cronContent);
+  LogsViewerEndpoint::atomicWrite($cronRoot, $cronContent);  // shared file, other plugins' entries live here too
   @exec('crontab /etc/cron.d/root 2>/dev/null');
 
   if ($flashLines !== '') {
-    @file_put_contents($cronFlash, $flashLines);  // mirror to flash so the schedule survives a reboot (cron.d/root is tmpfs)
+    LogsViewerEndpoint::atomicWrite($cronFlash, $flashLines);  // mirror to flash so the schedule survives a reboot (cron.d/root is tmpfs)
   } else {
     if (is_file($cronFlash)) @unlink($cronFlash);
   }
@@ -276,7 +270,8 @@ if (isset($_POST['#apply'])) {
   if ($activeTab === 'alerts' && $alertRulesRaw !== '') {
     $alertRules = @json_decode($alertRulesRaw, true);
     if (is_array($alertRules)) {
-      @file_put_contents('/boot/config/plugins/logsviewer/alerts-rules.json', json_encode($alertRules, JSON_PRETTY_PRINT));
+      $_json = json_encode($alertRules, JSON_PRETTY_PRINT);
+      if ($_json !== false) LogsViewerEndpoint::atomicWrite('/boot/config/plugins/logsviewer/alerts-rules.json', $_json);
     }
   }
 
@@ -292,7 +287,8 @@ if (isset($_POST['#apply'])) {
         $label = trim((string)($e['label'] ?? ''));
         $path  = trim((string)($e['path']  ?? ''));
         if ($label === '' || $path === '') continue;
-        if ($path[0] !== '/' || strpos($path, '..') !== false) continue;
+        if ($path[0] !== '/') $path = '/' . $path;  // same leading-slash fixup the form does
+        if (strpos($path, '..') !== false) continue;
         $okPrefix = false;
         foreach ($allowedPrefixes as $p) { if (strpos($path, $p) === 0) { $okPrefix = true; break; } }
         if (!$okPrefix) continue;
@@ -302,7 +298,8 @@ if (isset($_POST['#apply'])) {
         $seen[$slug] = true;
         $valid[] = ['label' => $label, 'path' => $path];
       }
-      @file_put_contents('/boot/config/plugins/logsviewer/custom-paths.json', json_encode($valid, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+      $_json = json_encode($valid, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+      if ($_json !== false) LogsViewerEndpoint::atomicWrite('/boot/config/plugins/logsviewer/custom-paths.json', $_json);
     }
   }
 
@@ -311,26 +308,7 @@ if (isset($_POST['#apply'])) {
   $cfg = parse_plugin_cfg($plugin_name, true);
 }
 
-if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
-  $legacy_sys    = (string)($cfg['ENABLED_SYSTEM_LOGS'] ?? ($cfg['ENABLED_SCRIPTS'] ?? ''));
-  $legacy_docker = (string)($cfg['ENABLED_DOCKER_CONTAINERS'] ?? '');
-  $legacy_vms    = (string)($cfg['ENABLED_VMS'] ?? '');
-
-  if ($legacy_sys !== '' || $legacy_docker !== '' || $legacy_vms !== '') {
-    $cfg['DASH_ENABLED_SYSTEM_LOGS']       = $legacy_sys;
-    $cfg['DASH_ENABLED_DOCKER_CONTAINERS'] = $legacy_docker;
-    $cfg['DASH_ENABLED_VMS']               = $legacy_vms;
-    $cfg['MIGRATED_DASH_SOURCES']          = '1';
-
-    $ini = '';
-    foreach ($cfg as $key => $value) {
-      $value = preg_replace('/[\x00-\x1f\x7f]/', '', (string)$value);
-      $value = str_replace('"', '\"', $value);
-      $ini .= "{$key}=\"{$value}\"\n";
-    }
-    file_put_contents($cfg_file, $ini);
-  }
-}
+LogsViewerEndpoint::migrateLegacySources($cfg);
 
 $branch_meta_file = '/usr/local/emhttp/plugins/logsviewer/branch.meta';
 $is_main_branch = true;
@@ -358,35 +336,13 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
   return '<label class="lv-toggle"><input type="hidden" name="' . htmlspecialchars($name) . '" value="0"><input type="checkbox" name="' . htmlspecialchars($name) . '" value="1"' . ($v ? ' checked' : '') . '><span class="lv-toggle-track"></span></label><span class="lv-toggle-txt ' . $cls . '">' . $txt . '</span>';
 };
 
-$plugin_version = '';
+// build.sh writes VERSION into the package, it is the only source that can't disagree with what is installed
+$plugin_version = 'dev';
 $_lvVersionFile = '/usr/local/emhttp/plugins/logsviewer/VERSION';
 if (is_readable($_lvVersionFile)) {
   $_lvRead = trim((string)@file_get_contents($_lvVersionFile));
   if ($_lvRead !== '') $plugin_version = $_lvRead;
 }
-if ($plugin_version === '') {
-  $_lvPlg = @file_get_contents('/boot/config/plugins/logsviewer/logsviewer.plg');
-  if ($_lvPlg && preg_match('/<!ENTITY\s+version\s+"([^"]+)"/i', $_lvPlg, $_lvM)) {
-    $plugin_version = $_lvM[1];
-  }
-}
-if ($plugin_version === '') {
-  $_lvTxz = @glob('/boot/config/plugins/logsviewer/logsviewer-*.txz');
-  if ($_lvTxz && preg_match('/logsviewer-(\d{4}\.\d{2}\.\d{2}[a-z]?(?:-[a-z0-9]+)?)/i', basename(end($_lvTxz)), $_lvM)) {
-    $plugin_version = $_lvM[1];
-  }
-}
-if ($plugin_version === '') {
-  $_lvPkgs = @glob('/var/log/packages/logsviewer-*');
-  if (is_array($_lvPkgs) && !empty($_lvPkgs)) {
-
-    usort($_lvPkgs, function($a, $b) { return @filemtime($b) - @filemtime($a); });
-    if (preg_match('/^logsviewer-(\d{4}\.\d{2}\.\d{2}[a-z]?(?:-[a-z0-9]+)?)/i', basename($_lvPkgs[0]), $_lvM)) {
-      $plugin_version = $_lvM[1];
-    }
-  }
-}
-if ($plugin_version === '') $plugin_version = 'dev';
 
 ?>
 
@@ -566,7 +522,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
                   Adding or removing a path here will reflect in both Tool and Dashboard tabs.
                 </div>
               </div>
-              <p class="lv-sources-note" style="margin:0 0 10px;">
+              <p class="lv-sources-note">
                 Allowed prefixes: <code>/var/log/</code>, <code>/mnt/user/</code>, <code>/mnt/cache/</code>.
               </p>
               <div class="lv-custom-paths-list">
@@ -631,7 +587,17 @@ if ($plugin_version === '') $plugin_version = 'dev';
               <?php $bs = $cfg['BACKUP_SCHEDULE'] ?? '23';
                 foreach(['23'=>'23:59 - Default','0'=>'00:00','2'=>'02:00','4'=>'04:00','6'=>'06:00'] as $v=>$l) echo '<option value="'.$v.'"'.($bs===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
             </select>
-            <span class="lv-r-desc">Daily cron time</span>
+            <span class="lv-r-desc">Time of day the backup runs</span>
+          </div>
+        </div>
+        <div class="lv-r">
+          <div class="lv-r-label">Backup frequency</div>
+          <div class="lv-r-field">
+            <select name="BACKUP_INTERVAL_DAYS" class="lv-select">
+              <?php $bi = $cfg['BACKUP_INTERVAL_DAYS'] ?? '1';
+                foreach(['1'=>'Every day - Default','2'=>'Every 2 days','3'=>'Every 3 days','4'=>'Every 4 days'] as $v=>$l) echo '<option value="'.$v.'"'.($bi===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+            </select>
+            <span class="lv-r-desc">Counted from the last backup in the folder, not from a fixed calendar day</span>
           </div>
         </div>
       </div>
@@ -840,13 +806,13 @@ if ($plugin_version === '') $plugin_version = 'dev';
               <img src="/plugins/logsviewer/img/avatar.png" alt="Lazaros Chalkidis" class="lv-credits-avatar">
             </div>
             <div class="lv-credits-name">Lazaros Chalkidis</div>
-            <div class="lv-credits-role">Developer</div>
+            <div class="lv-credits-role">Author</div>
           </div>
 
           <div class="lv-credits-right">
             <div class="lv-credits-title-row">
               <span class="lv-credits-title">Logs Viewer</span>
-              <span class="lv-credits-version">v<?= htmlspecialchars($plugin_version) ?></span>
+              <span class="lv-credits-suite">part of <strong>VIEWERS</strong> Suite</span>
             </div>
             <div class="lv-credits-desc">Real-time system, Docker and VM log viewer with dashboard widget and alerts.</div>
             <div class="lv-credits-links">
@@ -854,13 +820,16 @@ if ($plugin_version === '') $plugin_version = 'dev';
                 <i class="fa fa-github"></i><span>GitHub Profile</span><i class="fa fa-external-link lv-credits-link-ext"></i>
               </a>
               <a href="https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues" target="_blank" rel="noopener" class="lv-credits-link">
-                <i class="fa fa-exclamation-circle"></i><span>GitHub Issues</span><i class="fa fa-external-link lv-credits-link-ext"></i>
+                <i class="fa fa-exclamation-circle"></i><span>Support</span><i class="fa fa-external-link lv-credits-link-ext"></i>
               </a>
             </div>
           </div>
         </div>
         <div class="lv-credits-footer">
-          <span class="lv-credits-copy">Copyright &copy; 2026 Logs Viewer - Lazaros Chalkidis</span>
+          <div class="lv-credits-footer-meta">
+            <span class="lv-credits-version">v<?= htmlspecialchars($plugin_version) ?></span>
+            <span class="lv-credits-copy">Copyright &copy; 2026 Logs Viewer - Lazaros Chalkidis</span>
+          </div>
           <button type="button" id="lvCreditsOkBtn" class="lv-credits-ok-btn">OK</button>
         </div>
       </div>
@@ -948,9 +917,9 @@ if ($plugin_version === '') $plugin_version = 'dev';
           <div class="lv-r-field">
             <select name="LOG_FONT_FAMILY" class="lv-select">
               <?php $ff = $cfg['LOG_FONT_FAMILY'] ?? 'system';
-                foreach(['system'=>'System Mono - Default','monospace'=>'Generic Monospace','jetbrains'=>'JetBrains Mono','fira'=>'Fira Code','sourcecodepro'=>'Source Code Pro','ibmplex'=>'IBM Plex Mono'] as $v=>$l) echo '<option value="'.$v.'"'.($ff===$v?' selected':'').'>'.$l.'</option>'; ?>
+                foreach(['system'=>'System Mono - Default','monospace'=>'Generic Monospace','jetbrains'=>'JetBrains Mono (web font)','fira'=>'Fira Code (web font)','sourcecodepro'=>'Source Code Pro (web font)','ibmplex'=>'IBM Plex Mono (web font)'] as $v=>$l) echo '<option value="'.$v.'"'.($ff===$v?' selected':'').'>'.$l.'</option>'; ?>
             </select>
-            <span class="lv-r-desc">Falls back safely if unavailable</span>
+            <span class="lv-r-desc">Web fonts load from Google Fonts. Without internet access the widget falls back to your system monospace.</span>
           </div>
         </div>
         <div class="lv-r">
@@ -1237,7 +1206,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
                   Adding or removing a path here will reflect in both Tool and Dashboard tabs.
                 </div>
               </div>
-              <p class="lv-sources-note" style="margin:0 0 10px;">
+              <p class="lv-sources-note">
                 Allowed prefixes: <code>/var/log/</code>, <code>/mnt/user/</code>, <code>/mnt/cache/</code>.
               </p>
               <div class="lv-custom-paths-list">
@@ -1298,7 +1267,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
     <div class="lv-footer-links">
       <a href="https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues"
          id="lvGithubIssuesLink" class="lv-footer-link"
-         target="_blank" rel="noopener noreferrer">GitHub Issues</a>
+         target="_blank" rel="noopener noreferrer">Support</a>
       <span class="lv-footer-sep" aria-hidden="true"></span>
       <a href="#" id="lvCreditsLink" class="lv-footer-link">Credits</a>
     </div>
@@ -1490,6 +1459,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
           var ret = form.querySelector('select[name="BACKUP_RETENTION"]'); if (ret) ret.value = '3';
           var st = form.querySelector('input[name="BACKUP_STORAGE"]'); if (st) st.value = '/mnt/user/appdata/Logs-Viewer-Backup';
           var sc = form.querySelector('select[name="BACKUP_SCHEDULE"]'); if (sc) sc.value = '23';
+          var bi = form.querySelector('select[name="BACKUP_INTERVAL_DAYS"]'); if (bi) bi.value = '1';
           try { $('#lvBackupEnabledSystemLogs').val(''); $('#lvBackupEnabledDockerContainers').val(''); $('#lvBackupEnabledVms').val(''); if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Backup'); } catch(_){}
         } else if (isToolTabActive()) {
 
@@ -1530,11 +1500,11 @@ if ($plugin_version === '') $plugin_version = 'dev';
           if (backupPanel) backupPanel.style.display = (which === 'backup') ? '' : 'none';
           if (alertsPanel) alertsPanel.style.display = (which === 'alerts') ? '' : 'none';
           if (resetDefaultsBtn) resetDefaultsBtn.style.display = '';
-          if (which === 'dash' && !dashPanel._sourcesLoaded) { dashPanel._sourcesLoaded = true; lvLoadSourcesScoped('Dash'); }
-          if (which === 'tool' && !toolPanel._sourcesLoaded) { toolPanel._sourcesLoaded = true; lvLoadSourcesScoped('Tool'); }
+          if (which === 'dash' && !dashPanel._sourcesLoaded) { dashPanel._sourcesLoaded = true; lvLoadSourcesScoped('Dash', null, dashPanel); }
+          if (which === 'tool' && !toolPanel._sourcesLoaded) { toolPanel._sourcesLoaded = true; lvLoadSourcesScoped('Tool', null, toolPanel); }
 
           if ((which === 'tool' || which === 'dash') && typeof lvRenderCustomPaths === 'function') { lvRenderCustomPaths(); }
-          if (which === 'backup' && backupPanel && !backupPanel._sourcesLoaded) { backupPanel._sourcesLoaded = true; lvLoadSourcesScoped('Backup'); lvLoadBackupCalendar(); }
+          if (which === 'backup' && backupPanel && !backupPanel._sourcesLoaded) { backupPanel._sourcesLoaded = true; lvLoadSourcesScoped('Backup', null, backupPanel); lvLoadBackupCalendar(); }
           if (which === 'alerts' && alertsPanel && !alertsPanel._loaded) { alertsPanel._loaded = true; lvLoadAlertRules(); lvLoadAlertHistory(); }
           try { sessionStorage.setItem('logsviewer_active_tab', which); } catch(e) {}
           var tabInput = document.getElementById('lvActiveTabInput');
@@ -1585,6 +1555,14 @@ if ($plugin_version === '') $plugin_version = 'dev';
         // save over ajax so the page doesn't reload, then refresh the dirty state
         function ajaxSubmitForm(e) {
           if (e) e.preventDefault();
+
+          // the server drops rows it can't accept, so stop here rather than losing one without saying so
+          var bad = document.querySelector('.lv-custom-paths-row.is-invalid .lv-custom-paths-path');
+          if (bad) {
+            alert('A custom log path is not valid. It must start with /var/log/, /mnt/user/ or /mnt/cache/ and cannot contain "..".');
+            bad.focus();
+            return;
+          }
 
           applyBtn.disabled = true;
           applyBtn.classList.add('disabled');
@@ -1689,7 +1667,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
         }
       }
       // discover the available log sources for one scope (dash vs tool) and render the checkboxes
-      function lvLoadSourcesScoped(scope, doneCb) {
+      function lvLoadSourcesScoped(scope, doneCb, panel) {
         var sysSet    = lvCsvToSet($('#lv' + scope + 'EnabledSystemLogs').val());
         var dkSet     = lvCsvToSet($('#lv' + scope + 'EnabledDockerContainers').val());
         var vmSet     = lvCsvToSet($('#lv' + scope + 'EnabledVms').val());
@@ -1697,7 +1675,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
         $.ajax({
           url: '/plugins/logsviewer/include/logsviewer_api.php',
           data: { action: 'discover_sources', _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 15000,
+          dataType: 'json', timeout: 30000,
           headers: { 'X-Requested-With': 'XMLHttpRequest' },
           success: function(data) {
             var sysHtml = '';
@@ -1750,18 +1728,41 @@ if ($plugin_version === '') $plugin_version = 'dev';
               $('#lv' + scope + 'VmUnavailable').show();
             }
 
+            if (data.custom && data.custom.sources) {
+              _lvCustomSourceInfo = {};
+              data.custom.sources.forEach(function(c) { if (c && c.key) _lvCustomSourceInfo[c.key] = c; });
+            }
+
             if (typeof lvRenderCustomLogCheckboxes === 'function') {
               lvRenderCustomLogCheckboxes(scope);
             }
             lvSyncScopedInputs(scope);
+            if (panel) panel._sourcesLoaded = true;
             if (typeof doneCb === 'function') doneCb();
           },
-          error: function() {
-            $('#lv' + scope + 'SystemLogsList').html('<div class="lv-sources-loading" style="color:#e74c3c;">Failed to load sources.</div>');
+          error: function(xhr, textStatus) {
+            // the panel stays retryable: a timeout on a busy host used to leave it stuck until a full reload
+            if (panel) panel._sourcesLoaded = false;
+            var why = (textStatus === 'timeout') ? 'timed out' :
+                      (xhr && xhr.status ? 'HTTP ' + xhr.status : 'no response');
+            var msg = '<div class="lv-sources-loading" style="color:#e74c3c;">Could not load sources (' + why +
+                      '). <a href="#" class="lv-sources-retry" data-scope="' + scope + '">Retry</a></div>';
+            $('#lv' + scope + 'SystemLogsList').html(msg);
+            $('#lv' + scope + 'DockerLogsList').empty();
+            $('#lv' + scope + 'VmLogsList').empty();
             if (typeof doneCb === 'function') doneCb();
           }
         });
       }
+
+      $(document).on('click', '.lv-sources-retry', function(e) {
+        e.preventDefault();
+        var scope = String($(this).data('scope') || '');
+        if (!scope) return;
+        var panels = { Dash: 'lvDashboardPanel', Tool: 'lvToolPanel', Backup: 'lvBackupPanel' };
+        $(this).closest('.lv-sources-loading').text('Loading\u2026').css('color', '');
+        lvLoadSourcesScoped(scope, null, document.getElementById(panels[scope] || ''));
+      });
 
       $(document).on('change', '#lvDashSystemLogsList .lv-source-check, #lvDashDockerLogsList .lv-source-check, #lvDashVmLogsList .lv-source-check, #lvDashCustomLogsList .lv-source-check', function() {
         lvSyncScopedInputs('Dash'); var f=document.forms['scriptlogs_settings']; if(f&&typeof enableApplyAndMarkDirty==='function') enableApplyAndMarkDirty(f);
@@ -1916,8 +1917,16 @@ if ($plugin_version === '') $plugin_version = 'dev';
       });
 
       var _lvCustomPaths = [];
+      var _lvCustomSourceInfo = {};  // key -> {size, exists}, filled by discover_sources
       var _lvCustomPathsLoaded = false;
       var LV_ALLOWED_PREFIXES = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
+
+      // a missing leading slash is a typo, not a different path
+      function lvNormalizeCustomPath(path) {
+        var p = String(path || '').trim();
+        if (p !== '' && p[0] !== '/') p = '/' + p;
+        return p;
+      }
 
       // mirror the server-side path check so the user gets feedback before saving
       function lvValidateCustomPath(path) {
@@ -1932,7 +1941,7 @@ if ($plugin_version === '') $plugin_version = 'dev';
 
       function lvRenderCustomPathRow(entry, index) {
         var label   = (entry && entry.label) ? entry.label : '';
-        var path    = (entry && entry.path)  ? entry.path  : '';
+        var path    = lvNormalizeCustomPath(entry && entry.path ? entry.path : '');
         var invalid = path !== '' && !lvValidateCustomPath(path);
         var rowCls  = 'lv-custom-paths-row' + (invalid ? ' is-invalid' : '');
         return '<div class="' + rowCls + '" data-index="' + index + '">' +
@@ -1985,8 +1994,13 @@ if ($plugin_version === '') $plugin_version = 'dev';
         var html = '';
         defs.forEach(function(d) {
           var checked = !!enabledSet[d.key];
+          var info    = (_lvCustomSourceInfo && _lvCustomSourceInfo[d.key]) || null;
+          var size    = info ? (parseInt(info.size, 10) || 0) : 0;
+          // a path saved but not yet scanned has no info, don't claim it is missing
+          var missing = info && !info.exists;
+          var status  = missing ? '<span class="lv-source-status"><span class="lv-status-dot stopped"></span>not found</span>' : '';
 
-          html += lvRenderSourceRow(d.key, d.name, d.path, 0, checked, false, '');
+          html += lvRenderSourceRow(d.key, d.name, d.path, size, checked, false, status);
         });
         $list.html(html);
         $actions.css('display', 'flex');
@@ -2033,17 +2047,25 @@ if ($plugin_version === '') $plugin_version = 'dev';
         }
       });
 
-      $(document).on('input change', '.lv-custom-paths-label, .lv-custom-paths-path', function() {
+      $(document).on('input change', '.lv-custom-paths-label, .lv-custom-paths-path', function(e) {
         var $row = $(this).closest('.lv-custom-paths-row');
         var idx  = parseInt($row.data('index'), 10);
         if (!isNaN(idx)) {
+          var $path = $row.find('.lv-custom-paths-path');
+
+          // only on blur, rewriting mid-keystroke would move the caret
+          if (e.type === 'change' && $(this).is($path)) {
+            var fixed = lvNormalizeCustomPath($path.val());
+            if (fixed !== String($path.val() || '')) $path.val(fixed);
+          }
+
           _lvCustomPaths[idx] = {
             label: String($row.find('.lv-custom-paths-label').val() || '').trim(),
-            path:  String($row.find('.lv-custom-paths-path').val()  || '').trim()
+            path:  String($path.val() || '').trim()
           };
 
           var pathVal = _lvCustomPaths[idx].path;
-          var invalid = pathVal !== '' && !lvValidateCustomPath(pathVal);
+          var invalid = pathVal !== '' && !lvValidateCustomPath(lvNormalizeCustomPath(pathVal));
           $row.toggleClass('is-invalid', invalid);
           $row.find('.lv-custom-paths-err').remove();
           if (invalid) {

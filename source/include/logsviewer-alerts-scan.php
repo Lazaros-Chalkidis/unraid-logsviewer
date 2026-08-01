@@ -30,8 +30,14 @@ if (!function_exists('lv_alert_load_json')) {
 }
 
 if (!function_exists('lv_alert_save_json')) {
+    // temp file in the same dir then rename, so a power cut can't leave a half-written json
     function lv_alert_save_json(string $path, $data): void {
-        @file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($json === false) return;
+        $tmp = $path . '.' . getmypid() . '.tmp';
+        if (@file_put_contents($tmp, $json, LOCK_EX) === false) { @unlink($tmp); return; }
+        @chmod($tmp, 0600);
+        if (!@rename($tmp, $path)) @unlink($tmp);
     }
 }
 
@@ -153,7 +159,8 @@ if (!function_exists('lv_run_alerts_scan')) {
         $historyFile     = '/boot/config/plugins/logsviewer/alerts-history.json';
         $mutesFile       = '/boot/config/plugins/logsviewer/alert-mutes.json';
         $customPathsFile = '/boot/config/plugins/logsviewer/custom-paths.json';
-        $offsetsFile     = '/boot/config/plugins/logsviewer/alert-offsets.json';
+        // offsets change on every scan, keeping them on /boot would wear the flash
+        $offsetsFile     = '/tmp/logsviewer_cache/alert-offsets.json';
         $cooldownFile    = '/tmp/logsviewer_cache/alert_cooldowns.json';
         $cfgFile         = '/boot/config/plugins/logsviewer/logsviewer.cfg';
         $maxHistory      = 500;
@@ -168,6 +175,13 @@ if (!function_exists('lv_run_alerts_scan')) {
         ];
 
         if (!is_dir('/tmp/logsviewer_cache')) @mkdir('/tmp/logsviewer_cache', 0700, true);
+
+        // one-time migration from older versions that kept the offsets on flash
+        $legacyOffsets = '/boot/config/plugins/logsviewer/alert-offsets.json';
+        if (is_file($legacyOffsets)) {
+            if (!is_file($offsetsFile)) @copy($legacyOffsets, $offsetsFile);
+            @unlink($legacyOffsets);
+        }
 
         $systemLogs = lv_alert_load_custom_logs($customPathsFile, $systemLogs);
 
@@ -205,8 +219,9 @@ if (!function_exists('lv_run_alerts_scan')) {
                 $savedInode  = (int)($cursor['inode']  ?? 0);
                 $savedOffset = (int)($cursor['offset'] ?? 0);
             } else {
-                $savedInode  = 0;
-                $savedOffset = 0;
+                // no saved cursor (first run or /tmp cleared by a reboot): start at the end, don't replay old lines
+                $savedInode  = $currentInode;
+                $savedOffset = $fileSize;
             }
 
             if ($savedInode !== 0 && $savedInode !== $currentInode) {
@@ -357,7 +372,16 @@ if (!function_exists('lv_run_alerts_scan')) {
 }
 
 if (PHP_SAPI === 'cli' && !defined('LV_SCAN_LIBRARY_ONLY')) {
+    // cron and the Scan Now button both land here, a second scan would re-notify the same lines
+    if (!is_dir('/tmp/logsviewer_cache')) @mkdir('/tmp/logsviewer_cache', 0700, true);
+    $lockFh = @fopen('/tmp/logsviewer_cache/alerts-scan.lock', 'c');
+    if ($lockFh === false || !@flock($lockFh, LOCK_EX | LOCK_NB)) {
+        echo '0';
+        exit(0);
+    }
     $count = lv_run_alerts_scan();
+    @flock($lockFh, LOCK_UN);
+    @fclose($lockFh);
     echo (string)$count;
     exit(0);
 }

@@ -727,7 +727,8 @@
 .lvt-light .lvt-sidebar           { background: rgba(0,0,0,.03); }
 .lvt-light .lvt-source:hover,
 .lvt-light .lvt-source:focus      { background: rgba(0,0,0,.05); }
-.lvt-light .lvt-source.is-active  { background: rgba(66,153,244,.10); }
+.lvt-light .lvt-source.is-active  { background: rgba(66,153,244,.10); color: #1565c0; border-left-color: #1565c0; }
+.lvt-light .lvt-source.is-merge-selected::before { color: #1565c0; }
 .lvt-light .lvt-main__header      { background: rgba(0,0,0,.03); }
 .lvt-light .lvt-log-content       { background: #fafafa; }
 .lvt-light .lvt-log-line          { color: rgba(0,0,0,.75); }

@@ -1,6 +1,41 @@
 
 # Logs Viewer
 
+## 2026.08.01
+
+### New Features
+
+- Backup frequency: log backups can run every day, or every 2, 3 or 4 days. The setting sits next to the schedule time in Backup Logs, General.
+
+### Fixed
+
+- Updating the plugin no longer resets your settings. Backups and alerts were being switched off silently and stayed off until you opened Settings and pressed Apply.
+- Uninstalling no longer deletes your log backups or your settings. It now prints where they were left so you can remove them yourself if you want to.
+- Uninstalling stops the backup and alert jobs right away instead of at the next reboot.
+- Uninstalling also clears the plugin's temporary files and any leftovers from older versions, so nothing of it stays behind apart from your settings and backups.
+- Updating no longer leaves duplicate backup and alert schedules behind.
+- Backup cleanup only removes its own backups. Other zip files in the same folder are left alone.
+- The Warnings and Critical counters no longer show 0 on a long log that clearly has them.
+- The Backup tab no longer fails to load its list on a server whose PHP has no zip support.
+- Alert scans can no longer overlap. If a scan was still running when the next one started, or when you pressed Scan Now, the same log line could be reported twice.
+- The source lists in Settings no longer stay stuck on "Failed to load sources" and "Scanning VMs...". They retry when you return to the tab, tell you what went wrong, and offer a Retry link.
+- Scanning for sources no longer hangs when Docker or the VM service is slow. The rest of the list loads anyway.
+- Custom logs show their real size instead of 0 B, and a file that is missing is marked as not found.
+- Custom log paths typed without a leading slash are accepted.
+- Saving an invalid custom log path now tells you, instead of dropping the row without a word.
+- Pause on hover really pauses. The log is held still while the pointer is over it and catches up the moment you move away.
+- Pause on hover also holds if new lines arrive mid refresh. The widget used to jump to the bottom and you lost your place.
+- On the White and Azure themes, the Apply and Reset buttons, the footer links and the selected source in the Tools sidebar were too pale to read. They now use darker shades on those themes.
+
+### Improvements
+
+- Clicking an active severity badge again clears the filter, the same way the Tools page already worked.
+- The severity badges also work when the Filter dropdown is switched off in settings.
+- The dashboard widget stops refreshing while its browser tab is in the background and catches up when you switch back.
+- Alerts no longer write to the USB flash on every scan, which is easier on the stick. After a reboot they start from what happens next instead of replaying old lines.
+- Settings, alert rules and custom paths are written more safely, so a power cut cannot leave a half written file.
+- Only the web font you picked is downloaded, and the font setting now says which options are web fonts and what happens without internet access.
+
 ## 2026.07.22
 
 ### Fixed
@@ -16,7 +51,8 @@
 
 ## 2026.07.21
 
-Changed: support links now point to GitHub Issues, and the README wording was tightened
+### Fixed
+- Support links now point to GitHub Issues, and the README wording was tightened
 
 ## 2026.06.06
 

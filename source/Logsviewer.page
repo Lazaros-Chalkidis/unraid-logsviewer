@@ -17,28 +17,7 @@ $_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
 $_theme_name = $_dyn_cfg['display']['theme'] ?? '';
 $lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';  // white and azure are the light themes
 
-$cfg_file = '/boot/config/plugins/logsviewer/logsviewer.cfg';
-// one-time migration: fold the old single-context keys into the new DASH_ keys and persist
-if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') !== '1' && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
-    $legacySystemRaw = (string)($cfg['ENABLED_SYSTEM_LOGS'] ?? ($cfg['ENABLED_SCRIPTS'] ?? ''));
-    $legacyDockerRaw = (string)($cfg['ENABLED_DOCKER_CONTAINERS'] ?? '');
-    $legacyVmRaw     = (string)($cfg['ENABLED_VMS'] ?? '');
-    if ($legacySystemRaw !== '' || $legacyDockerRaw !== '' || $legacyVmRaw !== '') {
-        $cfg['DASH_ENABLED_SYSTEM_LOGS']       = $legacySystemRaw;
-        $cfg['DASH_ENABLED_DOCKER_CONTAINERS'] = $legacyDockerRaw;
-        $cfg['DASH_ENABLED_VMS']               = $legacyVmRaw;
-        $cfg['MIGRATED_DASH_SOURCES']          = '1';
-
-        $ini = "";
-        foreach ($cfg as $k => $v) {
-            $v = preg_replace('/[\x00-\x1f\x7f]/', '', (string)$v);
-            $v = str_replace('"', '\"', $v);
-            $ini .= "{$k}=\"{$v}\"
-";
-        }
-        @file_put_contents($cfg_file, $ini);
-    }
-}
+LogsViewerEndpoint::migrateLegacySources($cfg);
 
 $dashSystemRaw = (string)($cfg['DASH_ENABLED_SYSTEM_LOGS'] ?? '');
 $enabledScripts = array_values(array_filter(array_map('trim', explode(',', $dashSystemRaw)), fn($v) => $v !== ''));
@@ -119,11 +98,17 @@ if ($version_override === 'legacy') {
     $isResponsiveWebgui = version_compare($webgui_version, '7.2.0-beta', '>=');  // 7.2 changed the dashboard tile api
 }
 
-$_gf_families = ['jetbrains', 'fira', 'sourcecodepro', 'ibmplex'];
+$_gf_families = [
+    'jetbrains'     => 'JetBrains+Mono',
+    'fira'          => 'Fira+Code',
+    'sourcecodepro' => 'Source+Code+Pro',
+    'ibmplex'       => 'IBM+Plex+Mono',
+];
 
-$_needsGoogleFonts = in_array($cfg['LOG_FONT_FAMILY'] ?? 'system', $_gf_families);
-$googleFontsLink = $_needsGoogleFonts
-    ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" media="print" onload="this.media=\'all\'">'
+// only the selected family, the old link pulled all four on every render
+$_gf_pick = $_gf_families[$cfg['LOG_FONT_FAMILY'] ?? 'system'] ?? '';
+$googleFontsLink = $_gf_pick !== ''
+    ? '<link rel="stylesheet" referrerpolicy="no-referrer" href="https://fonts.googleapis.com/css2?family=' . $_gf_pick . ':wght@400;700&display=swap" media="print" onload="this.media=\'all\'">'
     : '';
 
 $tile_config = [
@@ -279,21 +264,33 @@ $render_tabs = static function(string $tabs_aria_label, array $enabledScripts, a
 HTML;
     }
 
-    $filterHtml = '';
-    if ($showFilter) {
-        $filterHtml = <<<HTML
-            <div class="logsviewer-tabrow-ctrl" aria-label="Log filter">
-                <span class="logsviewer-tabrow-ctrl__label">Filter</span>
-                <i class="fa fa-caret-down logsviewer-tabrow-ctrl__caret" aria-hidden="true"></i>
-                <select id="logsviewer-filter-select" class="logsviewer-filter-select">
+    $filterOptions = <<<HTML
                     <option value="none" selected>No Filter</option>
                     <option value="info">Info</option>
                     <option value="errors">Errors</option>
                     <option value="warnings">Warnings</option>
                     <option value="critical">Critical</option>
                     <option value="auth">Login</option>
+HTML;
+
+    $filterHtml  = '';
+    $filterState = '';
+    if ($showFilter) {
+        $filterHtml = <<<HTML
+            <div class="logsviewer-tabrow-ctrl" aria-label="Log filter">
+                <span class="logsviewer-tabrow-ctrl__label">Filter</span>
+                <i class="fa fa-caret-down logsviewer-tabrow-ctrl__caret" aria-hidden="true"></i>
+                <select id="logsviewer-filter-select" class="logsviewer-filter-select">
+{$filterOptions}
                 </select>
             </div>
+HTML;
+    } else {
+        // the badges filter through this select, so it stays in the dom even with the dropdown turned off
+        $filterState = <<<HTML
+        <select id="logsviewer-filter-select" hidden aria-hidden="true" tabindex="-1" style="display:none">
+{$filterOptions}
+        </select>
 HTML;
     }
 
@@ -304,6 +301,7 @@ HTML;
 
     return <<<HTML
 <div class="logsviewer-body">
+    {$filterState}
     <div class="logsviewer-tabs-row">
         <div class="logsviewer-category-tabs" role="tablist" aria-label="{$tabs_aria_label}">
             <div class="logsviewer-cat-btn logsviewer-cat-btn--active" data-category="system" data-selected="">

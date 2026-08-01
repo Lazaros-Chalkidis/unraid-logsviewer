@@ -87,7 +87,7 @@
   gap: .75rem;
 }
 .lvt-header__icon   { width: 36px; height: 36px; object-fit: contain; }
-.lvt-header__title  { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--lvt-text); }
+.lvt-header__title  { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--lvt-text); text-transform: uppercase; }
 .lvt-header__sub    { font-size: .95rem; color: var(--lvt-text-mid); }
 .lvt-header__right  { display: flex; flex-direction: column; align-items: flex-end; gap: .7rem; }
 .lvt-header__icons  { display: flex; align-items: center; gap: .3rem; }

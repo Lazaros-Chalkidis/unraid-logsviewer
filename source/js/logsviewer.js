@@ -7,6 +7,7 @@
 let logsviewer_cfg = {};
 let logsviewer_searchState = { term: '', hits: [], idx: -1 };
 let logsviewer_pauseHoverActive = false;
+let logsviewer_pendingEntry = null;
 let logsviewer_lastRenderKey = '';
 let logsviewer_systemFetchCounter = 0;
 
@@ -122,6 +123,14 @@ function logsviewer_mergeSourceData(category, scripts, singleSource) {
 function logsviewer_showLog(entry) {
     var logDisplay = $(logsviewer_dom.logs);
     if (!entry || !logDisplay.length) return;
+
+    // frozen while the pointer is inside: the api returns a tail, so swapping the body shifts the line being read
+    if (logsviewer_cfg && logsviewer_cfg.pauseOnHover && logsviewer_pauseHoverActive) {
+        logsviewer_pendingEntry = entry;
+        return;
+    }
+    logsviewer_pendingEntry = null;
+
     logsviewer_activeLogContent = entry.log || '';
     logsviewer_activeLogTotalLines = entry.total_lines || 0;
     logsviewer_lastShown = { category: entry.category || logsviewer_activeCategory || null, source: entry.name || entry.display_name || null };
@@ -1522,6 +1531,10 @@ function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
 
     let filtered = logsviewer_applyFilterToText(base);
 
+    // counted here on purpose: the syntax step below trims long logs, and badges must reflect the whole view
+    var badgeCounts = logsviewer_countLevels(filtered);
+    logsviewer_lastBadgeCounts = badgeCounts;
+
     if (filter !== 'none' && String(filtered).trim() === '') {
         const label = logsviewer_getFilterLabel(filter);
         filtered = `[info] No matching lines for '${label}' filter.`;
@@ -1618,9 +1631,6 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     }
 }
 
-    var badgeCounts = logsviewer_countLevels(filtered);
-    logsviewer_lastBadgeCounts = badgeCounts;
-
     filtered = logsviewer_highlightLevels(filtered);
 
     filtered = logsviewer_applySearchHighlight(filtered);
@@ -1653,6 +1663,18 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
         if (logsviewer_cfg.searchEnabled) {
             logsviewer_collectSearchHits();
         }
+    });
+}
+
+// the decision has to happen inside the frame: hovering can start while the request is still in flight
+function logsviewer_autoscrollIfAllowed(scrollTarget) {
+    if (!scrollTarget) return;
+    if (!$(logsviewer_dom.autoscroll).prop('checked')) return;
+    requestAnimationFrame(function() {
+        const config = logsviewer_cfg || {};
+        if (config.pauseOnHover && logsviewer_pauseHoverActive) return;
+        if (!$(logsviewer_dom.autoscroll).prop('checked')) return;
+        scrollTarget.scrollTop = scrollTarget.scrollHeight;
     });
 }
 
@@ -1990,19 +2012,12 @@ function logsviewer_manualRefresh() {
     icon.removeClass('fa-refresh').addClass('fa-hourglass');
     refreshLink.addClass('disabled');
 
-    var config = logsviewer_cfg || {};
     var logContainer = $(logsviewer_dom.container);
     var scrollTarget = logContainer.length ? logContainer.get(0) : null;
 
     logsviewer_fetchCategory(logsviewer_activeCategory, function() {
 
-        var autoscrollNow = $(logsviewer_dom.autoscroll).prop('checked');
-        var allowNow = autoscrollNow && !(config.pauseOnHover && logsviewer_pauseHoverActive);
-        if (allowNow && scrollTarget) {
-            requestAnimationFrame(function(){
-            scrollTarget.scrollTop = scrollTarget.scrollHeight;
-            });
-        }
+        logsviewer_autoscrollIfAllowed(scrollTarget);
 
         logsviewer_manualRefreshInProgress = false;
         var iconBack = refreshLink.find('i.fa-hourglass');
@@ -2012,20 +2027,12 @@ function logsviewer_manualRefresh() {
 }
 
 function logsviewer_status() {
-    var config = logsviewer_cfg || {};
-
     var logContainer = $(logsviewer_dom.container);
     var scrollTarget = logContainer.length ? logContainer.get(0) : null;
-    var autoscrollEnabled = $(logsviewer_dom.autoscroll).prop('checked');
-    var allowAutoscroll = autoscrollEnabled && !(config.pauseOnHover && logsviewer_pauseHoverActive);
 
     logsviewer_fetchCategory(logsviewer_activeCategory, function(scripts) {
 
-        if (allowAutoscroll && scrollTarget) {
-            requestAnimationFrame(function() {
-                scrollTarget.scrollTop = scrollTarget.scrollHeight;
-            });
-        }
+        logsviewer_autoscrollIfAllowed(scrollTarget);
     }, { source: logsviewer_getActiveSource() || null });
 
     try{
@@ -2095,6 +2102,12 @@ $(function() {
                     paused.remove();
                 }
             }
+            // catch up on whatever arrived while frozen, instead of waiting for the next poll
+            if (logsviewer_pendingEntry) {
+                var pending = logsviewer_pendingEntry;
+                logsviewer_pendingEntry = null;
+                logsviewer_showLog(pending);
+            }
         });
     }
 
@@ -2128,8 +2141,10 @@ $(function() {
     $(document).on('click', '.logsviewer-badge', function() {
         const filter = $(this).attr('data-filter');
         if (!filter) return;
-        logsviewer_setFilterValue(filter);
-        logsviewer_syncBadgeSelection(filter);
+        // clicking the active badge again clears the filter, same as the tool page
+        const next = logsviewer_getFilterValue() === filter ? 'none' : filter;
+        logsviewer_setFilterValue(next);
+        logsviewer_syncBadgeSelection(next);
     });
 
     $(document).on('keydown', '.logsviewer-badge', function(e) {
@@ -2156,12 +2171,7 @@ $(function() {
         if (!isOn) return;
 
         const logContainer = $(logsviewer_dom.container);
-        const scrollTarget = logContainer.length ? logContainer.get(0) : null;
-        if (scrollTarget && !(config.pauseOnHover && logsviewer_pauseHoverActive)) {
-            requestAnimationFrame(function() {
-                scrollTarget.scrollTop = scrollTarget.scrollHeight;
-            });
-        }
+        logsviewer_autoscrollIfAllowed(logContainer.length ? logContainer.get(0) : null);
     });
 
     $(document).on('click', '#logsviewer-export-icon, [data-action="export-log"]', function(e) {
@@ -2346,17 +2356,8 @@ $(function() {
 })();
 
     logsviewer_fetchCategory('system', function() {
-
-        var autoscrollNow = $(logsviewer_dom.autoscroll).prop('checked');
-        if (autoscrollNow) {
-            var logContainer = $(logsviewer_dom.container);
-            var scrollTarget = logContainer.length ? logContainer.get(0) : null;
-            if (scrollTarget) {
-                requestAnimationFrame(function(){
-                scrollTarget.scrollTop = scrollTarget.scrollHeight;
-                });
-            }
-        }
+        var logContainer = $(logsviewer_dom.container);
+        logsviewer_autoscrollIfAllowed(logContainer.length ? logContainer.get(0) : null);
     });
 
     if (config.enabledDockerContainers && config.enabledDockerContainers.length > 0) {
@@ -2370,7 +2371,29 @@ $(function() {
     }
 
     if (config.refreshEnabled && config.refreshInterval > 0) {
-        if (window.__logsviewerStatusInterval) { clearInterval(window.__logsviewerStatusInterval); }
-        window.__logsviewerStatusInterval = setInterval(logsviewer_status, config.refreshInterval);
+        var startPolling = function() {
+            if (window.__logsviewerStatusInterval) return;
+            window.__logsviewerStatusInterval = setInterval(logsviewer_status, config.refreshInterval);
+        };
+        var stopPolling = function() {
+            if (!window.__logsviewerStatusInterval) return;
+            clearInterval(window.__logsviewerStatusInterval);
+            window.__logsviewerStatusInterval = null;
+        };
+
+        stopPolling();
+        startPolling();
+
+        // a hidden dashboard kept hitting docker and virsh every interval for nobody
+        document.removeEventListener('visibilitychange', window.__logsviewerVisibility || null);
+        window.__logsviewerVisibility = function() {
+            if (document.hidden) {
+                stopPolling();
+            } else {
+                startPolling();
+                logsviewer_status();  // catch up on what was missed instead of waiting a full interval
+            }
+        };
+        document.addEventListener('visibilitychange', window.__logsviewerVisibility);
     }
 });

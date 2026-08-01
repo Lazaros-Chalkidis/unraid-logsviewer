@@ -17,11 +17,15 @@ ENABLED=$(get_cfg BACKUP_ENABLED)
 
 STORAGE=$(get_cfg BACKUP_STORAGE)
 [ -z "$STORAGE" ] && exit 1
-# Validate path is under /mnt/user/
+# uninstall and retention delete inside this path, so refuse anything outside the share
 case "$STORAGE" in /mnt/user/*) ;; *) exit 1 ;; esac
 
 RETENTION=$(get_cfg BACKUP_RETENTION)
-[ -z "$RETENTION" ] && RETENTION=3
+case "$RETENTION" in ''|*[!0-9]*) RETENTION=3 ;; esac
+
+INTERVAL=$(get_cfg BACKUP_INTERVAL_DAYS)
+case "$INTERVAL" in ''|*[!0-9]*) INTERVAL=1 ;; esac
+[ "$INTERVAL" -lt 1 ] && INTERVAL=1
 
 BACKUP_DIR="$STORAGE"
 mkdir -p "$BACKUP_DIR" || exit 1
@@ -29,18 +33,36 @@ mkdir -p "$BACKUP_DIR" || exit 1
 chmod 700 "$BACKUP_DIR"
 
 DATE=$(date +%Y-%m-%d)
+
+# cron fires daily and the gap is measured here: */N in the day-of-month field restarts every month
+if [ "$INTERVAL" -gt 1 ]; then
+    LAST=""
+    for f in "$BACKUP_DIR"/*.zip; do
+        [ -f "$f" ] || continue
+        b=$(basename "$f" .zip)
+        [[ "$b" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || continue
+        [[ "$b" > "$LAST" ]] && LAST="$b"
+    done
+    if [ -n "$LAST" ]; then
+        LAST_TS=$(date -d "$LAST" +%s 2>/dev/null)
+        NOW_TS=$(date -d "$DATE" +%s 2>/dev/null)
+        if [ -n "$LAST_TS" ] && [ -n "$NOW_TS" ] && [ "$NOW_TS" -ge "$LAST_TS" ]; then
+            [ $(( (NOW_TS - LAST_TS) / 86400 )) -lt "$INTERVAL" ] && exit 0
+        fi
+    fi
+fi
+
 TMPDIR=$(mktemp -d /tmp/logsviewer-backup-XXXXXX)
 trap "rm -rf '$TMPDIR'" EXIT
 
 HAS_FILES=0
 
-# Find PHP for parsing custom-paths.json (avoids hard jq dependency)
+# php parses the custom paths json, so the script needs no jq
 PHP=""
 for p in /usr/bin/php /usr/local/bin/php /usr/local/emhttp/plugins/dynamix/scripts/php; do
     [ -x "$p" ] && PHP="$p" && break
 done
 
-# Build associative map of custom paths: slug -> filesystem path
 declare -A CUSTOM_PATHS_MAP
 CUSTOM_FILE="/boot/config/plugins/logsviewer/custom-paths.json"
 if [ -n "$PHP" ] && [ -f "$CUSTOM_FILE" ]; then
@@ -70,7 +92,6 @@ if [ -n "$PHP" ] && [ -f "$CUSTOM_FILE" ]; then
     ' 2>/dev/null)
 fi
 
-# System logs
 SYS_LOGS=$(get_cfg BACKUP_ENABLED_SYSTEM_LOGS)
 if [ -n "$SYS_LOGS" ]; then
     mkdir -p "$TMPDIR/system"
@@ -86,11 +107,10 @@ if [ -n "$SYS_LOGS" ]; then
             libvirt)         [ -f /var/log/libvirt/libvirtd.log ] && cp /var/log/libvirt/libvirtd.log "$TMPDIR/system/libvirt.log" && HAS_FILES=1 ;;
         esac
     done
-    # Remove system dir if empty
     rmdir "$TMPDIR/system" 2>/dev/null
 fi
 
-# Custom logs (separate folder, separate config key)
+# custom logs go in their own folder, a user label could collide with a system log name
 CUSTOM_LOGS=$(get_cfg BACKUP_ENABLED_CUSTOM_LOGS)
 if [ -n "$CUSTOM_LOGS" ]; then
     mkdir -p "$TMPDIR/custom"
@@ -115,7 +135,6 @@ if [ -n "$CUSTOM_LOGS" ]; then
     rmdir "$TMPDIR/custom" 2>/dev/null
 fi
 
-# Docker logs
 DOCKER_CONTAINERS=$(get_cfg BACKUP_ENABLED_DOCKER_CONTAINERS)
 if [ -n "$DOCKER_CONTAINERS" ] && command -v docker &>/dev/null; then
     mkdir -p "$TMPDIR/docker"
@@ -128,7 +147,6 @@ if [ -n "$DOCKER_CONTAINERS" ] && command -v docker &>/dev/null; then
     rmdir "$TMPDIR/docker" 2>/dev/null
 fi
 
-# VM logs
 VMS=$(get_cfg BACKUP_ENABLED_VMS)
 if [ -n "$VMS" ]; then
     mkdir -p "$TMPDIR/vms"
@@ -142,18 +160,18 @@ if [ -n "$VMS" ]; then
     rmdir "$TMPDIR/vms" 2>/dev/null
 fi
 
-# Only create zip if we collected something
 [ "$HAS_FILES" -eq 0 ] && exit 0
 
 cd "$TMPDIR"
 zip -r "$BACKUP_DIR/${DATE}.zip" . -x ".*" > /dev/null 2>&1
 
-# Cleanup old backups beyond retention period
 CUTOFF=$(date -d "-${RETENTION} months" +%Y-%m-%d 2>/dev/null)
 if [ -n "$CUTOFF" ]; then
     for f in "$BACKUP_DIR"/*.zip; do
         [ ! -f "$f" ] && continue
         FDATE=$(basename "$f" .zip)
+        # only touch our own YYYY-MM-DD.zip, the folder may hold unrelated archives
+        [[ "$FDATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || continue
         if [[ "$FDATE" < "$CUTOFF" ]]; then
             rm -f "$f"
         fi

@@ -1091,10 +1091,6 @@ function filterOnSelection() {
     renderVisible();
 }
 
-function bumpPinnedBadge() {
-
-}
-
 function truncate(s, n) { s = String(s); return s.length <= n ? s : s.slice(0, n - 1) + '…'; }
 
 function classify(line) {

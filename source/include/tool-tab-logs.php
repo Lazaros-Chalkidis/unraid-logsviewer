@@ -106,7 +106,7 @@ $customCount = count($enabledCustomLogs);
     <div class="lvt-header__left">
       <img src="/plugins/logsviewer/img/logsviewermain.png" class="lvt-header__icon" alt="">
       <div>
-        <h2 class="lvt-header__title">Logs</h2>
+        <h2 class="lvt-header__title">Logs Viewer</h2>
         <span class="lvt-header__sub">Browse log sources from your server</span>
       </div>
     </div>

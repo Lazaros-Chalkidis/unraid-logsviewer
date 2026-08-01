@@ -809,7 +809,7 @@
 }
 .lv-credits-title-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   margin-bottom: 4px;
   flex-wrap: wrap;
@@ -818,6 +818,21 @@
   font-size: 16px;
   font-weight: 600;
   color: var(--lv-c-text);
+}
+.lv-credits-suite {
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--lv-c-text-muted);
+  opacity: 0.75;
+}
+.lv-credits-suite strong { font-weight: 600; opacity: 0.9; }
+
+.lv-credits-footer-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
 }
 .lv-credits-version {
   background: var(--lv-accent-dim);
@@ -1816,6 +1831,13 @@ a.lv-tag--mitre:hover .lv-tag-ext { opacity: 1; }
   background: transparent;
   border: none;
 }
+
+/* the footer accents are picked for a dark panel, they wash out on white and azure */
+.lv-light .lv-footer input[name="#apply"],
+.lv-light .lv-footer button[name="#apply"] { color: #2e7d32 !important; }
+.lv-light .lv-footer #lvResetDefaults      { color: #a8471a !important; }
+.lv-light .lv-footer-link:hover,
+.lv-light .lv-footer-link:focus            { color: #1565c0; }
 
 .lv-light .lv-shared-callout {
   background: rgba(244,125,66,.08);

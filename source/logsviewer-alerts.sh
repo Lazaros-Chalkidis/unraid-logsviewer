@@ -13,7 +13,7 @@ CFG="/boot/config/plugins/logsviewer/logsviewer.cfg"
 ENABLED=$(grep '^ALERTS_ENABLED=' "$CFG" 2>/dev/null | cut -d'"' -f2)
 [ "$ENABLED" != "1" ] && exit 0
 
-# Find PHP binary
+# unraid moves the php binary between releases, take the first one that exists
 PHP=""
 for p in /usr/bin/php /usr/local/bin/php /usr/local/emhttp/plugins/dynamix/scripts/php; do
     [ -x "$p" ] && PHP="$p" && break

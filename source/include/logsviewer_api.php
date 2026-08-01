@@ -46,9 +46,12 @@ final class LogsViewerEndpoint
 
     private const CUSTOM_PATHS_FILE   = '/boot/config/plugins/logsviewer/custom-paths.json';
     private const ALERT_MUTES_FILE    = '/boot/config/plugins/logsviewer/alert-mutes.json';
+    private const CFG_FILE            = '/boot/config/plugins/logsviewer/logsviewer.cfg';
     private const ALERTS_SCAN_LOCK    = '/tmp/logsviewer_cache/alerts-scan.lock';
     private const ALERTS_SCAN_SCRIPT  = '/usr/local/emhttp/plugins/logsviewer/include/logsviewer-alerts-scan.php';
     private const ALLOWED_CUSTOM_PREFIXES = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
+    // docker and virsh can hang on a busy host; the browser gives up at 15s, so fail earlier and still return json
+    private const SHELL_TIMEOUT = 'timeout 5 ';
 
     public function __construct()
     {
@@ -59,13 +62,58 @@ final class LogsViewerEndpoint
         }
     }
 
+    // temp file in the same directory then rename, so a crash mid-write can't leave a truncated config on flash
+    public static function atomicWrite(string $path, string $data, int $newFileMode = 0644): bool
+    {
+        $dir = dirname($path);
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true)) return false;
+
+        $mode = is_file($path) ? (@fileperms($path) & 0777) : $newFileMode;
+        $tmp  = $path . '.' . getmypid() . '.tmp';
+
+        if (@file_put_contents($tmp, $data, LOCK_EX) === false) { @unlink($tmp); return false; }
+        @chmod($tmp, $mode);
+        if (!@rename($tmp, $path)) { @unlink($tmp); return false; }
+        return true;
+    }
+
+    // one place for the cfg serialization, the call sites used to disagree on control-char stripping
+    public static function cfgToIni(array $cfg): string
+    {
+        $ini = '';
+        foreach ($cfg as $key => $value) {
+            $value = preg_replace('/[\x00-\x1f\x7f]/', '', (string)$value);
+            $value = str_replace('"', '\"', $value);
+            $ini .= "{$key}=\"{$value}\"\n";
+        }
+        return $ini;
+    }
+
+    // fold the pre-split source keys into the DASH_ ones, once, then persist
+    public static function migrateLegacySources(array &$cfg): bool
+    {
+        if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') === '1') return false;
+        if (array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) return false;
+
+        $legacySystem = (string)($cfg['ENABLED_SYSTEM_LOGS'] ?? ($cfg['ENABLED_SCRIPTS'] ?? ''));
+        $legacyDocker = (string)($cfg['ENABLED_DOCKER_CONTAINERS'] ?? '');
+        $legacyVm     = (string)($cfg['ENABLED_VMS'] ?? '');
+        if ($legacySystem === '' && $legacyDocker === '' && $legacyVm === '') return false;
+
+        $cfg['DASH_ENABLED_SYSTEM_LOGS']       = $legacySystem;
+        $cfg['DASH_ENABLED_DOCKER_CONTAINERS'] = $legacyDocker;
+        $cfg['DASH_ENABLED_VMS']               = $legacyVm;
+        $cfg['MIGRATED_DASH_SOURCES']          = '1';
+
+        return self::atomicWrite(self::CFG_FILE, self::cfgToIni($cfg));
+    }
+
     // custom log paths must sit under a known prefix and have no .. in them
     private static function isAllowedCustomPath(string $path): bool
     {
         if ($path === '' || $path[0] !== '/') return false;
         if (strpos($path, '..') !== false) return false;
-        // resolve symlinks so a link can't point outside the whitelist,
-        // paths that don't exist yet fall back to the string check
+        // a symlink could point outside the whitelist, so compare the resolved path when the file exists
         $real = @realpath($path);
         $check = ($real !== false) ? $real : $path;
         foreach (self::ALLOWED_CUSTOM_PREFIXES as $prefix) {
@@ -143,7 +191,7 @@ final class LogsViewerEndpoint
     {
         if ($this->_dockerStatesCache !== null) return $this->_dockerStatesCache;
         $this->_dockerStatesCache = [];
-        $raw = @shell_exec('docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
+        $raw = @shell_exec(self::SHELL_TIMEOUT . 'docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
         if ($raw) {
             foreach (array_filter(explode("\n", trim($raw))) as $line) {
                 $p = explode("\t", $line);
@@ -157,7 +205,7 @@ final class LogsViewerEndpoint
     {
         if ($this->_vmStatesCache !== null) return $this->_vmStatesCache;
         $this->_vmStatesCache = [];
-        $raw = @shell_exec('virsh list --all 2>/dev/null');
+        $raw = @shell_exec(self::SHELL_TIMEOUT . 'virsh list --all 2>/dev/null');
         if ($raw) {
             foreach (array_filter(explode("\n", trim($raw))) as $line) {
                 if (preg_match('/^\s*[-\d]+\s+(\S+)\s+(.+)$/', $line, $m)) {
@@ -309,25 +357,7 @@ final class LogsViewerEndpoint
     {
         if ($this->_migrationDone) return;
         $this->_migrationDone = true;
-        if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') === '1') return;
-        if (array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) return;
-
-        $legacySystem = (string)($cfg['ENABLED_SYSTEM_LOGS'] ?? ($cfg['ENABLED_SCRIPTS'] ?? ''));
-        $legacyDocker = (string)($cfg['ENABLED_DOCKER_CONTAINERS'] ?? '');
-        $legacyVm     = (string)($cfg['ENABLED_VMS'] ?? '');
-        if ($legacySystem === '' && $legacyDocker === '' && $legacyVm === '') return;
-
-        $cfg['DASH_ENABLED_SYSTEM_LOGS']       = $legacySystem;
-        $cfg['DASH_ENABLED_DOCKER_CONTAINERS'] = $legacyDocker;
-        $cfg['DASH_ENABLED_VMS']               = $legacyVm;
-        $cfg['MIGRATED_DASH_SOURCES']          = '1';
-
-        $ini = '';
-        foreach ($cfg as $k => $v) {
-            $v = str_replace('"', '\"', (string)$v);
-            $ini .= "{$k}=\"{$v}\"\n";
-        }
-        @file_put_contents('/boot/config/plugins/logsviewer/logsviewer.cfg', $ini);
+        self::migrateLegacySources($cfg);
     }
 
     private function csvToArray(string $csv): array
@@ -455,11 +485,11 @@ final class LogsViewerEndpoint
     private function getDockerContainerList(): array
     {
 
-        $output = @shell_exec('docker ps -a --format "{{.Names}}|{{.State}}|{{.ID}}" 2>/dev/null');
+        $output = @shell_exec(self::SHELL_TIMEOUT . 'docker ps -a --format "{{.Names}}|{{.State}}|{{.ID}}" 2>/dev/null');
         if (empty($output)) return [];
 
         $logPaths = [];
-        $pathsRaw = @shell_exec('docker inspect --format="{{.Name}}|{{.LogPath}}" $(docker ps -aq) 2>/dev/null');
+        $pathsRaw = @shell_exec(self::SHELL_TIMEOUT . 'sh -c \'docker inspect --format="{{.Name}}|{{.LogPath}}" $(docker ps -aq)\' 2>/dev/null');
         if ($pathsRaw) {
             foreach (array_filter(explode("\n", trim($pathsRaw))) as $pLine) {
                 $pp = explode('|', $pLine, 2);
@@ -477,7 +507,7 @@ final class LogsViewerEndpoint
         if (!empty($logPaths)) {
             $args = implode(' ', array_map('escapeshellarg', array_values($logPaths)));
 
-            $sizesRaw = @shell_exec('stat -c "%n|%s" -- ' . $args . ' 2>/dev/null');
+            $sizesRaw = @shell_exec(self::SHELL_TIMEOUT . 'stat -c "%n|%s" -- ' . $args . ' 2>/dev/null');
             if ($sizesRaw) {
                 foreach (array_filter(explode("\n", trim($sizesRaw))) as $sLine) {
                     $sp = explode('|', $sLine, 2);
@@ -554,7 +584,7 @@ final class LogsViewerEndpoint
 
     private function getVmList(): array
     {
-        $output = @shell_exec('virsh list --all --name 2>/dev/null');
+        $output = @shell_exec(self::SHELL_TIMEOUT . 'virsh list --all --name 2>/dev/null');
         if (empty($output)) return [];
 
         $states = $this->getVmStates();
@@ -928,16 +958,19 @@ final class LogsViewerEndpoint
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $name)) continue;
 
             $contents = ['system' => 0, 'docker' => 0, 'vms' => 0, 'custom' => 0];
-            $za = new \ZipArchive();
-            if ($za->open($file) === true) {
-                for ($i = 0; $i < $za->numFiles; $i++) {
-                    $entry = $za->getNameIndex($i);
-                    if (str_starts_with($entry, 'system/') && !str_ends_with($entry, '/')) $contents['system']++;
-                    elseif (str_starts_with($entry, 'docker/') && !str_ends_with($entry, '/')) $contents['docker']++;
-                    elseif (str_starts_with($entry, 'vms/') && !str_ends_with($entry, '/')) $contents['vms']++;
-                    elseif (str_starts_with($entry, 'custom/') && !str_ends_with($entry, '/')) $contents['custom']++;
+            // the per-folder counts are cosmetic, the list must still load if php has no zip extension
+            if (class_exists('\ZipArchive')) {
+                $za = new \ZipArchive();
+                if ($za->open($file) === true) {
+                    for ($i = 0; $i < $za->numFiles; $i++) {
+                        $entry = (string)$za->getNameIndex($i);
+                        if (str_starts_with($entry, 'system/') && !str_ends_with($entry, '/')) $contents['system']++;
+                        elseif (str_starts_with($entry, 'docker/') && !str_ends_with($entry, '/')) $contents['docker']++;
+                        elseif (str_starts_with($entry, 'vms/') && !str_ends_with($entry, '/')) $contents['vms']++;
+                        elseif (str_starts_with($entry, 'custom/') && !str_ends_with($entry, '/')) $contents['custom']++;
+                    }
+                    $za->close();
                 }
-                $za->close();
             }
 
             $backups[] = [
@@ -1000,10 +1033,10 @@ final class LogsViewerEndpoint
     private function replyClearAlertHistory(): void
     {
         $path = '/boot/config/plugins/logsviewer/alerts-history.json';
-        @file_put_contents($path, '[]', LOCK_EX);
+        self::atomicWrite($path, '[]');
 
         $cdPath = '/tmp/logsviewer_cache/alert_cooldowns.json';
-        if (is_file($cdPath)) @file_put_contents($cdPath, '{}', LOCK_EX);
+        if (is_file($cdPath)) self::atomicWrite($cdPath, '{}', 0600);
         $this->json(['cleared' => true]);
     }
 
@@ -1035,12 +1068,12 @@ final class LogsViewerEndpoint
             $this->json(['error' => 'Scan script not found'], 500);
         }
 
-        $cmd    = escapeshellcmd($phpBin) . ' -f ' . escapeshellarg($script) . ' 2>/dev/null';
-        $output = (string)@shell_exec($cmd);
-        $count  = (int)trim($output);
+        $cmd = escapeshellcmd($phpBin) . ' -f ' . escapeshellarg($script) . ' 2>/dev/null';
 
+        // the scan script takes this same lock, hand it over before starting the child
         @flock($fh, LOCK_UN); @fclose($fh);
 
+        $count = (int)trim((string)@shell_exec($cmd));
         $this->json(['success' => true, 'new_alerts' => $count]);
     }
 
@@ -1061,14 +1094,16 @@ final class LogsViewerEndpoint
             }
         }
         if ($changed) {
-            @file_put_contents(self::ALERT_MUTES_FILE, json_encode($data, JSON_PRETTY_PRINT), LOCK_EX);
+            $this->saveAlertMutes($data);
         }
         return $data;
     }
 
     private function saveAlertMutes(array $mutes): void
     {
-        @file_put_contents(self::ALERT_MUTES_FILE, json_encode($mutes, JSON_PRETTY_PRINT), LOCK_EX);
+        $json = json_encode($mutes, JSON_PRETTY_PRINT);
+        if ($json === false) return;
+        self::atomicWrite(self::ALERT_MUTES_FILE, $json);
     }
 
     private function replyAlertMutes(): void
@@ -1307,13 +1342,16 @@ final class LogsViewerEndpoint
 
     private function cacheKey(array $cfg): string
     {
+        // sanitised here too: the raw values would let any distinct string mint its own cache file in /tmp
         $category  = (string)($_GET['category'] ?? 'system');
+        if (!in_array($category, ['system', 'docker', 'vm', 'custom'], true)) $category = 'system';
+        $source    = (string)($_GET['source'] ?? '');
+        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $source)) $source = '';
         $ctx       = $this->isToolContext() ? 'tool' : 'dash';
         $sysKey    = $this->isToolContext() ? 'TOOL_ENABLED_SYSTEM_LOGS'       : 'DASH_ENABLED_SYSTEM_LOGS';
         $dockerKey = $this->isToolContext() ? 'TOOL_ENABLED_DOCKER_CONTAINERS' : 'DASH_ENABLED_DOCKER_CONTAINERS';
         $vmKey     = $this->isToolContext() ? 'TOOL_ENABLED_VMS'               : 'DASH_ENABLED_VMS';
         $customKey = $this->isToolContext() ? 'TOOL_ENABLED_CUSTOM_LOGS'       : 'DASH_ENABLED_CUSTOM_LOGS';
-        $source    = (string)($_GET['source'] ?? '');
         $normTs    = (($_GET['_normts'] ?? '') === '1') ? '1' : '0';
         return hash('sha256', implode('|', [
             'states', $category, $ctx, $source, $normTs,
@@ -1359,373 +1397,6 @@ final class LogsViewerEndpoint
             $st = @stat($f);
             if (is_array($st) && isset($st['mtime']) && ($now - (int)$st['mtime']) > 10) @unlink($f);
         }
-    }
-
-    private const SAVED_FILTERS_FILE = '/boot/config/plugins/logsviewer/saved-filters.json';
-    private const ALERT_RULES_FILE   = '/boot/config/plugins/logsviewer/alerts-rules.json';
-
-    private function readSavedFilters(): array
-    {
-        if (!is_file(self::SAVED_FILTERS_FILE)) return [];
-        $raw = @file_get_contents(self::SAVED_FILTERS_FILE);
-        $arr = @json_decode((string)$raw, true);
-        return is_array($arr) ? $arr : [];
-    }
-
-    private function writeSavedFilters(array $filters): bool
-    {
-        $dir = dirname(self::SAVED_FILTERS_FILE);
-        if (!is_dir($dir)) @mkdir($dir, 0755, true);
-        $tmp = self::SAVED_FILTERS_FILE . '.tmp';
-        $json = json_encode($filters, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        if ($json === false) return false;
-        if (@file_put_contents($tmp, $json, LOCK_EX) === false) return false;
-        return @rename($tmp, self::SAVED_FILTERS_FILE);
-    }
-
-    private function readAlertRules(): array
-    {
-        if (!is_file(self::ALERT_RULES_FILE)) return [];
-        $raw = @file_get_contents(self::ALERT_RULES_FILE);
-        $arr = @json_decode((string)$raw, true);
-        return is_array($arr) ? $arr : [];
-    }
-
-    private function writeAlertRules(array $rules): bool
-    {
-        $dir = dirname(self::ALERT_RULES_FILE);
-        if (!is_dir($dir)) @mkdir($dir, 0755, true);
-        $tmp = self::ALERT_RULES_FILE . '.tmp';
-        $json = json_encode($rules, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        if ($json === false) return false;
-        if (@file_put_contents($tmp, $json, LOCK_EX) === false) return false;
-        return @rename($tmp, self::ALERT_RULES_FILE);
-    }
-
-    private function genFilterId(): string
-    {
-        return 'lvf_' . substr(bin2hex(random_bytes(6)), 0, 10);
-    }
-
-    private function validateFilterInput(array $in): array
-    {
-
-        $errors = [];
-        $name = trim((string)($in['name'] ?? ''));
-        if ($name === '' || strlen($name) > 80) {
-            $errors[] = 'Name is required (max 80 characters).';
-        }
-
-        $sources = $in['sources'] ?? [];
-        if (!is_array($sources)) $sources = [];
-        $sources = array_values(array_filter(array_map(function ($s) {
-            $s = trim((string)$s);
-            return preg_match('/^[a-zA-Z0-9 ._:-]{1,64}$/', $s) ? $s : null;
-        }, $sources)));
-        if (empty($sources)) $errors[] = 'Pick at least one source.';
-
-        $level = (string)($in['level'] ?? 'all');
-        if (!in_array($level, ['all', 'critical', 'error', 'warning', 'info', 'only-info', 'only-warning', 'only-error'], true)) {
-            $level = 'all';
-        }
-
-        $pattern = (string)($in['pattern'] ?? '');
-        if ($pattern === '' || strlen($pattern) > 500) {
-            $errors[] = 'Pattern is required (max 500 characters).';
-        }
-
-        $isRegex = !empty($in['is_regex']);
-        if ($isRegex && $pattern !== '') {
-
-            $test = @preg_match('/' . str_replace('/', '\/', $pattern) . '/', '');
-            if ($test === false) $errors[] = 'Regex pattern is invalid.';
-        }
-
-        return [
-            empty($errors),
-            $errors,
-            [
-                'name'     => $name,
-                'sources'  => $sources,
-                'level'    => $level,
-                'pattern'  => $pattern,
-                'is_regex' => $isRegex,
-            ],
-        ];
-    }
-
-    private function replyGetSavedFilters(): void
-    {
-        $filters = $this->readSavedFilters();
-
-        if (!empty($filters)) {
-            $ruleIds = array_column($this->readAlertRules(), 'id');
-            $ruleSet = array_flip($ruleIds);
-            foreach ($filters as &$f) {
-                if (!empty($f['alert_rule_id']) && !isset($ruleSet[$f['alert_rule_id']])) {
-                    $f['alert_rule_id'] = null;
-                }
-            }
-            unset($f);
-        }
-        $this->json(['filters' => $filters]);
-    }
-
-    private function replySaveFilter(): void
-    {
-
-        $body = $_POST;
-        if (empty($body) && !empty($_GET['payload'])) {
-            $body = @json_decode((string)$_GET['payload'], true) ?: [];
-        }
-        if (empty($body)) {
-            $raw = @file_get_contents('php://input');
-            $body = @json_decode((string)$raw, true) ?: [];
-        }
-
-        [$ok, $errs, $clean] = $this->validateFilterInput($body);
-        if (!$ok) $this->json(['error' => implode(' ', $errs)], 400);
-
-        $id  = (string)($body['id'] ?? '');
-        $now = time();
-
-        $filters = $this->readSavedFilters();
-        if ($id !== '') {
-
-            $found = false;
-            foreach ($filters as &$f) {
-                if (($f['id'] ?? '') === $id) {
-                    $f['name']     = $clean['name'];
-                    $f['sources']  = $clean['sources'];
-                    $f['level']    = $clean['level'];
-                    $f['pattern']  = $clean['pattern'];
-                    $f['is_regex'] = $clean['is_regex'];
-                    $f['updated_at'] = $now;
-                    $found = true;
-                    break;
-                }
-            }
-            unset($f);
-            if (!$found) $this->json(['error' => 'Filter not found.'], 404);
-        } else {
-
-            $id = $this->genFilterId();
-            $filters[] = array_merge($clean, [
-                'id'                => $id,
-                'created_at'        => $now,
-                'updated_at'        => $now,
-                'last_run_at'       => null,
-                'last_match_count'  => null,
-                'alert_rule_id'     => null,
-            ]);
-        }
-
-        if (!$this->writeSavedFilters($filters)) {
-            $this->json(['error' => 'Failed to write saved filters file.'], 500);
-        }
-        $this->json(['saved' => true, 'id' => $id]);
-    }
-
-    private function replyDeleteFilter(): void
-    {
-        $id = trim((string)($_GET['id'] ?? ''));
-        if ($id === '' || !preg_match('/^lvf_[a-z0-9]{6,16}$/', $id)) {
-            $this->json(['error' => 'Invalid filter id.'], 400);
-        }
-        $filters = $this->readSavedFilters();
-        $out = [];
-        $found = false;
-        foreach ($filters as $f) {
-            if (($f['id'] ?? '') === $id) { $found = true; continue; }
-            $out[] = $f;
-        }
-        if (!$found) $this->json(['error' => 'Filter not found.'], 404);
-        if (!$this->writeSavedFilters($out)) {
-            $this->json(['error' => 'Failed to write saved filters file.'], 500);
-        }
-        $this->json(['deleted' => true]);
-    }
-
-    private function replyConvertFilterToAlert(): void
-    {
-        $id = trim((string)($_GET['id'] ?? ''));
-        if ($id === '' || !preg_match('/^lvf_[a-z0-9]{6,16}$/', $id)) {
-            $this->json(['error' => 'Invalid filter id.'], 400);
-        }
-
-        $filters = $this->readSavedFilters();
-        $filter = null; $fIdx = -1;
-        foreach ($filters as $i => $f) { if (($f['id'] ?? '') === $id) { $filter = $f; $fIdx = $i; break; } }
-        if ($filter === null) $this->json(['error' => 'Filter not found.'], 404);
-
-        if (!empty($filter['alert_rule_id'])) {
-
-            $rules = $this->readAlertRules();
-            foreach ($rules as $r) if (($r['id'] ?? '') === $filter['alert_rule_id']) {
-                $this->json(['already' => true, 'rule_id' => $r['id']]);
-            }
-
-        }
-
-        $levelToSev = [
-            'all'          => 'warning',
-            'critical'     => 'critical',
-            'error'        => 'error',
-            'warning'      => 'warning',
-            'info'         => 'info',
-            'only-info'    => 'info',
-            'only-warning' => 'warning',
-            'only-error'   => 'error',
-        ];
-        $sev = $levelToSev[$filter['level']] ?? 'warning';
-        $newRule = [
-            'id'        => 'lvr_' . substr(bin2hex(random_bytes(6)), 0, 10),
-            'name'      => $filter['name'],
-            'enabled'   => true,
-            'pattern'   => $filter['pattern'],
-            'is_regex'  => !empty($filter['is_regex']),
-            'severity'  => $sev,
-            'sources'   => $filter['sources'],
-            'cooldown'  => 300,
-            'tags'      => [],
-            'created_at'=> time(),
-            'origin'    => 'saved_filter:' . $filter['id'],
-        ];
-
-        $rules = $this->readAlertRules();
-        $rules[] = $newRule;
-        if (!$this->writeAlertRules($rules)) {
-            $this->json(['error' => 'Failed to write alert rules file.'], 500);
-        }
-
-        $filters[$fIdx]['alert_rule_id'] = $newRule['id'];
-        $filters[$fIdx]['updated_at']    = time();
-        $this->writeSavedFilters($filters);
-
-        $this->json(['created' => true, 'rule_id' => $newRule['id'], 'rule_name' => $newRule['name']]);
-    }
-
-    private const PINNED_FILE     = '/boot/config/plugins/logsviewer/pinned-lines.json';
-    private const PINNED_MAX      = 200;
-    private const PINNED_LINE_MAX = 1500;
-
-    private function readPinnedLines(): array
-    {
-        if (!is_file(self::PINNED_FILE)) return [];
-        $raw = @file_get_contents(self::PINNED_FILE);
-        $arr = @json_decode((string)$raw, true);
-        return is_array($arr) ? $arr : [];
-    }
-
-    private function writePinnedLines(array $pins): bool
-    {
-        $dir = dirname(self::PINNED_FILE);
-        if (!is_dir($dir)) @mkdir($dir, 0755, true);
-        $tmp = self::PINNED_FILE . '.tmp';
-        $json = json_encode($pins, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        if ($json === false) return false;
-        if (@file_put_contents($tmp, $json, LOCK_EX) === false) return false;
-        return @rename($tmp, self::PINNED_FILE);
-    }
-
-    private function genPinId(): string
-    {
-        return 'lvp_' . substr(bin2hex(random_bytes(6)), 0, 10);
-    }
-
-    private function replyGetPinnedLines(): void
-    {
-        $pins = $this->readPinnedLines();
-
-        usort($pins, fn($a, $b) => ((int)($b['pinned_at'] ?? 0)) <=> ((int)($a['pinned_at'] ?? 0)));
-        $this->json(['pins' => $pins]);
-    }
-
-    private function replyPinLine(): void
-    {
-
-        $body = $_POST;
-        if (empty($body)) {
-            $raw = @file_get_contents('php://input');
-            $body = @json_decode((string)$raw, true) ?: [];
-        }
-
-        $category    = strtolower(trim((string)($body['category'] ?? '')));
-        $source      = trim((string)($body['source'] ?? ''));
-        $sourceLabel = trim((string)($body['source_label'] ?? $source));
-        $line        = (string)($body['line'] ?? '');
-        $note        = trim((string)($body['note'] ?? ''));
-
-        if (!in_array($category, ['system', 'docker', 'vm', 'custom'], true)) {
-            $this->json(['error' => 'Invalid category.'], 400);
-        }
-        if ($source === '' || !preg_match('/^[a-zA-Z0-9 ._:-]{1,64}$/', $source)) {
-            $this->json(['error' => 'Invalid source.'], 400);
-        }
-        if ($line === '') $this->json(['error' => 'Line cannot be empty.'], 400);
-
-        if (strlen($line) > self::PINNED_LINE_MAX) {
-            $line = substr($line, 0, self::PINNED_LINE_MAX) . '…';
-        }
-        if (strlen($note) > 200) $note = substr($note, 0, 200);
-        if (strlen($sourceLabel) > 80) $sourceLabel = substr($sourceLabel, 0, 80);
-
-        $pins = $this->readPinnedLines();
-
-        foreach ($pins as $p) {
-            if (($p['source'] ?? '') === $source && ($p['line'] ?? '') === $line) {
-                $this->json(['already' => true, 'id' => $p['id']]);
-            }
-        }
-
-        if (count($pins) >= self::PINNED_MAX) {
-            usort($pins, fn($a, $b) => ((int)($a['pinned_at'] ?? 0)) <=> ((int)($b['pinned_at'] ?? 0)));
-            array_shift($pins);
-        }
-
-        $entry = [
-            'id'           => $this->genPinId(),
-            'category'     => $category,
-            'source'       => $source,
-            'source_label' => $sourceLabel !== '' ? $sourceLabel : $source,
-            'line'         => $line,
-            'note'         => $note,
-            'pinned_at'    => time(),
-        ];
-        $pins[] = $entry;
-
-        if (!$this->writePinnedLines($pins)) {
-            $this->json(['error' => 'Failed to write pinned lines file.'], 500);
-        }
-        $this->json(['pinned' => true, 'id' => $entry['id']]);
-    }
-
-    private function replyUnpinLine(): void
-    {
-        $id = trim((string)($_GET['id'] ?? ''));
-        if ($id === '' || !preg_match('/^lvp_[a-z0-9]{6,16}$/', $id)) {
-            $this->json(['error' => 'Invalid pin id.'], 400);
-        }
-        $pins = $this->readPinnedLines();
-        $out = [];
-        $found = false;
-        foreach ($pins as $p) {
-            if (($p['id'] ?? '') === $id) { $found = true; continue; }
-            $out[] = $p;
-        }
-        if (!$found) $this->json(['error' => 'Pin not found.'], 404);
-        if (!$this->writePinnedLines($out)) {
-            $this->json(['error' => 'Failed to write pinned lines file.'], 500);
-        }
-        $this->json(['unpinned' => true]);
-    }
-
-    private function replyClearPinnedLines(): void
-    {
-        if (!$this->writePinnedLines([])) {
-            $this->json(['error' => 'Failed to write pinned lines file.'], 500);
-        }
-        $this->json(['cleared' => true]);
     }
 }
 
