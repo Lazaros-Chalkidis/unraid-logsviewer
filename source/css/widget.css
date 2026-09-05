@@ -135,7 +135,7 @@
 .logsviewer-header__top{ display:inline-flex; gap:1rem; }
 .logsviewer-header__icon{ font-size:2rem; flex-shrink:0; color:var(--logsviewer-text-secondary); }
 .logsviewer-header__title{ margin:0; font-size:1.5625rem; font-weight:600; color:var(--logsviewer-text-primary); text-transform:uppercase; }
-.logsviewer-header__right{ flex-direction:column; gap:0.3rem; min-width:0; flex-shrink:1; }
+.logsviewer-header__right{ flex-direction:column; gap:0.7rem; min-width:0; flex-shrink:1; }
 .logsviewer-header__controls{ display:inline-flex; flex-wrap:nowrap; gap:0.75rem; align-items:center; justify-content:flex-end; width:100%; min-width:0; }
 .logsviewer-header__inputs{ display:flex; align-items:center; gap:0.6rem; justify-content:flex-end; width:100%; }
 
@@ -219,6 +219,7 @@
 
 .logsviewer-tabs-row{
   display:flex; align-items:center; gap:0; width:100%; padding:0.35rem 0.5rem;
+  min-width:0;
   background:var(--lv-c-bg-subtle);
   border:1px solid var(--logsviewer-border);
   border-bottom:none;
@@ -229,7 +230,8 @@
 .logsviewer-tabs-row__controls{ display:flex; align-items:center; gap:0.3rem; flex-shrink:0; }
 
 .logsviewer-category-tabs{
-  display:flex; gap:1px; align-items:center; flex-shrink:0;
+  display:flex; gap:1px; align-items:center;
+  flex:0 1 auto; min-width:0; flex-wrap:wrap; row-gap:3px;
   background:var(--lv-c-border-subtle);
   border-radius:0.64rem;
   padding:5px;
@@ -238,6 +240,7 @@
 .logsviewer-cat-btn{
   position:relative; display:inline-flex; align-items:center; gap:0.46rem;
   padding:0.50rem 1.10rem;
+  min-width:0; max-width:100%;
   cursor:pointer;
   border:none;
   background:transparent;
@@ -266,9 +269,10 @@
 .logsviewer-cat-btn__dot--system{ background:#378ADD; }
 .logsviewer-cat-btn__dot--docker{ background:#1D9E75; }
 .logsviewer-cat-btn__dot--vm{ background:#EF9F27; }
+.logsviewer-cat-btn__dot--script{ background:#D9456E; }
 .logsviewer-cat-btn__dot--custom{ background:#A45EE5; }
 
-.logsviewer-cat-btn__label{ pointer-events:none; }
+.logsviewer-cat-btn__label{ pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
 .logsviewer-cat-btn__caret{ font-size:0.82em; opacity:0.35; pointer-events:none; transition:opacity 0.15s ease, transform 0.2s ease; }
 .logsviewer-cat-btn:hover .logsviewer-cat-btn__caret{ opacity:0.55; }
 .logsviewer-cat-btn.logsviewer-cat-btn--active .logsviewer-cat-btn__caret{ opacity:0.55; }

@@ -1,6 +1,28 @@
 
 # Logs Viewer
 
+## 2026.09.05
+
+### New Features
+
+- User Scripts logs. The plugin finds the scripts you have in the User Scripts plugin and lets you tick the ones you want to follow, separately for the dashboard widget, the Tools page, Backups and Alerts. Nothing to type in, scripts appear and disappear on their own, and the section says so if User Scripts is not installed. A log shows up once a script has run in the background or on a schedule.
+- The Tools page now sits under a Viewers Suite entry in the Tools menu, shared with the other Viewers plugins.
+
+### Fixed
+
+- Settings dropdowns always showed the first option. Show only last N lines, font size, refresh interval and autoscroll were saved correctly, the box just never showed what you had picked.
+- The first line of every log was missing. It only showed when the whole file fitted on screen, but it affected every source.
+- A User Script running in the foreground now shows as running. It leaves no marker behind, so it used to look idle.
+- The Filter menu on the Tools page had its options centred instead of lined up on the left.
+
+### Improvements
+
+- The Tools page uses the full width of the window and wastes less space at the bottom.
+- The information notes across Settings now share one look instead of three.
+- The category buttons in the dashboard widget wrap onto a second line on a narrow column instead of stretching it.
+- Corrected a few setting descriptions that no longer matched what the setting does.
+- Assorted spacing and sizing tweaks on the Tools page.
+
 ## 2026.08.01
 
 ### New Features

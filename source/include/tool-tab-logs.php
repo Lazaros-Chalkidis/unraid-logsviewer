@@ -8,6 +8,7 @@
 $enabledSystemLogs       = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_SYSTEM_LOGS'] ?? ''))));
 $enabledDockerContainers = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ''))));
 $enabledVms              = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_VMS'] ?? ''))));
+$enabledUserScripts      = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_USER_SCRIPTS'] ?? ''))));
 $enabledCustomLogs       = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_CUSTOM_LOGS'] ?? ''))));
 
 if (!$enabledSystemLogs) $enabledSystemLogs = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];  // sources come from the TOOL_ keys, with a sane default if none are set
@@ -36,6 +37,16 @@ $systemLogNames = [
     'phplog'          => 'PHP Log',
     'libvirt'         => 'Libvirt',
 ];
+
+$userScriptLabels = [];
+$userScriptStates = [];
+foreach ($enabledUserScripts as $_usKey) {
+    if (strpos($_usKey, 'script:') !== 0) continue;
+    $_usFolder = substr($_usKey, 7);
+    $_usName   = trim((string)@file_get_contents('/boot/config/plugins/user.scripts/scripts/' . $_usFolder . '/name'));
+    $userScriptLabels[$_usKey] = ($_usName !== '') ? $_usName : $_usFolder;
+    $userScriptStates[$_usKey] = LogsViewerEndpoint::userScriptStatus($_usFolder);
+}
 
 $_customFile = '/boot/config/plugins/logsviewer/custom-paths.json';
 $customLogLabels = [];
@@ -98,6 +109,7 @@ $renderSource = function(string $category, string $name, string $label, string $
 $systemCount = count($enabledSystemLogs);
 $dockerCount = count($enabledDockerContainers);
 $vmCount     = count($enabledVms);
+$scriptCount = count($enabledUserScripts);
 $customCount = count($enabledCustomLogs);
 ?>
 <div class="lvt-tab-panel" id="lvtPanelLogs">
@@ -129,7 +141,7 @@ $customCount = count($enabledCustomLogs);
           <span class="lvt-sidebar__group-count"><?= $systemCount ?></span>
         </div>
         <?php foreach ($enabledSystemLogs as $name):
-          $label = $systemLogNames[$name] ?? ($customLogLabels[$name] ?? ucfirst($name));
+          $label = $systemLogNames[$name] ?? ($customLogLabels[$name] ?? ($userScriptLabels[$name] ?? ucfirst($name)));
 
           echo $renderSource('system', $name, $label, 'lvt-dot--active', 'Available');
         endforeach; ?>
@@ -169,6 +181,22 @@ $customCount = count($enabledCustomLogs);
       </div>
       <?php endif; ?>
 
+      <?php if ($scriptCount > 0): ?>
+      <div class="lvt-sidebar__group" data-group="script">
+        <div class="lvt-sidebar__group-header">
+          <span><i class="fa fa-terminal" aria-hidden="true"></i> User Scripts</span>
+          <span class="lvt-sidebar__group-count"><?= $scriptCount ?></span>
+        </div>
+        <?php foreach ($enabledUserScripts as $name):
+          $label   = $userScriptLabels[$name] ?? $name;
+          $st      = $userScriptStates[$name] ?? 'idle';
+          $running = in_array($st, ['running', 'foreground'], true);
+          $title   = ($st === 'foreground') ? 'Running in the foreground' : ($running ? 'Running' : 'Idle');
+          echo $renderSource('script', $name, $label, $running ? 'lvt-dot--active' : 'lvt-dot--idle', $title);
+        endforeach; ?>
+      </div>
+      <?php endif; ?>
+
       <?php if ($customCount > 0): ?>
       <div class="lvt-sidebar__group" data-group="custom">
         <div class="lvt-sidebar__group-header">
@@ -183,7 +211,7 @@ $customCount = count($enabledCustomLogs);
       </div>
       <?php endif; ?>
 
-      <?php if (!$systemCount && !$dockerCount && !$vmCount && !$customCount): ?>
+      <?php if (!$systemCount && !$dockerCount && !$vmCount && !$scriptCount && !$customCount): ?>
       <div class="lvt-sidebar__empty">
         <i class="fa fa-info-circle" aria-hidden="true"></i>
         <p>No sources enabled.<br><a href="/Settings/LogsviewerSettings">Open Settings</a> to enable some.</p>

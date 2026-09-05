@@ -124,7 +124,7 @@ function logsviewer_showLog(entry) {
     var logDisplay = $(logsviewer_dom.logs);
     if (!entry || !logDisplay.length) return;
 
-    // frozen while the pointer is inside: the api returns a tail, so swapping the body shifts the line being read
+    // the api returns a tail, redrawing would shift the line being read
     if (logsviewer_cfg && logsviewer_cfg.pauseOnHover && logsviewer_pauseHoverActive) {
         logsviewer_pendingEntry = entry;
         return;
@@ -427,7 +427,7 @@ function logsviewer_fetchCategory(category, callback, opts) {
             var scripts = Array.isArray(data) ? data : [];
             logsviewer_mergeSourceData(category, scripts, singleSource);
 
-            if (!singleSource && category !== 'system' && category !== 'custom') {
+            if (!singleSource && category !== 'system' && category !== 'custom' && category !== 'script') {
                 var $drop = $('#logsviewer-cat-' + category);
                 var $tabBtn = $('.logsviewer-cat-btn[data-category="' + category + '"]');
                 var prevVal = $tabBtn.attr('data-selected') || '';
@@ -1531,7 +1531,7 @@ function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
 
     let filtered = logsviewer_applyFilterToText(base);
 
-    // counted here on purpose: the syntax step below trims long logs, and badges must reflect the whole view
+    // before the syntax step, which trims long logs
     var badgeCounts = logsviewer_countLevels(filtered);
     logsviewer_lastBadgeCounts = badgeCounts;
 
@@ -1666,7 +1666,7 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     });
 }
 
-// the decision has to happen inside the frame: hovering can start while the request is still in flight
+// hovering can start while the request is in flight
 function logsviewer_autoscrollIfAllowed(scrollTarget) {
     if (!scrollTarget) return;
     if (!$(logsviewer_dom.autoscroll).prop('checked')) return;
@@ -2365,6 +2365,9 @@ $(function() {
     }
     if (config.enabledVms && config.enabledVms.length > 0) {
         logsviewer_fetchCategory('vm');
+    }
+    if (config.enabledUserScripts && config.enabledUserScripts.length > 0) {
+        logsviewer_fetchCategory('script');
     }
     if (config.enabledCustomLogs && config.enabledCustomLogs.length > 0) {
         logsviewer_fetchCategory('custom');

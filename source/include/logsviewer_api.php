@@ -45,12 +45,14 @@ final class LogsViewerEndpoint
     ];
 
     private const CUSTOM_PATHS_FILE   = '/boot/config/plugins/logsviewer/custom-paths.json';
+    private const USER_SCRIPTS_DIR    = '/boot/config/plugins/user.scripts/scripts';
+    private const USER_SCRIPTS_TMP    = '/tmp/user.scripts/tmpScripts';
     private const ALERT_MUTES_FILE    = '/boot/config/plugins/logsviewer/alert-mutes.json';
     private const CFG_FILE            = '/boot/config/plugins/logsviewer/logsviewer.cfg';
     private const ALERTS_SCAN_LOCK    = '/tmp/logsviewer_cache/alerts-scan.lock';
     private const ALERTS_SCAN_SCRIPT  = '/usr/local/emhttp/plugins/logsviewer/include/logsviewer-alerts-scan.php';
     private const ALLOWED_CUSTOM_PREFIXES = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
-    // docker and virsh can hang on a busy host; the browser gives up at 15s, so fail earlier and still return json
+    // docker and virsh can hang on a busy host
     private const SHELL_TIMEOUT = 'timeout 5 ';
 
     public function __construct()
@@ -62,7 +64,7 @@ final class LogsViewerEndpoint
         }
     }
 
-    // temp file in the same directory then rename, so a crash mid-write can't leave a truncated config on flash
+    // temp file then rename, a crash mid-write must not truncate the config
     public static function atomicWrite(string $path, string $data, int $newFileMode = 0644): bool
     {
         $dir = dirname($path);
@@ -131,6 +133,70 @@ final class LogsViewerEndpoint
         return 'custom:' . $slug;
     }
 
+    private function getUserScriptLogs(): array
+    {
+        if ($this->_userScriptsCache !== null) return $this->_userScriptsCache;
+
+        $out = [];
+        // user.scripts builds the tmp path from the folder name, so that is the key
+        foreach ((array)@glob(self::USER_SCRIPTS_DIR . '/*/script') as $scriptFile) {
+            $dir    = dirname($scriptFile);
+            $folder = basename($dir);
+            if ($folder === '' || strpos($folder, '..') !== false) continue;
+
+            $label = trim((string)@file_get_contents($dir . '/name'));
+            if ($label === '') $label = $folder;
+
+            $out[] = [
+                'key'    => 'script:' . $folder,
+                'label'  => $label,
+                'folder' => $folder,
+                'path'   => self::USER_SCRIPTS_TMP . '/' . $folder . '/log.txt',
+            ];
+        }
+
+        usort($out, fn($a, $b) => strcasecmp($a['label'], $b['label']));
+        return $this->_userScriptsCache = $out;
+    }
+
+    private function isUserScriptsAvailable(): bool
+    {
+        return is_dir(self::USER_SCRIPTS_DIR);
+    }
+
+    // a foreground run leaves no marker, so look for the copied script among live processes
+    public static function foregroundScripts(): array
+    {
+        if (self::$_fgScriptsCache !== null) return self::$_fgScriptsCache;
+
+        $found  = [];
+        $prefix = self::USER_SCRIPTS_TMP . '/';
+        foreach ((array)@glob('/proc/[0-9]*/cmdline') as $f) {
+            $raw = @file_get_contents($f);
+            if ($raw === false || strpos($raw, $prefix) === false) continue;
+            foreach (explode("\0", $raw) as $arg) {
+                if (strpos($arg, $prefix) !== 0) continue;
+                $rest = substr($arg, strlen($prefix));
+                $cut  = strrpos($rest, '/script');
+                if ($cut) $found[substr($rest, 0, $cut)] = true;
+            }
+        }
+        return self::$_fgScriptsCache = $found;
+    }
+
+    // running and finished markers come from user.scripts, foreground has to be inferred
+    public static function userScriptStatus(string $folder): string
+    {
+        if (is_file('/tmp/user.scripts/running/' . $folder)) return 'running';
+        if (isset(self::foregroundScripts()[$folder]))       return 'foreground';
+        return 'idle';
+    }
+
+    private function getUserScriptStatus(string $folder): string
+    {
+        return self::userScriptStatus($folder);
+    }
+
     private function getCustomLogs(): array
     {
         if (!is_file(self::CUSTOM_PATHS_FILE)) return [];
@@ -160,6 +226,11 @@ final class LogsViewerEndpoint
                 if ($c['key'] === $label) return $c['path'];
             }
         }
+        if (strpos($label, 'script:') === 0) {
+            foreach ($this->getUserScriptLogs() as $s) {
+                if ($s['key'] === $label) return $s['path'];
+            }
+        }
         return null;
     }
 
@@ -171,10 +242,17 @@ final class LogsViewerEndpoint
                 if ($c['key'] === $label) return $c['label'];
             }
         }
+        if (strpos($label, 'script:') === 0) {
+            foreach ($this->getUserScriptLogs() as $s) {
+                if ($s['key'] === $label) return $s['label'];
+            }
+        }
         return $label;
     }
 
     private ?array $_dockerStatesCache = null;
+    private ?array $_userScriptsCache = null;
+    private static ?array $_fgScriptsCache = null;
     private ?array $_vmStatesCache = null;
     private ?array $_cfgCache = null;
     private bool $_migrationDone = false;
@@ -390,6 +468,14 @@ final class LogsViewerEndpoint
         return $this->csvToArray((string)($cfg[$key] ?? ''));
     }
 
+    private function getEnabledScripts(array &$cfg, string $context): array
+    {
+        $key = ($context === 'tool') ? 'TOOL_ENABLED_USER_SCRIPTS' : 'DASH_ENABLED_USER_SCRIPTS';
+        if ($context === 'dash') $this->migrateDashIfNeeded($cfg);
+        if (!array_key_exists($key, $cfg)) return [];
+        return $this->csvToArray((string)($cfg[$key] ?? ''));
+    }
+
     private function getEnabledCustom(array &$cfg, string $context): array
     {
         $key = ($context === 'tool') ? 'TOOL_ENABLED_CUSTOM_LOGS' : 'DASH_ENABLED_CUSTOM_LOGS';
@@ -436,6 +522,24 @@ final class LogsViewerEndpoint
             ];
         }
 
+        $enabledScripts = $this->getEnabledScripts($cfg, $context);
+        $scriptsAvailable = $this->isUserScriptsAvailable();
+        $userScripts = [];
+        if ($scriptsAvailable) {
+            foreach ($this->getUserScriptLogs() as $s) {
+                $exists        = is_file($s['path']) && is_readable($s['path']);
+                $userScripts[] = [
+                    'key'     => $s['key'],
+                    'name'    => $s['label'],
+                    'path'    => $s['path'],
+                    'status'  => $this->getUserScriptStatus($s['folder']),
+                    'exists'  => $exists,
+                    'size'    => $exists ? (int)@filesize($s['path']) : 0,
+                    'enabled' => in_array($s['key'], $enabledScripts, true),
+                ];
+            }
+        }
+
         $customLogs = [];
         foreach ($this->getCustomLogs() as $c) {
             $exists       = is_file($c['path']) && is_readable($c['path']);
@@ -472,6 +576,7 @@ final class LogsViewerEndpoint
             'system' => ['available' => true,             'sources' => $systemLogs],
             'docker' => ['available' => $dockerAvailable, 'sources' => $dockerContainers],
             'vm'     => ['available' => $vmAvailable,     'sources' => $vms],
+            'script' => ['available' => $scriptsAvailable, 'sources' => $userScripts],
             'custom' => ['available' => true,             'sources' => $customLogs],
         ]);
     }
@@ -689,7 +794,7 @@ final class LogsViewerEndpoint
         $category = (string)($_GET['category'] ?? 'system');
 
         $source = (string)($_GET['source'] ?? '');
-        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $source)) {
+        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._:-]{1,80}$/', $source)) {
             $source = '';
         }
         $singleSource = ($source !== '') ? $source : null;
@@ -700,6 +805,8 @@ final class LogsViewerEndpoint
             $rows = $this->fetchDockerLogs($cfg, $context, $singleSource, $normTs);
         } elseif ($category === 'vm') {
             $rows = $this->fetchVmLogs($cfg, $context, $singleSource);
+        } elseif ($category === 'script') {
+            $rows = $this->fetchUserScriptLogs($cfg, $context, $singleSource);
         } elseif ($category === 'custom') {
             $rows = $this->fetchCustomLogs($cfg, $context, $singleSource);
         } else {
@@ -760,6 +867,59 @@ final class LogsViewerEndpoint
                 'shown_lines'  => $this->countLinesInText($text),
                 'max_lines'    => $maxLines,
                 'source'       => 'system',
+                'file_size'    => $snapSize,
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function fetchUserScriptLogs(array $cfg, string $context, ?string $singleSource = null): array
+    {
+        $keys = $this->getEnabledScripts($cfg, $context);
+        if ($singleSource !== null) {
+            $keys = in_array($singleSource, $keys, true) ? [$singleSource] : [];
+        }
+        if (empty($keys)) return [];
+        $maxLines = $this->getMaxLines($cfg);
+        $rows     = [];
+
+        foreach ($this->getUserScriptLogs() as $s) {
+            if (!in_array($s['key'], $keys, true)) continue;
+            $path = $s['path'];
+
+            $state = $this->getUserScriptStatus($s['folder']);
+
+            [$fh, $snapSize] = $this->openSnapshot($path);
+            if ($state === 'foreground') {
+                if ($fh !== null) fclose($fh);
+                // foreground output is streamed to the browser, nothing lands on disk
+                $text  = "Running in the foreground. The output is going to the User Scripts window, not to a file.";
+                $total = null;
+            } elseif ($fh === null) {
+                $text = ($state === 'running')
+                    ? "Started. Nothing written yet."
+                    : "No log on disk. This script has not run in the background since the last boot, or its last run was in the foreground.";
+                $total = null;
+            } elseif ($snapSize === 0) {
+                fclose($fh);
+                $text  = ($state === 'running') ? "Running. Nothing written yet." : "Log is empty.";
+                $total = 0;
+            } else {
+                $text = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
+                fclose($fh);
+                $total = $this->fastCountLines($path);
+            }
+            $text = $this->forceValidUtf8($text);
+            $rows[] = [
+                'name'         => $s['key'],
+                'display_name' => $s['label'],
+                'status'       => $state,
+                'log'          => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
+                'total_lines'  => $total,
+                'shown_lines'  => $this->countLinesInText($text),
+                'max_lines'    => $maxLines,
+                'source'       => 'script',
                 'file_size'    => $snapSize,
             ];
         }
@@ -957,7 +1117,7 @@ final class LogsViewerEndpoint
             $name = basename($file, '.zip');
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $name)) continue;
 
-            $contents = ['system' => 0, 'docker' => 0, 'vms' => 0, 'custom' => 0];
+            $contents = ['system' => 0, 'docker' => 0, 'vms' => 0, 'scripts' => 0, 'custom' => 0];
             // the per-folder counts are cosmetic, the list must still load if php has no zip extension
             if (class_exists('\ZipArchive')) {
                 $za = new \ZipArchive();
@@ -967,6 +1127,7 @@ final class LogsViewerEndpoint
                         if (str_starts_with($entry, 'system/') && !str_ends_with($entry, '/')) $contents['system']++;
                         elseif (str_starts_with($entry, 'docker/') && !str_ends_with($entry, '/')) $contents['docker']++;
                         elseif (str_starts_with($entry, 'vms/') && !str_ends_with($entry, '/')) $contents['vms']++;
+                        elseif (str_starts_with($entry, 'scripts/') && !str_ends_with($entry, '/')) $contents['scripts']++;
                         elseif (str_starts_with($entry, 'custom/') && !str_ends_with($entry, '/')) $contents['custom']++;
                     }
                     $za->close();
@@ -1070,7 +1231,7 @@ final class LogsViewerEndpoint
 
         $cmd = escapeshellcmd($phpBin) . ' -f ' . escapeshellarg($script) . ' 2>/dev/null';
 
-        // the scan script takes this same lock, hand it over before starting the child
+        // the child takes this same lock, release it first
         @flock($fh, LOCK_UN); @fclose($fh);
 
         $count = (int)trim((string)@shell_exec($cmd));
@@ -1212,7 +1373,7 @@ final class LogsViewerEndpoint
         return ($t === '') ? 0 : substr_count($t, "\n") + 1;
     }
 
-    // read backwards in chunks from the snapshot size so we don't load the whole file to get the last N lines
+    // read backwards in chunks, the whole file would not fit in memory
     private function tailFromSnapshot($fh, ?int $snapSize, int $lines): string
     {
         if ($snapSize === null) {
@@ -1242,6 +1403,9 @@ final class LogsViewerEndpoint
             }
             if ($readBytes >= self::BACKREAD_CAP_BYTES) break;
         }
+
+        // reaching offset 0 means the carry holds the first line of the file, not a partial one
+        if ($pos === 0 && $carry !== '') array_unshift($collected, $carry);
 
         while ($collected && end($collected) === '') array_pop($collected);
         if (!$collected) return "Log is empty.";
@@ -1331,7 +1495,7 @@ final class LogsViewerEndpoint
         return preg_replace('/[^\P{C}\n\t\r]+/u', '', $s) ?? $s;
     }
 
-    // brief cache window, a quarter of the refresh interval, so rapid polls don't re-read the same file
+    // a quarter of the refresh interval, enough to absorb rapid polls
     private function computeMicroCacheMs(array $cfg): int
     {
         if ((string)($cfg['REFRESH_ENABLED'] ?? '1') !== '1') return 0;
@@ -1342,16 +1506,17 @@ final class LogsViewerEndpoint
 
     private function cacheKey(array $cfg): string
     {
-        // sanitised here too: the raw values would let any distinct string mint its own cache file in /tmp
+        // sanitised here too, or any string would mint its own cache file
         $category  = (string)($_GET['category'] ?? 'system');
-        if (!in_array($category, ['system', 'docker', 'vm', 'custom'], true)) $category = 'system';
+        if (!in_array($category, ['system', 'docker', 'vm', 'script', 'custom'], true)) $category = 'system';
         $source    = (string)($_GET['source'] ?? '');
-        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $source)) $source = '';
+        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._:-]{1,80}$/', $source)) $source = '';
         $ctx       = $this->isToolContext() ? 'tool' : 'dash';
         $sysKey    = $this->isToolContext() ? 'TOOL_ENABLED_SYSTEM_LOGS'       : 'DASH_ENABLED_SYSTEM_LOGS';
         $dockerKey = $this->isToolContext() ? 'TOOL_ENABLED_DOCKER_CONTAINERS' : 'DASH_ENABLED_DOCKER_CONTAINERS';
         $vmKey     = $this->isToolContext() ? 'TOOL_ENABLED_VMS'               : 'DASH_ENABLED_VMS';
         $customKey = $this->isToolContext() ? 'TOOL_ENABLED_CUSTOM_LOGS'       : 'DASH_ENABLED_CUSTOM_LOGS';
+        $scriptKey = $this->isToolContext() ? 'TOOL_ENABLED_USER_SCRIPTS'      : 'DASH_ENABLED_USER_SCRIPTS';
         $normTs    = (($_GET['_normts'] ?? '') === '1') ? '1' : '0';
         return hash('sha256', implode('|', [
             'states', $category, $ctx, $source, $normTs,
@@ -1359,6 +1524,7 @@ final class LogsViewerEndpoint
             (string)($cfg[$dockerKey] ?? ''),
             (string)($cfg[$vmKey] ?? ''),
             (string)($cfg[$customKey] ?? ''),
+            (string)($cfg[$scriptKey] ?? ''),
             (string)($cfg['REFRESH_ENABLED'] ?? ''),
             (string)($cfg['REFRESH_INTERVAL'] ?? ''),
         ]));

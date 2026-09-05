@@ -1,4 +1,4 @@
-Menu="SystemInformation"
+Menu="ViewersSuite"
 Name="Logs Viewer"
 Icon="img/logsviewermain.png"
 Type="xmenu"

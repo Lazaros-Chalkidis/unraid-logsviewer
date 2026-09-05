@@ -38,7 +38,7 @@ CHANGELOG_MD_FILE="CHANGELOG.md"
 if [[ -f "${CHANGELOG_MD_FILE}" ]]; then
   CHANGES_BLOCK="$(cat "${CHANGELOG_MD_FILE}")"
 
-  # The plg ships the whole file, so a stale top entry means users read notes for a version they didn't get.
+  # the plg ships the whole file, a stale top entry misleads users
   TOP_ENTRY=$(grep -m1 '^## ' "${CHANGELOG_MD_FILE}" | sed 's/^##[[:space:]]*//')
   if [[ "${TOP_ENTRY}" != "${VERSION}" ]]; then
     if [[ "$BRANCH" == "main" ]]; then
@@ -175,7 +175,7 @@ find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
 
 # /etc/cron.d is tmpfs, the schedule only survives a reboot because we mirror it to flash
 if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
-  # an update runs this on a live cron table that may already hold our lines, drop them before re-adding
+  # the live cron table may already hold our lines, drop them first
   sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
   cat /boot/config/plugins/&name;/logsviewer-cron.conf >> /etc/cron.d/root
   crontab /etc/cron.d/root 2>/dev/null
@@ -192,7 +192,7 @@ echo ""
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
-# Uninstall clears the runtime and the install artifacts, user config and log backups are left alone
+# runtime and install artifacts go, user config and backups stay
 BPATH=\$(grep '^BACKUP_STORAGE=' /boot/config/plugins/&name;/&name;.cfg 2>/dev/null | cut -d'"' -f2)
 
 removepkg &name;-&version;
@@ -276,7 +276,7 @@ find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
 
 # /etc/cron.d is tmpfs, the schedule only survives a reboot because we mirror it to flash
 if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
-  # an update runs this on a live cron table that may already hold our lines, drop them before re-adding
+  # the live cron table may already hold our lines, drop them first
   sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
   cat /boot/config/plugins/&name;/logsviewer-cron.conf >> /etc/cron.d/root
   crontab /etc/cron.d/root 2>/dev/null
@@ -293,7 +293,7 @@ echo ""
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
-# Uninstall clears the runtime and the install artifacts, user config and log backups are left alone
+# runtime and install artifacts go, user config and backups stay
 BPATH=\$(grep '^BACKUP_STORAGE=' /boot/config/plugins/&name;/&name;.cfg 2>/dev/null | cut -d'"' -f2)
 
 removepkg &name;-&version;

@@ -444,7 +444,7 @@ function selectSourceFromEl(el) {
 }
 
 function prettyCategory(cat) {
-    return ({ system:'System', docker:'Docker Containers', vm:'VMs', custom:'Custom' })[cat] || cat;
+    return ({ system:'System', docker:'Docker Containers', vm:'VMs', script:'User Scripts', custom:'Custom' })[cat] || cat;
 }
 
 function startPolling() {
@@ -661,7 +661,7 @@ function setSidebarSize(cat, name, bytes) {
 
 function applySidebarSizes(states) {
     if (!states || typeof states !== 'object') return;
-    ['system', 'docker', 'vm', 'custom'].forEach(function (cat) {
+    ['system', 'docker', 'vm', 'script', 'custom'].forEach(function (cat) {
         var group = states[cat];
         if (!group || !group.sources || !group.sources.length) return;
         group.sources.forEach(function (s) {

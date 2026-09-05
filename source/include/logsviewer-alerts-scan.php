@@ -83,6 +83,20 @@ if (!function_exists('lv_alert_load_custom_logs')) {
     }
 }
 
+if (!function_exists('lv_alert_load_user_scripts')) {
+    // paths come from folder names on disk, never from user input
+    function lv_alert_load_user_scripts(array $systemLogs): array {
+        foreach ((array)@glob('/boot/config/plugins/user.scripts/scripts/*/script') as $scriptFile) {
+            $folder = basename(dirname($scriptFile));
+            if ($folder === '' || strpos($folder, '..') !== false) continue;
+            $key = 'script:' . $folder;
+            if (isset($systemLogs[$key])) continue;
+            $systemLogs[$key] = '/tmp/user.scripts/tmpScripts/' . $folder . '/log.txt';
+        }
+        return $systemLogs;
+    }
+}
+
 if (!function_exists('lv_alert_load_active_mutes')) {
     // drop expired mutes while loading so a muted rule re-fires once its window passes
     function lv_alert_load_active_mutes(string $mutesFile): array {
@@ -136,7 +150,9 @@ if (!function_exists('lv_alert_send_notify')) {
             'syslog' => 'Syslog', 'syslog-previous' => 'Syslog Previous', 'dmesg' => 'Dmesg',
             'graphql-api.log' => 'GraphQL API', 'nginx-error' => 'Nginx', 'phplog' => 'PHP Log', 'libvirt' => 'Libvirt',
         ];
-        if (strpos($source, 'custom:') === 0) {
+        if (strpos($source, 'script:') === 0) {
+            $displaySource = 'User Script: ' . substr($source, 7);
+        } elseif (strpos($source, 'custom:') === 0) {
             $displaySource = 'Custom: ' . ucwords(str_replace(['custom:', '-'], ['', ' '], $source));
         } else {
             $displaySource = $sourceNames[$source] ?? ucfirst($source);
@@ -184,6 +200,7 @@ if (!function_exists('lv_run_alerts_scan')) {
         }
 
         $systemLogs = lv_alert_load_custom_logs($customPathsFile, $systemLogs);
+        $systemLogs = lv_alert_load_user_scripts($systemLogs);
 
         $rules     = lv_alert_load_json($rulesFile, []);
         $offsets   = lv_alert_load_json($offsetsFile, []);
@@ -219,7 +236,7 @@ if (!function_exists('lv_run_alerts_scan')) {
                 $savedInode  = (int)($cursor['inode']  ?? 0);
                 $savedOffset = (int)($cursor['offset'] ?? 0);
             } else {
-                // no saved cursor (first run or /tmp cleared by a reboot): start at the end, don't replay old lines
+                // no cursor yet, start at the end instead of replaying old lines
                 $savedInode  = $currentInode;
                 $savedOffset = $fileSize;
             }

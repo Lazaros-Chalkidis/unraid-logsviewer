@@ -8,8 +8,9 @@
   display: flex;
   flex-direction: column;
 
-  height: calc(100vh - 300px);
-  min-height: 420px;
+  height: calc(100vh - 280px);
+  min-height: 360px;
+  overflow: hidden;
 }
 #lvtPanelLogs > .lvt-header { flex-shrink: 0; }
 #lvtPanelLogs > .lvt-logs-layout { flex: 1; min-height: 0; }
@@ -26,7 +27,7 @@
 
 /* source sidebar */
 .lvt-sidebar {
-  width: 220px;
+  width: 250px;
   flex-shrink: 0;
   background: rgba(0,0,0,0.18);
   border-right: 1px solid var(--lvt-border);
@@ -68,7 +69,7 @@
   color: var(--lvt-text-muted);
   background: var(--lvt-border-subtle);
   padding: 1px 6px;
-  border-radius: 8px;
+  border-radius: 3px;
   font-weight: 700;
   letter-spacing: 0;
   text-transform: none;
@@ -150,11 +151,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: .6rem .9rem;
+  padding: 0.1rem .9rem;
   background: rgba(0,0,0,.15);
   border-bottom: 1px solid var(--lvt-border);
   font-size: .9rem;
-  min-height: 36px;
+  min-height: 28px;
   flex-shrink: 0;
 }
 
@@ -275,7 +276,7 @@
   align-items: center;
   gap: .45rem;
   padding: 2px 8px;
-  font-size: .75rem;
+  font-size: .85rem;
   color: var(--lvt-health-active);
   background: rgba(76,175,80,.10);
   border: 1px solid rgba(76,175,80,.25);
@@ -386,11 +387,12 @@
   align-items: center;
   justify-content: center;
   gap: .25rem;
-  padding: 3px 8px;
-  min-width: 95px;
-  font-size: 11px;
+  padding: 2px 7px;
+  min-width: 44px;
+  min-height: 19px;
+  font-size: 8.8px;
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1;
   font-family: inherit;
   text-transform: uppercase;
   letter-spacing: .04em;
@@ -570,9 +572,9 @@
 }
 .lvt-statusbar__search > .fa-search {
   position: absolute;
-  left: .6rem;
+  left: .9rem;
   color: var(--lvt-text-muted);
-  font-size: .8rem;
+  font-size: 1.2rem;
   pointer-events: none;
 }
 .lvt-statusbar__search input {
@@ -583,7 +585,7 @@
   border-radius: 4px;
   color: var(--lvt-text);
   font-size: 1.15rem;
-  padding: 0 1.9rem;
+  padding: 0 2.9rem;
   outline: none;
   font-family: inherit;
   box-sizing: border-box;
@@ -642,11 +644,11 @@
   display: inline-flex;
   align-items: center;
   gap: .5rem;
-  font-size: 1rem;
+  font-size: 1.25rem;
   color: var(--lvt-text-mid);
   flex-shrink: 0;
 }
-.lvt-merge-bar__info .fa { color: var(--lvt-accent); opacity: .85; font-size: 1.1rem; }
+.lvt-merge-bar__info .fa { color: var(--lvt-accent); opacity: .85; font-size: 1.25rem; }
 .lvt-merge-bar__chips {
   display: flex;
   gap: .3rem;
@@ -769,16 +771,29 @@
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--error.is-active    { background: var(--lvt-sev-error)    !important; border-color: var(--lvt-sev-error)    !important; color: #fff !important; }
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--critical.is-active { background: var(--lvt-sev-critical) !important; border-color: var(--lvt-sev-critical) !important; color: #fff !important; }
 
+/* unraid styles plain buttons, so the panel rules need the same weight as the badges */
+#lvtPanelLogs .lvt-mode {
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 44px !important;
+  min-height: 19px !important;
+  padding: 2px 7px !important;
+  font-size: 8.8px !important;
+  line-height: 1 !important;
+}
+
 #lvtPanelLogs .lvt-filter-dd__btn {
   box-sizing: border-box !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   min-width: 0 !important;
-  min-height: 19px !important;
+  min-height: 19.5px !important;
   padding: 2px 7px !important;
   gap: .28rem !important;
-  font-size: 8.8px !important;
+  font-size: 9.4px !important;
   line-height: 1 !important;
   background: var(--lvt-bg-subtle) !important;
   border: 1px solid var(--lvt-border-strong) !important;
@@ -799,6 +814,9 @@
   background: transparent !important;
   border: 1px solid transparent !important;
   color: var(--lvt-text-mid) !important;
+  display: block !important;
+  width: 100% !important;
+  text-align: left !important;
 }
 #lvtPanelLogs .lvt-filter-dd__item:hover {
   background: var(--lvt-border-subtle) !important;

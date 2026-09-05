@@ -34,7 +34,7 @@ chmod 700 "$BACKUP_DIR"
 
 DATE=$(date +%Y-%m-%d)
 
-# cron fires daily and the gap is measured here: */N in the day-of-month field restarts every month
+# measured here because */N in cron restarts every month
 if [ "$INTERVAL" -gt 1 ]; then
     LAST=""
     for f in "$BACKUP_DIR"/*.zip; do
@@ -133,6 +133,32 @@ if [ -n "$CUSTOM_LOGS" ]; then
         esac
     done
     rmdir "$TMPDIR/custom" 2>/dev/null
+fi
+
+# the tmp path comes from the script folder name
+SCRIPT_LOGS=$(get_cfg BACKUP_ENABLED_USER_SCRIPTS)
+if [ -n "$SCRIPT_LOGS" ]; then
+    mkdir -p "$TMPDIR/scripts"
+    IFS=',' read -ra SLOGS <<< "$SCRIPT_LOGS"
+    for slog in "${SLOGS[@]}"; do
+        case "$slog" in
+            script:*)
+                folder="${slog#script:}"
+                [ -z "$folder" ] && continue
+                case "$folder" in *..*|*/*) continue ;; esac
+                [ -f "/boot/config/plugins/user.scripts/scripts/${folder}/script" ] || continue
+                fpath="/tmp/user.scripts/tmpScripts/${folder}/log.txt"
+                [ -f "$fpath" ] || continue
+                rpath=$(readlink -f "$fpath" 2>/dev/null)
+                [ -z "$rpath" ] && continue
+                case "$rpath" in /tmp/user.scripts/tmpScripts/*) ;; *) continue ;; esac
+                safe=$(echo "$folder" | tr -cd 'a-zA-Z0-9._-')
+                [ -z "$safe" ] && continue
+                cp "$rpath" "$TMPDIR/scripts/${safe}.log" && HAS_FILES=1
+                ;;
+        esac
+    done
+    rmdir "$TMPDIR/scripts" 2>/dev/null
 fi
 
 DOCKER_CONTAINERS=$(get_cfg BACKUP_ENABLED_DOCKER_CONTAINERS)

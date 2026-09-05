@@ -1,6 +1,6 @@
 # Logs Viewer for Unraid
 
-Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page. Log backups and system alerts.
+Real-time system, Docker, VM and User Scripts log viewer with dashboard widget and dedicated Tools page. Log backups and system alerts.
 Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.
 
 <p align="center">
@@ -18,8 +18,9 @@ Live auto-refresh, severity badges, search, filtering, syntax highlighting and e
 - **System Logs**: Syslog, Syslog Previous, Dmesg, GraphQL API, Nginx Errors, PHP Log, Libvirt
 - **Docker Logs** with real-time running/stopped status indicators
 - **VM Logs** with real-time running/stopped status indicators
+- **User Scripts Logs**: finds the scripts in the User Scripts plugin and shows their output, no paths to type in
 - **Custom Logs**: point the plugin at any log file under `/var/log`, `/mnt/user` or `/mnt/cache` and it shows up everywhere
-- **Log Backups**: scheduled snapshots of all enabled sources, daily or every 2 to 4 days, compressed to a path you choose, with retention control and calendar download
+- **Log Backups**: scheduled snapshots of every source you enable, daily or every 2 to 4 days, compressed to a path you choose, with retention control and calendar download
 - **Alerts**: pattern-based rules that scan logs every 1/2/5 minutes and push notifications through Unraid's notification system when a match is found. Includes one-click presets for failed logins, disk errors, OOM, kernel panics, array errors and Docker crashes
 - **Search**: match highlighting with next/prev navigation
 - **Filtering**: by severity level (Info, Warnings, Errors, Critical) or login events
@@ -29,7 +30,7 @@ Live auto-refresh, severity badges, search, filtering, syntax highlighting and e
 - **Fonts**: system monospace by default. The four named fonts are optional and load from Google Fonts, falling back to your system monospace if the server has no internet access
 - **Autoscroll**: follows new entries as they arrive, with pause-on-hover option
 - **Export**: `.log`, `.txt`, `.json` or `.csv`, with parsed timestamps and levels in the structured formats
-- **Responsive**: works from wide monitors down to phones (five breakpoints)
+- **Responsive**: works from wide monitors down to phones
 - **Theme Support**: Black, Gray, Azure and White
 - **Independent Settings**: Dashboard widget and Tool page configured separately
 - **Performance Friendly**: single-source polling, content hash detection, pre-compiled regex, smart tail limits
@@ -60,6 +61,7 @@ https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/logsv
 ## Configuration
 
 Go to **Settings → Logs Viewer** after installing. Four tabs: Dashboard, Tool, Backup and Alerts, each with their own settings.
+The full-screen viewer lives under **Tools → Viewers Suite → Logs Viewer**.
 
 | Setting | What it does |
 |---------|-------------|
@@ -72,8 +74,8 @@ Go to **Settings → Logs Viewer** after installing. Four tabs: Dashboard, Tool,
 | Search | Enable in-log search with highlighting |
 | Filter Dropdown | Quick severity filter in the tabs rail |
 | Badges / Timestamp / Toast | Toggle individual footer elements |
-| Export Format | Default format for downloads (.log / .txt / .json) |
-| Log Sources | Choose which System logs, Docker containers, VMs and custom logs to show |
+| Export Format | Default format for downloads (.log / .txt / .json, plus .csv on the Tool page) |
+| Log Sources | Choose which System logs, Docker containers, VMs, user scripts and custom logs to show |
 | Custom Log Paths | Add your own log files, shared across all four tabs |
 | Backup Enabled | Turn scheduled backups on/off |
 | Backup Schedule | Time of day the backup runs |
@@ -95,12 +97,15 @@ Automatically discovers all containers. Each entry shows a green or red dot for 
 ### VM Logs
 Automatically discovers all VMs. Same status dots. Select which ones to monitor.
 
+### User Scripts Logs
+Reads the scripts installed in the User Scripts plugin and lists them with a checkbox. The log is the one User Scripts itself keeps, so it appears after a script has run in the background or on a schedule. A run started with **Run Script** streams to the browser and leaves no file behind. The section is hidden when User Scripts is not installed.
+
 ### Custom Logs
 Add any log file under `/var/log`, `/mnt/user` or `/mnt/cache`. Paths are defined once and are then available on the Tool page, the widget, Alerts and Backup.
 
 ## Log Backups
 
-Compressed backups of all enabled log sources (system, Docker, VMs, custom) to a storage path of your choice.
+Compressed backups of the log sources you enable (system, Docker, VMs, user scripts, custom) to a storage path of your choice.
 
 Settings include:
 - Backup time (configurable hour)
@@ -117,7 +122,7 @@ Backup directories are created with restricted permissions (700) so they are not
 The alert system scans log sources at regular intervals and sends notifications through Unraid's built-in notification system when a pattern match is found.
 
 **How it works:**
-- Define rules with a name, text or regex pattern, target sources and severity level
+- Define rules with a name, text or regex pattern, target sources and severity level. Any source can be targeted, including user script and custom logs
 - Set a cooldown per rule to avoid repeated notifications for the same event
 - The scanner runs as a cron job every 1, 2 or 5 minutes depending on your setting
 - Matches are logged in the alert history (visible in the Settings page) and pushed as Unraid notifications
