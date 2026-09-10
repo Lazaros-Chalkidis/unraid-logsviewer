@@ -2,12 +2,12 @@
 <!DOCTYPE PLUGIN [
  <!ENTITY name "logsviewer">
  <!ENTITY author "Lazaros Chalkidis">
- <!ENTITY version "2026.09.05">
+ <!ENTITY version "2026.09.10">
  <!ENTITY branch "main">
  <!ENTITY gitURL "https://github.com/Lazaros-Chalkidis/unraid-logsviewer">
  <!ENTITY pluginURL "&gitURL;/releases/download/&version;/&name;-&version;.txz">
  <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
- <!ENTITY md5 "6548dec1c9fc5ccaf4d5c02e786ebfa4">
+ <!ENTITY md5 "4df3bb576883c66f80adfc1fa795aeaf">
  <!ENTITY launch "Settings/LogsviewerSettings">
 ]>
 
@@ -20,6 +20,12 @@ Real-time system, Docker and VM log viewer with dashboard widget and dedicated T
 <CHANGES><![CDATA[
 
 # Logs Viewer
+
+## 2026.09.10
+
+### Fixed
+
+- The dashboard scrolled sideways into empty space when the widget sat in a narrow column. The invisible select behind the Filter button was being sized by Unraid rather than by the button, so it stuck out past the edge. Reported by astran0va.
 
 ## 2026.09.05
 

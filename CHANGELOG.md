@@ -1,6 +1,12 @@
 
 # Logs Viewer
 
+## 2026.09.10
+
+### Fixed
+
+- The dashboard scrolled sideways into empty space when the widget sat in a narrow column. The invisible select behind the Filter button was being sized by Unraid rather than by the button, so it stuck out past the edge. Reported by astran0va.
+
 ## 2026.09.05
 
 ### New Features

@@ -326,6 +326,7 @@
   opacity:0.001; cursor:pointer; font-size:16px; z-index:5;
   -webkit-appearance:menulist; appearance:menulist;
   border:none; background:transparent;
+  min-width:0 !important; max-width:100% !important; margin:0 !important; box-sizing:border-box;
 }
 
 .logsviewer-tabs-row__controls .logsviewer-tabrow-ctrl{
@@ -347,9 +348,11 @@
 .logsviewer-tabrow-ctrl__label{ pointer-events:none; font-weight:500; }
 .logsviewer-tabrow-ctrl__caret{ font-size:0.73em; opacity:0.35; pointer-events:none; }
 
+/* !important because unraid sets a min-width on every select, which would size these past the button and scroll the dashboard */
 .logsviewer-tabrow-ctrl .logsviewer-filter-select,
 .logsviewer-tabrow-ctrl .logsviewer-syntax-select{
   position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:1.06rem;
+  min-width:0 !important; max-width:100% !important; margin:0 !important; box-sizing:border-box;
 }
 .logsviewer-tabrow-ctrl .logsviewer-filter-select option,
 .logsviewer-tabrow-ctrl .logsviewer-syntax-select option{ background:var(--logsviewer-tab-bg,#2c2c2c); color:var(--logsviewer-text-primary,#e0e0e0); font-size:1.06rem; }
