@@ -1,6 +1,12 @@
 
 # Logs Viewer
 
+## 2026.10.08
+
+### Fixed
+
+- If you are updating from an older version, please reboot once afterwards. Older versions set up the backup and alert schedule the wrong way and overwrote root's own cron table in the process. User Scripts set to run hourly, daily, weekly or monthly stopped running, some system tasks ran twice, and the plugin's own schedule could vanish when another plugin saved its settings. It is done the way Unraid expects now and your schedule carries over, the reboot just puts root's cron table back. Reported by hummelm10.
+
 ## 2026.09.10
 
 ### Fixed

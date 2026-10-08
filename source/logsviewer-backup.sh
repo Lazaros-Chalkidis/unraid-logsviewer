@@ -15,6 +15,10 @@ get_cfg() { grep "^$1=" "$CFG" 2>/dev/null | cut -d'"' -f2; }
 ENABLED=$(get_cfg BACKUP_ENABLED)
 [ "$ENABLED" != "1" ] && exit 0
 
+# an older version may still have its own line in root's crontab, so keep it to one run
+exec 9>/tmp/logsviewer-backup-lock
+flock -n 9 || exit 0
+
 STORAGE=$(get_cfg BACKUP_STORAGE)
 [ -z "$STORAGE" ] && exit 1
 # uninstall and retention delete inside this path, so refuse anything outside the share

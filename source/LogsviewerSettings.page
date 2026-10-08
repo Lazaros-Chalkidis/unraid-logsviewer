@@ -222,22 +222,14 @@ if (isset($_POST['#apply'])) {
 
   LogsViewerEndpoint::atomicWrite($cfg_file, LogsViewerEndpoint::cfgToIni($new_cfg));
 
-  $cronRoot = '/etc/cron.d/root';
-  $cronFlash = '/boot/config/plugins/logsviewer/logsviewer-cron.conf';
-  $cronContent = is_file($cronRoot) ? (string)@file_get_contents($cronRoot) : '';
-
-  $cronContent = preg_replace('/# LogsViewer backup schedule:\n.*logsviewer-backup\.sh.*\n?/', '', $cronContent);  // drop our old lines first, re-add below if still enabled, so other cron entries stay intact
-  $cronContent = preg_replace('/# LogsViewer alerts schedule:\n.*logsviewer-alerts\.sh.*\n?/', '', $cronContent);
-  $cronContent = rtrim($cronContent) . "\n";
-
+  // update_cron builds the crontab from /boot/config/plugins/*/*.cron and nowhere else
+  $cronFlash = '/boot/config/plugins/logsviewer/logsviewer.cron';
   $flashLines = '';
 
   if (($new_cfg['BACKUP_ENABLED'] ?? '0') === '1') {
     $schedHour = (int)($new_cfg['BACKUP_SCHEDULE'] ?? 23);
     $schedMin  = ($schedHour === 23) ? 59 : 0;
-    $backupLine = "# LogsViewer backup schedule:\n{$schedMin} {$schedHour} * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-backup.sh >/dev/null 2>&1\n";
-    $cronContent .= $backupLine;
-    $flashLines .= $backupLine;
+    $flashLines .= "# LogsViewer backup schedule:\n{$schedMin} {$schedHour} * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-backup.sh >/dev/null 2>&1\n";
 
     $backupPath = (string)($new_cfg['BACKUP_STORAGE'] ?? '');
     if ($backupPath !== '' && strncmp($backupPath, '/mnt/user/', 10) === 0) {
@@ -249,23 +241,25 @@ if (isset($_POST['#apply'])) {
   if (($new_cfg['ALERTS_ENABLED'] ?? '0') === '1') {
     $alertInterval = (int)($new_cfg['ALERTS_INTERVAL'] ?? 5);
     if ($alertInterval < 1) $alertInterval = 5;
-    $alertLine = "# LogsViewer alerts schedule:\n*/{$alertInterval} * * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-alerts.sh >/dev/null 2>&1\n";
-    $cronContent .= $alertLine;
-    $flashLines .= $alertLine;
+    $flashLines .= "# LogsViewer alerts schedule:\n*/{$alertInterval} * * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-alerts.sh >/dev/null 2>&1\n";
   }
 
-  LogsViewerEndpoint::atomicWrite($cronRoot, $cronContent);  // shared file, other plugins' entries live here too
-  @exec('crontab /etc/cron.d/root 2>/dev/null');
-
-  if ($flashLines !== '') {
-    LogsViewerEndpoint::atomicWrite($cronFlash, $flashLines);  // mirror to flash so the schedule survives a reboot (cron.d/root is tmpfs)
-  } else {
-    if (is_file($cronFlash)) @unlink($cronFlash);
-  }
-
-  // clean up cron files from older versions that used separate drop-ins
-  foreach (['/etc/cron.d/logsviewer-backup','/etc/cron.d/logsviewer-alerts','/boot/config/plugins/logsviewer/logsviewer-backup.cron','/boot/config/plugins/logsviewer/logsviewer-alerts.cron'] as $_old) {
+  // leftovers from older versions, gone before update_cron can pick them up
+  foreach (['/etc/cron.d/logsviewer-backup','/etc/cron.d/logsviewer-alerts','/boot/config/plugins/logsviewer/logsviewer-cron.conf','/boot/config/plugins/logsviewer/logsviewer-backup.cron','/boot/config/plugins/logsviewer/logsviewer-alerts.cron'] as $_old) {
     if (is_file($_old)) @unlink($_old);
+  }
+
+  if ($flashLines !== (is_file($cronFlash) ? (string)@file_get_contents($cronFlash) : '')) {  // flash write only when the schedule really changed
+    if ($flashLines !== '') LogsViewerEndpoint::atomicWrite($cronFlash, $flashLines);
+    elseif (is_file($cronFlash)) @unlink($cronFlash);
+  }
+
+  // on every save, so Apply also repairs a crontab someone rewrote by hand
+  if (is_executable('/usr/local/sbin/update_cron')) {
+    @exec('/usr/local/sbin/update_cron 2>/dev/null', $_cronOut, $_cronRc);
+    if ($_cronRc !== 0) @exec('logger -t logsviewer ' . escapeshellarg("update_cron exited {$_cronRc}, schedule not refreshed"));
+  } else {
+    @exec('logger -t logsviewer ' . escapeshellarg('update_cron missing, schedule not refreshed'));
   }
 
   $activeTab = $_POST['lv_active_tab'] ?? 'dash';

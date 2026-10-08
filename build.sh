@@ -173,18 +173,30 @@ chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
 find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
 
-# /etc/cron.d is tmpfs, the schedule only survives a reboot because we mirror it to flash
+# versions up to 2026.09.10 kept the schedule in a .conf that update_cron never reads
 if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
-  # the live cron table may already hold our lines, drop them first
-  sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
-  cat /boot/config/plugins/&name;/logsviewer-cron.conf >> /etc/cron.d/root
-  crontab /etc/cron.d/root 2>/dev/null
+  mv /boot/config/plugins/&name;/logsviewer-cron.conf /boot/config/plugins/&name;/logsviewer.cron
+fi
+rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts /boot/config/plugins/&name;/logsviewer-backup.cron /boot/config/plugins/&name;/logsviewer-alerts.cron
+
+# covers updates; at boot we are not registered yet and event/driver_loaded takes over
+if [ -x /usr/local/sbin/update_cron ]; then
+  /usr/local/sbin/update_cron
 fi
 
 echo ""
 echo "----------------------------------------------------"
 echo " &name; (&branch; build) has been installed."
 echo " Version: &version;"
+# our lines or dynamix headers in root's own crontab mean an older version copied the system table there
+if crontab -l 2>/dev/null | grep -q 'logsviewer-\|^# Generated'; then
+  echo ""
+  echo " Please reboot once when convenient. Older versions"
+  echo " of this plugin changed root's cron table, so some"
+  echo " tasks may run twice and hourly, daily, weekly or"
+  echo " monthly User Scripts may not run. A reboot puts"
+  echo " the original back."
+fi
 echo "----------------------------------------------------"
 echo ""
 </INLINE>
@@ -201,8 +213,7 @@ rm -f /boot/config/plugins/&name;/&name;-*.txz /boot/config/plugins/&name;/&name
 
 rm -rf /tmp/logsviewer_cache /tmp/logsviewer-backup-*
 rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts
-sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
-crontab /etc/cron.d/root 2>/dev/null
+# logsviewer.cron stays with the config, the manager runs update_cron after remove and skips us by then
 
 echo ""
 echo "----------------------------------------------------"
@@ -274,18 +285,30 @@ chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
 find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
 
-# /etc/cron.d is tmpfs, the schedule only survives a reboot because we mirror it to flash
+# versions up to 2026.09.10 kept the schedule in a .conf that update_cron never reads
 if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
-  # the live cron table may already hold our lines, drop them first
-  sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
-  cat /boot/config/plugins/&name;/logsviewer-cron.conf >> /etc/cron.d/root
-  crontab /etc/cron.d/root 2>/dev/null
+  mv /boot/config/plugins/&name;/logsviewer-cron.conf /boot/config/plugins/&name;/logsviewer.cron
+fi
+rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts /boot/config/plugins/&name;/logsviewer-backup.cron /boot/config/plugins/&name;/logsviewer-alerts.cron
+
+# covers updates; at boot we are not registered yet and event/driver_loaded takes over
+if [ -x /usr/local/sbin/update_cron ]; then
+  /usr/local/sbin/update_cron
 fi
 
 echo ""
 echo "----------------------------------------------------"
 echo " &name; (&branch; build) has been installed."
 echo " Version: &version;"
+# our lines or dynamix headers in root's own crontab mean an older version copied the system table there
+if crontab -l 2>/dev/null | grep -q 'logsviewer-\|^# Generated'; then
+  echo ""
+  echo " Please reboot once when convenient. Older versions"
+  echo " of this plugin changed root's cron table, so some"
+  echo " tasks may run twice and hourly, daily, weekly or"
+  echo " monthly User Scripts may not run. A reboot puts"
+  echo " the original back."
+fi
 echo "----------------------------------------------------"
 echo ""
 </INLINE>
@@ -302,8 +325,7 @@ rm -f /boot/config/plugins/&name;/&name;-*.txz /boot/config/plugins/&name;/&name
 
 rm -rf /tmp/logsviewer_cache /tmp/logsviewer-backup-*
 rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts
-sed -i '/# LogsViewer/d;/logsviewer-backup\.sh/d;/logsviewer-alerts\.sh/d' /etc/cron.d/root 2>/dev/null
-crontab /etc/cron.d/root 2>/dev/null
+# logsviewer.cron stays with the config, the manager runs update_cron after remove and skips us by then
 
 echo ""
 echo "----------------------------------------------------"
