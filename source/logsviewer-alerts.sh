@@ -5,19 +5,22 @@
 # License: GPLv3
 # =========================================================================
 
-# cron wrapper: runs the alert scan if alerts are enabled
-
 CFG="/boot/config/plugins/logsviewer/logsviewer.cfg"
+SCAN="/usr/local/emhttp/plugins/logsviewer/include/logsviewer-alerts-scan.php"
 [ ! -f "$CFG" ] && exit 0
 
-ENABLED=$(grep '^ALERTS_ENABLED=' "$CFG" 2>/dev/null | cut -d'"' -f2)
-[ "$ENABLED" != "1" ] && exit 0
-
-# unraid moves the php binary between releases, take the first one that exists
 PHP=""
 for p in /usr/bin/php /usr/local/bin/php /usr/local/emhttp/plugins/dynamix/scripts/php; do
     [ -x "$p" ] && PHP="$p" && break
 done
 [ -z "$PHP" ] && exit 1
 
-$PHP -f /usr/local/emhttp/plugins/logsviewer/include/logsviewer-alerts-scan.php
+if [ "$1" = "flush" ]; then
+    $PHP -f "$SCAN" flush
+    exit 0
+fi
+
+ENABLED=$(grep '^ALERTS_ENABLED=' "$CFG" 2>/dev/null | cut -d'"' -f2)
+[ "$ENABLED" != "1" ] && exit 0
+
+$PHP -f "$SCAN"

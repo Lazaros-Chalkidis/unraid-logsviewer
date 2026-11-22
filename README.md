@@ -19,7 +19,7 @@ Live auto-refresh, severity badges, search, filtering, syntax highlighting and e
 - **Docker Logs** with real-time running/stopped status indicators
 - **VM Logs** with real-time running/stopped status indicators
 - **User Scripts Logs**: finds the scripts in the User Scripts plugin and shows their output, no paths to type in
-- **Custom Logs**: point the plugin at any log file under `/var/log`, `/mnt/user` or `/mnt/cache` and it shows up everywhere
+- **Custom Logs**: point the plugin at any log file under `/var/log`, `/mnt/user` or `/mnt/cache` and it shows up everywhere. A path can carry the date, for folders that change every day
 - **Log Backups**: scheduled snapshots of every source you enable, daily or every 2 to 4 days, compressed to a path you choose, with retention control and calendar download
 - **Alerts**: pattern-based rules that scan logs every 1/2/5 minutes and push notifications through Unraid's notification system when a match is found. Includes one-click presets for failed logins, disk errors, OOM, kernel panics, array errors and Docker crashes
 - **Search**: match highlighting with next/prev navigation
@@ -29,10 +29,10 @@ Live auto-refresh, severity badges, search, filtering, syntax highlighting and e
 - **Syntax Highlighting**: Highlight.js and Prism.js bundled locally, no CDN calls
 - **Fonts**: system monospace by default. The four named fonts are optional and load from Google Fonts, falling back to your system monospace if the server has no internet access
 - **Autoscroll**: follows new entries as they arrive, with pause-on-hover option
-- **Export**: `.log`, `.txt`, `.json` or `.csv`, with parsed timestamps and levels in the structured formats
+- **Export**: `.log`, `.txt` or `.json` from the widget, `.log`, `.json` or `.csv` from the Tool page, with the level of each line in the structured formats
 - **Responsive**: works from wide monitors down to phones
 - **Theme Support**: Black, Gray, Azure and White
-- **Independent Settings**: Dashboard widget and Tool page configured separately
+- **Independent Settings**: Dashboard widget and Tool page configured separately, each with its own Automatic refresh, Autoscroll and Pause on hover
 - **Performance Friendly**: single-source polling, content hash detection, pre-compiled regex, smart tail limits
 
 ### Dashboard Widget PC Screen
@@ -63,18 +63,20 @@ https://raw.githubusercontent.com/Lazaros-Chalkidis/unraid-logsviewer/main/logsv
 Go to **Settings → Logs Viewer** after installing. Four tabs: Dashboard, Tool, Backup and Alerts, each with their own settings.
 The full-screen viewer lives under **Tools → Viewers Suite → Logs Viewer**.
 
+The [guide](GUIDE.md) walks through the parts that are not obvious the first time.
+
 | Setting | What it does |
 |---------|-------------|
-| Auto Refresh | Enable/disable live polling |
+| Auto Refresh | Enable/disable live polling. With it off, the Tool page gets a Refresh now button |
 | Refresh Interval | Poll frequency in seconds |
 | Tail Lines | Cap the number of lines shown |
-| Font Size & Family | Adjust log readability (default: Large) |
+| Font Size & Family | Adjust log readability |
 | Theme Preset | Color scheme for the log panel (Default, Terminal, Dim, High Contrast, Midnight, Ocean, Monokai) |
 | Syntax Highlighting | Pick Highlight.js or Prism.js |
 | Search | Enable in-log search with highlighting |
 | Filter Dropdown | Quick severity filter in the tabs rail |
 | Badges / Timestamp / Toast | Toggle individual footer elements |
-| Export Format | Default format for downloads (.log / .txt / .json, plus .csv on the Tool page) |
+| Export Format | Default format for downloads (.log / .txt / .json on the widget, .log / .json / .csv on the Tool page) |
 | Log Sources | Choose which System logs, Docker containers, VMs, user scripts and custom logs to show |
 | Custom Log Paths | Add your own log files, shared across all four tabs |
 | Backup Enabled | Turn scheduled backups on/off |
@@ -103,6 +105,8 @@ Reads the scripts installed in the User Scripts plugin and lists them with a che
 ### Custom Logs
 Add any log file under `/var/log`, `/mnt/user` or `/mnt/cache`. Paths are defined once and are then available on the Tool page, the widget, Alerts and Backup.
 
+A path can carry the date. `{YYYY}`, `{MM}` and `{DD}` are replaced with today's year, month and day, so `/var/log/hosts/{YYYY}/{MM}/{DD}/nginx/access.log` always points at today's file. Alerts pick up the new file on their own, and a backup takes the file of the day it runs.
+
 ## Log Backups
 
 Compressed backups of the log sources you enable (system, Docker, VMs, user scripts, custom) to a storage path of your choice.
@@ -115,7 +119,9 @@ Settings include:
 - Calendar view in the Settings page showing available dates
 - One-click ZIP download for any backup date
 
-Backup directories are created with restricted permissions (700) so they are not exposed through Samba shares.
+A backup folder the plugin creates is restricted to root (700) and every backup file is saved readable by root only (600), so backups are not exposed through Samba shares. A folder that already exists keeps its permissions.
+
+Backups are put together inside the backup folder, not in RAM, so a large log cannot use up the server's memory. Nothing is backed up while the array is stopped.
 
 ## Alerts
 
@@ -139,12 +145,13 @@ You can add your own rules on top of these.
 
 ## Export Formats
 
-| Format | Description |
-|--------|-------------|
-| `.log` | Plain text |
-| `.txt` | Plain text |
-| `.json` | Structured: parsed timestamp, level, hostname and service per line |
-| `.csv` | Same fields as JSON, one row per line (Tool page) |
+| Format | Where | What is in the file |
+|--------|-------|---------------------|
+| `.log` | Widget and Tool page | The log as plain text |
+| `.txt` | Widget | The log as plain text |
+| `.json` | Widget | `timestamp`, `level` and `message` for each line, with `hostname` and `service` when the line has them |
+| `.json` | Tool page | `severity` and `line` for each line |
+| `.csv` | Tool page | The same two columns, `severity` and `line`. A line starting with `=`, `+`, `-` or `@` gets an apostrophe in front, so a spreadsheet does not run it as a formula |
 
 ### Settings Page PC Screen
 ![Settings Page](screenshots/pc-settings-page.png)
@@ -169,6 +176,7 @@ unraid-logsviewer/
 │   ├── css/                        # widget.css, tool.css, tool-logs.css, settings.css
 │   ├── js/                         # widget and tool page scripts
 │   ├── include/                    # api endpoint, alert scanner, tool page partials
+│   ├── event/                      # cron reload at boot, alert history saved at array stop
 │   ├── vendor/                     # hljs + prism (local bundles)
 │   ├── Logsviewer.page             # Dashboard widget
 │   ├── LogsviewerTool.page         # Tools page
@@ -176,8 +184,11 @@ unraid-logsviewer/
 │   ├── logsviewer-alerts.sh        # Alert scanner cron wrapper
 │   └── logsviewer-backup.sh        # Backup cron wrapper
 ├── screenshots/
+├── mockups/                        # drawings used by the guide
+├── tools/                          # make_mockups.py redraws them
 ├── build.sh
 ├── CHANGELOG.md
+├── GUIDE.md
 ├── logsviewer.plg
 └── logsviewer.xml
 ```

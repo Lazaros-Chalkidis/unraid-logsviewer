@@ -2,7 +2,6 @@
 PLUGIN_NAME="logsviewer"
 # Copyright (C) 2026 Lazaros Chalkidis - License: GPLv3
 AUTHOR="Lazaros Chalkidis"
-GITHUB_USER="Lazaros-Chalkidis"
 GIT_URL="https://github.com/Lazaros-Chalkidis/unraid-logsviewer"
 PACKAGE_DIR_FINAL="packages"
 PACKAGE_DIR_TEMP="package-temp"
@@ -38,7 +37,6 @@ CHANGELOG_MD_FILE="CHANGELOG.md"
 if [[ -f "${CHANGELOG_MD_FILE}" ]]; then
   CHANGES_BLOCK="$(cat "${CHANGELOG_MD_FILE}")"
 
-  # the plg ships the whole file, a stale top entry misleads users
   TOP_ENTRY=$(grep -m1 '^## ' "${CHANGELOG_MD_FILE}" | sed 's/^##[[:space:]]*//')
   if [[ "${TOP_ENTRY}" != "${VERSION}" ]]; then
     if [[ "$BRANCH" == "main" ]]; then
@@ -49,10 +47,9 @@ if [[ -f "${CHANGELOG_MD_FILE}" ]]; then
     echo "Warning: CHANGELOG.md starts with '${TOP_ENTRY}', building '${VERSION}'"
   fi
 else
-  CHANGES_BLOCK=$'### ${VERSION}\n${CHANGES_TEXT}'
+  CHANGES_BLOCK="### ${VERSION}"$'\n'"${CHANGES_TEXT}"
 fi
 
-# "]]>" is the one string that would close the CDATA early
 CHANGES_BLOCK="${CHANGES_BLOCK//]]>/]]]]><![CDATA[>}"
 
 echo "Starting build for version ${VERSION} on branch ${BRANCH}..."
@@ -66,7 +63,6 @@ PLUGIN_DEST_PATH="${PACKAGE_DIR_TEMP}/usr/local/emhttp/plugins/${PLUGIN_NAME}"
 mkdir -p "${PLUGIN_DEST_PATH}"
 cp -R source/* "${PLUGIN_DEST_PATH}/"
 
-# the settings page reads this at runtime for the footer badge and credits
 echo "${VERSION}" > "${PLUGIN_DEST_PATH}/VERSION"
 
 cat > "${PLUGIN_DEST_PATH}/branch.meta" << METAEOF
@@ -85,11 +81,11 @@ echo "Creating package: ${FILENAME}.txz"
 tar -C ${PACKAGE_DIR_TEMP} -cJf "${PACKAGE_PATH}" usr
 
 if [ ! -f "${PACKAGE_PATH}" ]; then
-    echo "❌ Error: Package creation failed!"
+    echo "Error: Package creation failed!"
     exit 1
 fi
 
-echo "✅ Package created: $(du -h ${PACKAGE_PATH} | cut -f1)"
+echo "Package created: $(du -h ${PACKAGE_PATH} | cut -f1)"
 
 if command -v md5sum &>/dev/null; then
     PACKAGE_MD5="$(md5sum "${PACKAGE_PATH}" | cut -d' ' -f1)"
@@ -112,131 +108,14 @@ b64_nolf() {
 echo "Generating ${PLUGIN_NAME}.plg for '${BRANCH}' target..."
 
 if [[ "$LOCAL_INSTALL" == "local" ]]; then
-  PACKAGE_B64="$(b64_nolf "${PACKAGE_PATH}")"
-
-  cat > "${PLUGIN_NAME}.plg" << EOF
-<?xml version='1.0' standalone='yes'?>
-<!DOCTYPE PLUGIN [
- <!ENTITY name "${PLUGIN_NAME}">
- <!ENTITY author "${AUTHOR}">
- <!ENTITY version "${VERSION}">
- <!ENTITY branch "${BRANCH}">
- <!ENTITY gitURL "${GIT_URL}">
- <!ENTITY selfURL "&gitURL;/raw/&branch;/&name;.plg">
- <!ENTITY launch "Settings/LogsviewerSettings">
-]>
-
-<PLUGIN name="&name;" Title="Logs Viewer" author="&author;" version="&version;" pluginURL="&selfURL;" launch="&launch;" icon="img/logsviewerplugin.png" min="7.2.0" support="https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues">
-
-<DESCRIPTION>
-Real-time system, Docker and VM log viewer with dashboard widget and dedicated Tools page - Log Backups and System Alerts. Live auto-refresh, severity badges, search, filtering, syntax highlighting and export.
-</DESCRIPTION>
-
-
-<CHANGES><![CDATA[
-${CHANGES_BLOCK}
-]]></CHANGES>
-
-<!-- Local install: embed package as base64, decode on the Unraid flash, then install -->
-<FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz.b64">
-  <INLINE>${PACKAGE_B64}</INLINE>
-</FILE>
-
-<FILE Run="/bin/bash">
-<INLINE>
-mkdir -p /boot/config/plugins/&name;
-base64 -d /boot/config/plugins/&name;/&name;-&version;.txz.b64 > /boot/config/plugins/&name;/&name;-&version;.txz 2>/dev/null || \
-  base64 -D /boot/config/plugins/&name;/&name;-&version;.txz.b64 > /boot/config/plugins/&name;/&name;-&version;.txz
-rm -f /boot/config/plugins/&name;/&name;-&version;.txz.b64
-
-upgradepkg --install-new /boot/config/plugins/&name;/&name;-&version;.txz
-</INLINE>
-</FILE>
-
-<FILE Run="/bin/bash">
-<INLINE>
-# Default config only on first install, an existing user config is never touched
-CFG=/boot/config/plugins/&name;/&name;.cfg
-if [ ! -f "\$CFG" ]; then
-  mkdir -p /boot/config/plugins/&name;
-  printf '%s\n' 'REFRESH_ENABLED="1"' 'REFRESH_INTERVAL="10"' 'ENABLED_SCRIPTS=""' 'SHOW_IDLE_LOGS="0"' 'VERSION_OVERRIDE="auto"' > "\$CFG.tmp"
-  mv "\$CFG.tmp" "\$CFG"
-fi
-</INLINE>
-</FILE>
-
-<FILE Run="/bin/bash">
-<INLINE>
-# upgradepkg keeps whatever modes the archive had, so set them here
-chown -R root:root /usr/local/emhttp/plugins/&name;
-chmod -R 755 /usr/local/emhttp/plugins/&name;
-find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
-find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
-
-# versions up to 2026.09.10 kept the schedule in a .conf that update_cron never reads
-if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
-  mv /boot/config/plugins/&name;/logsviewer-cron.conf /boot/config/plugins/&name;/logsviewer.cron
-fi
-rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts /boot/config/plugins/&name;/logsviewer-backup.cron /boot/config/plugins/&name;/logsviewer-alerts.cron
-
-# covers updates; at boot we are not registered yet and event/driver_loaded takes over
-if [ -x /usr/local/sbin/update_cron ]; then
-  /usr/local/sbin/update_cron
-fi
-
-echo ""
-echo "----------------------------------------------------"
-echo " &name; (&branch; build) has been installed."
-echo " Version: &version;"
-# our lines or dynamix headers in root's own crontab mean an older version copied the system table there
-if crontab -l 2>/dev/null | grep -q 'logsviewer-\|^# Generated'; then
-  echo ""
-  echo " Please reboot once when convenient. Older versions"
-  echo " of this plugin changed root's cron table, so some"
-  echo " tasks may run twice and hourly, daily, weekly or"
-  echo " monthly User Scripts may not run. A reboot puts"
-  echo " the original back."
-fi
-echo "----------------------------------------------------"
-echo ""
-</INLINE>
-</FILE>
-
-<FILE Run="/bin/bash" Method="remove">
-<INLINE>
-# runtime and install artifacts go, user config and backups stay
-BPATH=\$(grep '^BACKUP_STORAGE=' /boot/config/plugins/&name;/&name;.cfg 2>/dev/null | cut -d'"' -f2)
-
-removepkg &name;-&version;
-rm -rf /usr/local/emhttp/plugins/&name;
-rm -f /boot/config/plugins/&name;/&name;-*.txz /boot/config/plugins/&name;/&name;-*.txz.b64 /boot/config/plugins/&name;/&name;-*.md5
-
-rm -rf /tmp/logsviewer_cache /tmp/logsviewer-backup-*
-rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts
-# logsviewer.cron stays with the config, the manager runs update_cron after remove and skips us by then
-
-echo ""
-echo "----------------------------------------------------"
-echo " &name; has been removed."
-echo ""
-echo " Kept on purpose, delete by hand if you want them gone:"
-echo "   settings, alert rules and history:"
-echo "     /boot/config/plugins/&name;"
-if [ -d "\$BPATH" ]; then
-  echo "   log backups:"
-  echo "     \$BPATH"
-fi
-echo "----------------------------------------------------"
-echo ""
-</INLINE>
-</FILE>
-
-</PLUGIN>
-EOF
-
+  PACKAGE_TYPE=' Type="base64"'
+  PACKAGE_SOURCE="<INLINE>$(b64_nolf "${PACKAGE_PATH}")</INLINE>"
 else
+  PACKAGE_TYPE=''
+  PACKAGE_SOURCE='<URL>&pluginURL;</URL>'
+fi
 
-  cat > "${PLUGIN_NAME}.plg" << EOF
+cat > "${PLUGIN_NAME}.plg" << EOF
 <?xml version='1.0' standalone='yes'?>
 <!DOCTYPE PLUGIN [
  <!ENTITY name "${PLUGIN_NAME}">
@@ -260,18 +139,33 @@ Real-time system, Docker and VM log viewer with dashboard widget and dedicated T
 ${CHANGES_BLOCK}
 ]]></CHANGES>
 
-<FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new">
-<URL>&pluginURL;</URL>
+<FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new"${PACKAGE_TYPE}>
+${PACKAGE_SOURCE}
 <MD5>&md5;</MD5>
 </FILE>
 
 <FILE Run="/bin/bash">
 <INLINE>
-# Default config only on first install, an existing user config is never touched
+[ -f /var/lib/pkgtools/packages/&name;-&version; ] || exit 0
+STAMP=\$(date +%Y-%m-%d,%T)
+for pkg in /var/lib/pkgtools/packages/&name;-[0-9]*; do
+  if [ ! -f "\$pkg" ] || [ "\${pkg##*/}" = "&name;-&version;" ]; then continue; fi
+  mv "\$pkg" "\$pkg-upgraded-\$STAMP" || continue
+  removepkg "\${pkg##*/}-upgraded-\$STAMP" | grep -v 'Skipping\.\|Removing files:'
+done
+for txz in /boot/config/plugins/&name;/&name;-[0-9]*.txz; do
+  if [ ! -f "\$txz" ] || [ "\${txz##*/}" = "&name;-&version;.txz" ]; then continue; fi
+  if rm -f "\$txz"; then echo "Removed old package \${txz##*/}"; else echo "Could not remove old package \${txz##*/}"; fi
+done
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
 CFG=/boot/config/plugins/&name;/&name;.cfg
 if [ ! -f "\$CFG" ]; then
   mkdir -p /boot/config/plugins/&name;
-  printf '%s\n' 'REFRESH_ENABLED="1"' 'REFRESH_INTERVAL="10"' 'ENABLED_SCRIPTS=""' 'SHOW_IDLE_LOGS="0"' 'VERSION_OVERRIDE="auto"' > "\$CFG.tmp"
+  printf '%s\n' 'REFRESH_ENABLED="1"' 'REFRESH_INTERVAL="10"' > "\$CFG.tmp"
   mv "\$CFG.tmp" "\$CFG"
 fi
 </INLINE>
@@ -279,28 +173,33 @@ fi
 
 <FILE Run="/bin/bash">
 <INLINE>
-# upgradepkg keeps whatever modes the archive had, so set them here
 chown -R root:root /usr/local/emhttp/plugins/&name;
 chmod -R 755 /usr/local/emhttp/plugins/&name;
 find /usr/local/emhttp/plugins/&name; -type f -exec chmod 644 {} \;
 find /usr/local/emhttp/plugins/&name; -name '*.sh' -exec chmod 755 {} \;
 
-# versions up to 2026.09.10 kept the schedule in a .conf that update_cron never reads
 if [ -f /boot/config/plugins/&name;/logsviewer-cron.conf ]; then
   mv /boot/config/plugins/&name;/logsviewer-cron.conf /boot/config/plugins/&name;/logsviewer.cron
 fi
 rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts /boot/config/plugins/&name;/logsviewer-backup.cron /boot/config/plugins/&name;/logsviewer-alerts.cron
 
-# covers updates; at boot we are not registered yet and event/driver_loaded takes over
 if [ -x /usr/local/sbin/update_cron ]; then
   /usr/local/sbin/update_cron
+  LINK=/var/log/plugins/&name;.plg
+  if [ ! -L "\$LINK" ] &amp;&amp; [ -S /var/run/emhttpd.socket ] &amp;&amp; [ -s /boot/config/plugins/&name;/logsviewer.cron ]; then
+    (
+      for _ in {1..30}; do
+        sleep 1
+        if [ -L "\$LINK" ]; then /usr/local/sbin/update_cron; break; fi
+      done
+    ) >/dev/null 2>&amp;1 &amp;
+  fi
 fi
 
 echo ""
 echo "----------------------------------------------------"
 echo " &name; (&branch; build) has been installed."
 echo " Version: &version;"
-# our lines or dynamix headers in root's own crontab mean an older version copied the system table there
 if crontab -l 2>/dev/null | grep -q 'logsviewer-\|^# Generated'; then
   echo ""
   echo " Please reboot once when convenient. Older versions"
@@ -316,16 +215,20 @@ echo ""
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
-# runtime and install artifacts go, user config and backups stay
 BPATH=\$(grep '^BACKUP_STORAGE=' /boot/config/plugins/&name;/&name;.cfg 2>/dev/null | cut -d'"' -f2)
 
-removepkg &name;-&version;
+if [ -x /usr/local/emhttp/plugins/&name;/logsviewer-alerts.sh ]; then
+  /usr/local/emhttp/plugins/&name;/logsviewer-alerts.sh flush
+fi
+
+for pkg in /var/lib/pkgtools/packages/&name;-[0-9]*; do
+  if [ -f "\$pkg" ]; then removepkg "\${pkg##*/}"; fi
+done
 rm -rf /usr/local/emhttp/plugins/&name;
 rm -f /boot/config/plugins/&name;/&name;-*.txz /boot/config/plugins/&name;/&name;-*.txz.b64 /boot/config/plugins/&name;/&name;-*.md5
 
 rm -rf /tmp/logsviewer_cache /tmp/logsviewer-backup-*
 rm -f /etc/cron.d/logsviewer-backup /etc/cron.d/logsviewer-alerts
-# logsviewer.cron stays with the config, the manager runs update_cron after remove and skips us by then
 
 echo ""
 echo "----------------------------------------------------"
@@ -346,12 +249,10 @@ echo ""
 </PLUGIN>
 EOF
 
-fi
-
 rm -rf ${PACKAGE_DIR_TEMP}
 
 echo ""
-echo "🎉 Build completed successfully!"
-echo "📦 Version: ${VERSION}"
-echo "📁 Package: ${PACKAGE_PATH}"
-echo "📄 PLG file: ${PLUGIN_NAME}.plg"
+echo "Build completed successfully!"
+echo "Version: ${VERSION}"
+echo "Package: ${PACKAGE_PATH}"
+echo "PLG file: ${PLUGIN_NAME}.plg"

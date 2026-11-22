@@ -5,5 +5,4 @@
 # License: GPLv3
 # =========================================================================
 
-# at boot we get registered after our install script, too late for its update_cron
 /usr/local/sbin/update_cron

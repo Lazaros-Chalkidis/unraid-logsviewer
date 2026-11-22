@@ -13,7 +13,6 @@ window.__lvtLogsLoaded = true;
 var _cfg     = window.lvToolConfig || {};
 var _apiUrl  = _cfg.apiUrl  || '/plugins/logsviewer/include/logsviewer_api.php';
 var _token   = _cfg.lvToken || '';
-var _tokenRetried = false;
 
 var _active     = null;
 var _currentRow = null;
@@ -33,11 +32,15 @@ var _refreshSecs = (function () {
     return (n === 3 || n === 5 || n === 10 || n === 20) ? n : 5;
 })();
 var _pollMs      = _refreshSecs * 1000;
+var _refreshOn   = _cfg.refreshOn !== false;
+var _follow      = _cfg.autoScroll !== false;
+var _hoverPause  = _cfg.pauseOnHover !== false;
 var _exportFormat = (function () {
     var f = String(_cfg.exportFormat || 'txt').toLowerCase();
     return (f === 'txt' || f === 'json' || f === 'csv') ? f : 'txt';
 })();
 var _inFlight    = false;
+var _fetchGen    = 0;
 var _lastHash    = null;
 var _autoScroll  = true;
 var _visible     = false;
@@ -47,17 +50,20 @@ var _ctxLine      = '';
 var _ctxSelection = '';
 var _ctxMenuOpen  = false;
 var _pointerInLog = false;
+var _touchAt      = 0;
+var _dragHeld     = false;
 
 var _mergeSources    = [];
 var _mergeApplyTimer = null;
 var _mergeInFlight   = 0;
+var _mergeGen        = 0;
 
 var SEV_RULES = [
-    { re: /\b(emerg(?:ency)?|critical|fatal|panic)\b/i, cls: 'critical' },
-    { re: /\b(error|err)\b/i,                            cls: 'error'    },
-    { re: /\b(warn(?:ing)?)\b/i,                         cls: 'warning'  },
-    { re: /\bsuccessful (?:login|logout)\b/i,            cls: 'success'  },
-    { re: /\b(info|notice)\b/i,                          cls: 'info'     }
+    { re: /\b(emerg(?:ency)?|crit(?:ical)?|alert|fatal|panic)\b/i, cls: 'critical' },
+    { re: /\b(error|err)\b/i,                                  cls: 'error'    },
+    { re: /\b(warn(?:ing)?)\b/i,                               cls: 'warning'  },
+    { re: /\bsuccessful (?:login|logout)\b/i,                  cls: 'success'  },
+    { re: /\b(info|notice)\b/i,                                cls: 'info'     }
 ];
 
 var LEVEL_KEEP = {
@@ -95,21 +101,20 @@ function bindGlobal() {
           downloadCurrentLog();
       })
 
+      .on('click', '#lvtLogsRefresh', function (e) {
+          e.preventDefault();
+          refreshNow();
+      })
+
       .on('click', '.lvt-mode:not(:disabled)', function () {
           var m = $(this).data('mode');
           if (m === _mode) return;
           setMode(m);
       })
 
-      .on('mouseenter', '#lvtLogContent', function () {
-          _pointerInLog = true;
-          setPaused(true);
-      })
-      .on('mouseleave', '#lvtLogContent', function () {
-          _pointerInLog = false;
-
-          if (!_ctxMenuOpen) setPaused(false);
-      })
+      .on('mousedown', '#lvtLogContent', function (e) { if (e.button === 0 && !_dragHeld && !justTouched()) holdDrag(); })
+      .on('mouseenter', '#lvtLogContent', function () { if (!justTouched()) pointerAt(true); })
+      .on('mouseleave', '#lvtLogContent', function () { if (!justTouched() && !_dragHeld) pointerAt(false); })
 
       .on('click', '.lvt-sev-count[data-sev-filter]', function () {
           var lvl = String($(this).data('sev-filter') || '');
@@ -165,8 +170,15 @@ function bindGlobal() {
 
     document.addEventListener('visibilitychange', function () {
         if (document.hidden) stopPolling();
-        else if (_visible && _active) startPolling();
+        else if (_visible && _active && _mode === 'live' && !_paused) startPolling();
     });
+
+    document.addEventListener('touchstart', function (e) {
+        _touchAt = Date.now();
+        var $t = $(e.target);
+        if (!$t.closest('#lvtLogCtxMenu').length) pointerAt($t.closest('#lvtLogContent').length > 0);
+    }, { passive: true });
+    document.addEventListener('touchend', function () { _touchAt = Date.now(); }, { passive: true });
 
     buildContextMenu();
 
@@ -180,7 +192,7 @@ function bindGlobal() {
 
     $(document).on('click', function (e) {
         var $tgt = $(e.target);
-        if (!$tgt.closest('#lvtLogCtxMenu').length) hideContextMenu();
+        if (!$tgt.closest('#lvtLogCtxMenu').length) hideContextMenu(e);
 
         if (!$tgt.closest('#lvtFilterDd').length) {
             $('#lvtFilterDdMenu').prop('hidden', true);
@@ -199,24 +211,14 @@ function bindGlobal() {
     $(document).on('click', '#lvtLogCtxMenu .lvt-ctxmenu__item:not(.lvt-ctxmenu__item--disabled)', function (e) {
         e.preventDefault();
         var act = $(this).data('action');
-        hideContextMenu();
+        hideContextMenu(e);
         if      (act === 'copy')   copyCurrentLine();
         else if (act === 'filter') filterOnSelection();
     });
 }
 
-function bindLocal() {
-    var el = document.getElementById('lvtLogContent');
-    if (!el) return;
-    el.onscroll = function () {
-        var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 24;
-        _autoScroll = atBottom;
-    };
-}
-
 function onShow(firstTime) {
     _visible = true;
-    bindLocal();
 
     fetchSidebarSizes();
 
@@ -235,8 +237,6 @@ function onShow(firstTime) {
         $('#lvtSidebar .lvt-source').removeClass('is-active');
         $('#lvtSidebar .lvt-source[data-cat="' + _active.category + '"][data-name="' + cssEsc(_active.name) + '"]')
             .addClass('is-active');
-        $('#lvtBreadcrumbCategory').text(prettyCategory(_active.category));
-        $('#lvtBreadcrumbSource').text(_active.label);
         _paused = false;
         updatePollIndicator();
 
@@ -265,7 +265,6 @@ function onHide() {
     stopPolling();
 }
 
-// switch between single-log view and merge view
 function setMode(m) {
     if (m !== 'live' && m !== 'merge') return;
     _mode = m;
@@ -273,31 +272,32 @@ function setMode(m) {
     applyModeUI();
 
     if (m === 'merge') {
+        _fetchGen++;
+        _inFlight = false;
         stopPolling();
         clearTextFilter();
         applyMergeSelectionUI();
         if (_mergeSources.length === 0) renderMergeEmpty();
         else scheduleMergeFetch();
     } else {
-
+        if (_mergeApplyTimer) clearTimeout(_mergeApplyTimer);
         clearTextFilter();
         $('#lvtSidebar .lvt-source').removeClass('is-merge-selected');
+        _lastHash = null;
+        _autoScroll = true;
+        _rawLines = []; _sevs = []; _counts = { info:0, warning:0, error:0, critical:0, success:0 };
+        _currentRow = null;
+        updateStatusbar();
         if (_active) {
-
-            if (_rawLines.length === 0) {
-                _lastHash = null;
-                $('#lvtLogContent').html(
-                    '<div class="lvt-log-empty">' +
-                      '<i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i>' +
-                      '<div>Loading…</div>' +
-                    '</div>'
-                );
-                fetchOnce(true);
-            } else {
-                renderVisible();
-            }
+            $('#lvtLogContent').html(
+                '<div class="lvt-log-empty">' +
+                  '<i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i>' +
+                  '<div>Loading…</div>' +
+                '</div>'
+            );
+            fetchOnce(true);
             startPolling();
-        } else if (_rawLines.length === 0) {
+        } else {
             $('#lvtLogContent').html(
                 '<div class="lvt-log-placeholder">' +
                   '<i class="fa fa-list-alt" aria-hidden="true"></i>' +
@@ -308,16 +308,58 @@ function setMode(m) {
     }
 }
 
+function justTouched() {
+    return Date.now() - _touchAt < 700;
+}
+
+function pointerAt(inLog) {
+    _pointerInLog = inLog;
+    if (inLog) {
+        if (_hoverPause) setPaused(true);
+    } else if (!_ctxMenuOpen) {
+        setPaused(false);
+    }
+}
+
+function holdDrag() {
+    var parked = null;
+    _dragHeld = true;
+    $(document).on('mousedown.lvtDrag mouseup.lvtDrag mousemove.lvtDrag mouseout.lvtDrag', function (e) {
+        var gone = e.type === 'mouseout';
+        if (gone && e.relatedTarget) return;
+        if (e.buttons && (gone || e.type === 'mousemove')) return;
+        var d = gone ? Infinity : awayFromLog(e);
+        if (e.type === 'mousedown' && d === 0) {
+            parked = null;
+            return;
+        }
+        if (e.type !== 'mousedown' && d > 0 && d < Infinity) {
+            if (parked === null) parked = d;
+            if (d <= parked + 16) return;
+        }
+        $(document).off('.lvtDrag');
+        _dragHeld = false;
+        pointerAt(d === 0);
+    });
+}
+
+function awayFromLog(e) {
+    var el = document.getElementById('lvtLogContent');
+    if (!el) return Infinity;
+    var r = el.getBoundingClientRect();
+    return Math.max(r.left - e.clientX, e.clientX - r.right, r.top - e.clientY, e.clientY - r.bottom, 0);
+}
+
 function setPaused(paused) {
 
-    if (_mode !== 'live' || !_active) return;
+    if (_mode !== 'live' || !_active || !_refreshOn) return;
     if (paused === _paused) return;
     _paused = paused;
     updatePollIndicator();
     if (_paused) {
         stopPolling();
     } else {
-
+        if (_follow) toNewest();
         fetchOnce(false);
         startPolling();
     }
@@ -329,10 +371,35 @@ function updatePollIndicator() {
         $ind.prop('hidden', true);
         return;
     }
-    $ind.prop('hidden', false).toggleClass('lvt-poll-indicator--paused', _paused);
+    $ind.prop('hidden', false)
+        .toggleClass('lvt-poll-indicator--paused', _paused)
+        .toggleClass('lvt-poll-indicator--off', !_refreshOn);
 
     $ind.css('--lvt-poll-pulse', _refreshSecs + 's');
-    $('#lvtPollLabel').text(_paused ? 'paused' : (_refreshSecs + 'sec · LIVE'));
+    $('#lvtPollLabel').text(!_refreshOn ? 'auto-refresh off' : (_paused ? 'paused' : (_refreshSecs + 'sec · LIVE')));
+}
+
+function toNewest() {
+    var el = document.getElementById('lvtLogContent');
+    if (el) el.scrollTop = el.scrollHeight;
+}
+
+function settleScroll() {
+    if (_autoScroll || (_follow && !_paused)) toNewest();
+    _autoScroll = false;
+}
+
+function refreshNow() {
+    if (_mode === 'merge') {
+        if (!_mergeSources.length || _mergeInFlight > 0) return;
+        if (_mergeApplyTimer) clearTimeout(_mergeApplyTimer);
+        fetchMerge();
+        return;
+    }
+    var req = fetchOnce(false);
+    if (!req) return;
+    var $icon = $('#lvtLogsRefresh .fa').addClass('fa-spin');
+    req.always(function () { $icon.removeClass('fa-spin'); });
 }
 
 function setSeverityFilter(lvl) {
@@ -403,19 +470,19 @@ function applyFilter() {
 
 function selectSourceFromEl(el) {
     var $el = $(el);
-    var cat   = $el.data('cat');
-    var name  = $el.data('name');
-    var label = $el.data('label') || name;
+    var cat   = $el.attr('data-cat');
+    var name  = $el.attr('data-name');
+    var label = $el.attr('data-label') || name;
     if (!cat || !name) return;
 
     if (_mode === 'merge') {
-        toggleMergeSource(String(cat), String(name), String(label));
+        toggleMergeSource(cat, name, label);
         return;
     }
 
     if (_active && _active.category === cat && _active.name === name) return;
 
-    _active = { category: String(cat), name: String(name), label: String(label) };
+    _active = { category: cat, name: name, label: label };
     _lastHash = null;
     _autoScroll = true;
     _rawLines = []; _sevs = []; _counts = { info:0, warning:0, error:0, critical:0, success:0 };
@@ -425,10 +492,7 @@ function selectSourceFromEl(el) {
     $('#lvtSidebar .lvt-source').removeClass('is-active');
     $el.addClass('is-active');
 
-    $('#lvtBreadcrumbCategory').text(prettyCategory(cat));
-    $('#lvtBreadcrumbSource').text(label);
-
-    _paused = false;
+    _paused = _refreshOn && _hoverPause && _pointerInLog;
     updatePollIndicator();
 
     $('#lvtLogContent').html(
@@ -440,26 +504,24 @@ function selectSourceFromEl(el) {
     updateStatusbar();
 
     fetchOnce(true);
-    startPolling();
-}
-
-function prettyCategory(cat) {
-    return ({ system:'System', docker:'Docker Containers', vm:'VMs', script:'User Scripts', custom:'Custom' })[cat] || cat;
+    if (!_paused) startPolling();
 }
 
 function startPolling() {
     stopPolling();
-    if (!_active) return;
+    if (!_active || !_refreshOn) return;
     _pollTimer = setInterval(function () { fetchOnce(false); }, _pollMs);
 }
 function stopPolling() {
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
 }
 
-// pull the current source once, skip the redraw if the content hash didn't change
-function fetchOnce(resetHash) {
-    if (!_active || _inFlight) return;
+function fetchOnce(resetHash, retried) {
+    if (!_active) return;
+    if (resetHash) _fetchGen++;
+    else if (_inFlight) return;
     _inFlight = true;
+    var gen = _fetchGen;
 
     var data = {
         action:   'get_script_states',
@@ -470,7 +532,7 @@ function fetchOnce(resetHash) {
     };
     if (!resetHash && _lastHash) data._since_hash = _lastHash;
 
-    $.ajax({
+    return $.ajax({
         url: _apiUrl,
         data: data,
         type: 'GET',
@@ -479,9 +541,12 @@ function fetchOnce(resetHash) {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .done(function (resp, _status, xhr) {
-        _tokenRetried = false;
+        if (gen !== _fetchGen) return;
+        if (_paused && !resetHash) return;
         if (resp && resp.unchanged === true) {
             _lastUpdate = new Date();
+            if ($('#lvtLogContent .lvt-log-error').length) renderVisible();
+            else if (_follow && !_paused) toNewest();
             updateStatusbar();
             return;
         }
@@ -501,20 +566,27 @@ function fetchOnce(resetHash) {
         updateStatusbar();
     })
     .fail(function (xhr) {
+        if (gen !== _fetchGen) return;
+        if (_paused && !resetHash) return;
+        var failed = function () {
+            var msg = (xhr && xhr.status) ? ('HTTP ' + xhr.status) : 'network error';
+            renderError('Failed to fetch logs (' + msg + ').');
+        };
 
-        if (xhr && xhr.status === 403 && !_tokenRetried) {
-            _tokenRetried = true;
-            refreshTokenAndRetry();
+        if (xhr && xhr.status === 403 && !retried) {
+            refreshToken(function (ok) {
+                if (gen !== _fetchGen) return;
+                if (ok) fetchOnce(true, true);
+                else failed();
+            });
             return;
         }
-        var msg = (xhr && xhr.status) ? ('HTTP ' + xhr.status) : 'network error';
-        renderError('Failed to fetch logs (' + msg + ').');
+        failed();
     })
-    .always(function () { _inFlight = false; });
+    .always(function () { if (gen === _fetchGen) _inFlight = false; });
 }
 
-// nonce expired mid-poll, get a fresh one and retry the request
-function refreshTokenAndRetry() {
+function refreshToken(cb) {
     $.ajax({
         url: _apiUrl,
         data: { action: 'refresh_nonce', _lvt: _token },
@@ -523,12 +595,13 @@ function refreshTokenAndRetry() {
         timeout: 8000,
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     }).done(function (resp) {
-        if (resp && resp.token) {
+        var ok = !!(resp && resp.token);
+        if (ok) {
             _token = resp.token;
             if (_cfg) _cfg.lvToken = resp.token;
-            fetchOnce(true);
         }
-    });
+        cb(ok);
+    }).fail(function () { cb(false); });
 }
 
 function ingestRow(row) {
@@ -548,7 +621,6 @@ function ingestRow(row) {
     }
 }
 
-// only render the rows passing the current severity/text filter
 function renderVisible() {
     var $log = $('#lvtLogContent');
     if (!_rawLines.length) {
@@ -593,10 +665,7 @@ function renderVisible() {
         $('#lvtFilterCount').prop('hidden', true);
     }
 
-    if (_autoScroll) {
-        var el = $log[0];
-        if (el) el.scrollTop = el.scrollHeight;
-    }
+    settleScroll();
 }
 
 function highlightMatches(line, needle) {
@@ -668,7 +737,7 @@ function applySidebarSizes(states) {
 
             var bytes = (s.size != null) ? s.size : s.log_size;
             $('#lvtSidebar .lvt-source[data-cat="' + cat + '"]').each(function () {
-                var dn = String($(this).data('name'));
+                var dn = $(this).attr('data-name');
                 if (dn !== String(s.key || '') && dn !== String(s.name || '')) return;
                 var $sz = $(this).find('.lvt-source__size');
                 if (!$sz.length) {
@@ -681,7 +750,6 @@ function applySidebarSizes(states) {
     });
 }
 
-// the sidebar size badges refresh on their own slower cadence than the log body
 function fetchSidebarSizes() {
     $.ajax({
         url: _apiUrl,
@@ -738,7 +806,7 @@ function applyMergeSelectionUI() {
     }
     $rows.each(function () {
         var $r = $(this);
-        var k  = mergeKey(String($r.data('cat')), String($r.data('name')));
+        var k  = mergeKey($r.attr('data-cat'), $r.attr('data-name'));
         if (keys[k]) $r.addClass('is-merge-selected');
     });
 
@@ -778,21 +846,25 @@ function renderMergeEmpty() {
 
     _rawLines = []; _sevs = []; _counts = { info:0, warning:0, error:0, critical:0, success:0 };
     _currentRow = null;
+    _mergeGen++;
+    _mergeInFlight = 0;
     updateStatusbar();
 }
 
 function scheduleMergeFetch() {
     if (_mergeApplyTimer) clearTimeout(_mergeApplyTimer);
+    _mergeGen++;
+    _mergeInFlight = 0;
     _mergeApplyTimer = setTimeout(fetchMerge, 600);
 }
 
-// pull each selected source, interleave the lines by timestamp
-function fetchMerge() {
+function fetchMerge(retried) {
     if (!_mergeSources.length) return;
 
     var sources = _mergeSources.slice();
-    $('#lvtBreadcrumbCategory').text('Merge');
-    $('#lvtBreadcrumbSource').text(sources.length + ' sources');
+    var gen     = ++_mergeGen;
+    var left    = sources.length;
+    _autoScroll = true;
     $('#lvtPollIndicator').prop('hidden', true);
 
     $('#lvtLogContent').html(
@@ -802,9 +874,10 @@ function fetchMerge() {
         '</div>'
     );
 
-    _mergeInFlight = sources.length;
+    _mergeInFlight = left;
     var results = [];
     var anyFailed = false;
+    var denied = false;
 
     sources.forEach(function (src) {
         $.ajax({
@@ -823,7 +896,7 @@ function fetchMerge() {
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .done(function (resp) {
-            if (_mode !== 'merge') return;
+            if (gen !== _mergeGen || _mode !== 'merge') return;
             var rows = Array.isArray(resp) ? resp : [];
             var match = null;
             for (var i = 0; i < rows.length; i++) {
@@ -850,12 +923,24 @@ function fetchMerge() {
                 }
             }
         })
-        .fail(function () { anyFailed = true; })
+        .fail(function (xhr) {
+            anyFailed = true;
+            if (xhr && xhr.status === 403) denied = true;
+        })
         .always(function () {
-            _mergeInFlight--;
-            if (_mergeInFlight === 0 && _mode === 'merge') {
-                renderMerged(results, anyFailed, sources);
+            left--;
+            if (gen !== _mergeGen) return;
+            _mergeInFlight = left;
+            if (left !== 0 || _mode !== 'merge') return;
+            if (denied && retried !== true) {
+                refreshToken(function (ok) {
+                    if (gen !== _mergeGen || _mode !== 'merge') return;
+                    if (ok) fetchMerge(true);
+                    else renderMerged(results, anyFailed, sources);
+                });
+                return;
             }
+            renderMerged(results, anyFailed, sources);
         });
     });
 }
@@ -908,10 +993,7 @@ function renderMerged(items, anyFailed, sources) {
     _lastUpdate = new Date();
     updateStatusbar();
 
-    if (_autoScroll) {
-        var el = $log[0];
-        if (el) el.scrollTop = el.scrollHeight;
-    }
+    settleScroll();
 
     if (anyFailed) {
 
@@ -925,12 +1007,6 @@ function renderMerged(items, anyFailed, sources) {
     }
 }
 
-function truncateLabel(s, n) {
-    s = String(s);
-    return s.length <= n ? s : s.slice(0, n - 1) + '…';
-}
-
-// stable colour per source in merge view, derived from the key
 function sourceColor(key) {
     var palette = ['#378ADD', '#4caf50', '#EF9F27', '#9c27b0', '#00bcd4', '#ff5722', '#e91e63', '#607d8b'];
     var h = 0;
@@ -1046,12 +1122,17 @@ function showContextMenu(x, y, $line) {
     setPaused(true);
 }
 
-function hideContextMenu() {
+function hideContextMenu(e) {
     var $m = $('#lvtLogCtxMenu');
+    var onMenu = _ctxMenuOpen && $m.is(':hover');
     if ($m.length) $m.prop('hidden', true).removeData('source-line');
 
     _ctxMenuOpen = false;
-    setPaused(_pointerInLog);
+    if (onMenu) {
+        var under = (e && e.detail) ? document.elementFromPoint(e.clientX, e.clientY) : null;
+        _pointerInLog = !under || $(under).closest('#lvtLogContent').length > 0;
+    }
+    setPaused(_hoverPause && _pointerInLog);
 }
 
 function copyCurrentLine() {
@@ -1147,7 +1228,11 @@ function downloadCurrentLog() {
         });
         text = JSON.stringify(rows, null, 2) + '\n';
     } else if (fmt === 'csv') {
-        var esc = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
+        var esc = function (s) {
+            s = String(s);
+            if (/^[\t\r]*[=+\-@]/.test(s)) s = "'" + s;
+            return '"' + s.replace(/"/g, '""') + '"';
+        };
         var out = ['severity,line'];
         for (var i = 0; i < _rawLines.length; i++) {
             out.push(esc(_sevs[i] || 'info') + ',' + esc(_rawLines[i]));
@@ -1188,10 +1273,6 @@ function formatBytes(b) {
     if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
     if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
     return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
-}
-function formatTime(d) {
-    function pad(n) { return n < 10 ? '0' + n : String(n); }
-    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
 }
 
 })();

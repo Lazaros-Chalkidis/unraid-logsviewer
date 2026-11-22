@@ -41,7 +41,6 @@
   --lvt-health-error:   #e24b4a;
 }
 
-/* page shell */
 .lvt-wrapper {
   width: 96%;
   max-width: 96%;
@@ -58,7 +57,6 @@
   }
 }
 
-/* tab panels */
 .lvt-panel {
   padding: 1.25rem;
   box-sizing: border-box;
@@ -71,7 +69,6 @@
 
 .lvt-tab-panel { display: block; }
 
-/* page header */
 .lvt-header {
   display: flex;
   align-items: flex-start;

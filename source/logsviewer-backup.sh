@@ -5,24 +5,34 @@
 # License: GPLv3
 # =========================================================================
 
-# daily cron: zips the selected logs into the backup folder, prunes old ones
-
 CFG="/boot/config/plugins/logsviewer/logsviewer.cfg"
 [ ! -f "$CFG" ] && exit 0
 
 get_cfg() { grep "^$1=" "$CFG" 2>/dev/null | cut -d'"' -f2; }
 
+own_backup() {
+    local names
+    names=$(unzip -Z1 "$1" 2>/dev/null) || return 1
+    LC_ALL=C grep -qE '^(system|custom|scripts|docker|vms)/[^/]+\.log$' <<< "$names" &&
+        ! LC_ALL=C grep -qvE '^(system|custom|scripts|docker|vms)/([^/]+\.log)?$' <<< "$names"
+}
+
 ENABLED=$(get_cfg BACKUP_ENABLED)
 [ "$ENABLED" != "1" ] && exit 0
 
-# an older version may still have its own line in root's crontab, so keep it to one run
-exec 9>/tmp/logsviewer-backup-lock
+CACHE=/tmp/logsviewer_cache
+mkdir -m 700 "$CACHE" 2>/dev/null
+if [ "$(LC_ALL=C stat -c '%F %a %u' "$CACHE" 2>/dev/null)" != "directory 700 0" ]; then
+    logger -t logsviewer "backup not written: logsviewer_cache in /tmp is not a folder of root with mode 700"
+    exit 1
+fi
+exec 9>"$CACHE/backup.lock"
 flock -n 9 || exit 0
 
 STORAGE=$(get_cfg BACKUP_STORAGE)
 [ -z "$STORAGE" ] && exit 1
-# uninstall and retention delete inside this path, so refuse anything outside the share
 case "$STORAGE" in /mnt/user/*) ;; *) exit 1 ;; esac
+case "$STORAGE/" in */../*) exit 1 ;; esac
 
 RETENTION=$(get_cfg BACKUP_RETENTION)
 case "$RETENTION" in ''|*[!0-9]*) RETENTION=3 ;; esac
@@ -32,13 +42,14 @@ case "$INTERVAL" in ''|*[!0-9]*) INTERVAL=1 ;; esac
 [ "$INTERVAL" -lt 1 ] && INTERVAL=1
 
 BACKUP_DIR="$STORAGE"
-mkdir -p "$BACKUP_DIR" || exit 1
-# Prevent Samba access - logs contain sensitive data
-chmod 700 "$BACKUP_DIR"
+mountpoint -q /mnt/user || exit 0
+if [ ! -d "$BACKUP_DIR" ]; then
+    mkdir -p "$BACKUP_DIR" || exit 1
+    chmod 700 "$BACKUP_DIR"
+fi
 
 DATE=$(date +%Y-%m-%d)
 
-# measured here because */N in cron restarts every month
 if [ "$INTERVAL" -gt 1 ]; then
     LAST=""
     for f in "$BACKUP_DIR"/*.zip; do
@@ -56,12 +67,15 @@ if [ "$INTERVAL" -gt 1 ]; then
     fi
 fi
 
-TMPDIR=$(mktemp -d /tmp/logsviewer-backup-XXXXXX)
-trap "rm -rf '$TMPDIR'" EXIT
+for d in "$BACKUP_DIR"/.staging-??????; do
+    [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$d/.logsviewer-staging" ] && rm -rf "$d"
+done
+TMPDIR=$(mktemp -d "$BACKUP_DIR/.staging-XXXXXX") || exit 1
+trap 'rm -rf "$TMPDIR"' EXIT
+: > "$TMPDIR/.logsviewer-staging"
 
 HAS_FILES=0
 
-# php parses the custom paths json, so the script needs no jq
 PHP=""
 for p in /usr/bin/php /usr/local/bin/php /usr/local/emhttp/plugins/dynamix/scripts/php; do
     [ -x "$p" ] && PHP="$p" && break
@@ -79,6 +93,7 @@ if [ -n "$PHP" ] && [ -f "$CUSTOM_FILE" ]; then
         case "$fpath" in *..*) continue ;; esac
         CUSTOM_PATHS_MAP["$slug"]="$fpath"
     done < <("$PHP" -r '
+        require "/usr/local/emhttp/plugins/logsviewer/include/logsviewer-datepath.php";
         $f = "/boot/config/plugins/logsviewer/custom-paths.json";
         if (!is_file($f)) exit(0);
         $a = @json_decode(@file_get_contents($f), true);
@@ -91,7 +106,7 @@ if [ -n "$PHP" ] && [ -f "$CUSTOM_FILE" ]; then
             $slug = strtolower(preg_replace("/[^a-z0-9]+/", "-", strtolower($label)));
             $slug = trim((string)$slug, "-");
             if ($slug === "") continue;
-            echo $slug . "\t" . $path . "\n";
+            echo $slug . "\t" . lv_expand_date_path($path) . "\n";
         }
     ' 2>/dev/null)
 fi
@@ -114,7 +129,6 @@ if [ -n "$SYS_LOGS" ]; then
     rmdir "$TMPDIR/system" 2>/dev/null
 fi
 
-# custom logs go in their own folder, a user label could collide with a system log name
 CUSTOM_LOGS=$(get_cfg BACKUP_ENABLED_CUSTOM_LOGS)
 if [ -n "$CUSTOM_LOGS" ]; then
     mkdir -p "$TMPDIR/custom"
@@ -126,7 +140,6 @@ if [ -n "$CUSTOM_LOGS" ]; then
                 fpath="${CUSTOM_PATHS_MAP[$slug]:-}"
                 [ -z "$fpath" ] && continue
                 [ -f "$fpath" ] || continue
-                # resolve symlinks so a link can't pull files from outside the whitelist
                 rpath=$(readlink -f "$fpath" 2>/dev/null)
                 [ -z "$rpath" ] && continue
                 case "$rpath" in /var/log/*|/mnt/user/*|/mnt/cache/*) ;; *) continue ;; esac
@@ -139,7 +152,6 @@ if [ -n "$CUSTOM_LOGS" ]; then
     rmdir "$TMPDIR/custom" 2>/dev/null
 fi
 
-# the tmp path comes from the script folder name
 SCRIPT_LOGS=$(get_cfg BACKUP_ENABLED_USER_SCRIPTS)
 if [ -n "$SCRIPT_LOGS" ]; then
     mkdir -p "$TMPDIR/scripts"
@@ -156,9 +168,7 @@ if [ -n "$SCRIPT_LOGS" ]; then
                 rpath=$(readlink -f "$fpath" 2>/dev/null)
                 [ -z "$rpath" ] && continue
                 case "$rpath" in /tmp/user.scripts/tmpScripts/*) ;; *) continue ;; esac
-                safe=$(echo "$folder" | tr -cd 'a-zA-Z0-9._-')
-                [ -z "$safe" ] && continue
-                cp "$rpath" "$TMPDIR/scripts/${safe}.log" && HAS_FILES=1
+                cp "$rpath" "$TMPDIR/scripts/${folder}.log" && HAS_FILES=1
                 ;;
         esac
     done
@@ -166,13 +176,17 @@ if [ -n "$SCRIPT_LOGS" ]; then
 fi
 
 DOCKER_CONTAINERS=$(get_cfg BACKUP_ENABLED_DOCKER_CONTAINERS)
-if [ -n "$DOCKER_CONTAINERS" ] && command -v docker &>/dev/null; then
+if [ -n "$DOCKER_CONTAINERS" ] && command -v docker &>/dev/null && timeout 10 docker version &>/dev/null; then
     mkdir -p "$TMPDIR/docker"
     IFS=',' read -ra CONTAINERS <<< "$DOCKER_CONTAINERS"
     for container in "${CONTAINERS[@]}"; do
         container=$(echo "$container" | tr -cd 'a-zA-Z0-9._-')
-        [ -z "$container" ] && continue
-        docker logs "$container" > "$TMPDIR/docker/${container}.log" 2>&1 && HAS_FILES=1
+        case "$container" in [a-zA-Z0-9]*) ;; *) continue ;; esac
+        if timeout 300 docker logs "$container" > "$TMPDIR/docker/${container}.log" 2>&1; then
+            HAS_FILES=1
+        else
+            rm -f "$TMPDIR/docker/${container}.log"
+        fi
     done
     rmdir "$TMPDIR/docker" 2>/dev/null
 fi
@@ -182,9 +196,9 @@ if [ -n "$VMS" ]; then
     mkdir -p "$TMPDIR/vms"
     IFS=',' read -ra VM_LIST <<< "$VMS"
     for vm in "${VM_LIST[@]}"; do
-        vm=$(echo "$vm" | tr -cd 'a-zA-Z0-9 ._-')
-        [ -z "$vm" ] && continue
-        VMLOG="/var/log/libvirt/qemu/${vm}.log"
+        case "$vm" in ''|*/*) continue ;; esac
+        VMLOG=$(readlink -f "/var/log/libvirt/qemu/${vm}.log" 2>/dev/null)
+        case "$VMLOG" in /var/log/libvirt/qemu/*) ;; *) continue ;; esac
         [ -f "$VMLOG" ] && cp "$VMLOG" "$TMPDIR/vms/${vm}.log" && HAS_FILES=1
     done
     rmdir "$TMPDIR/vms" 2>/dev/null
@@ -192,18 +206,42 @@ fi
 
 [ "$HAS_FILES" -eq 0 ] && exit 0
 
-cd "$TMPDIR"
-zip -r "$BACKUP_DIR/${DATE}.zip" . -x ".*" > /dev/null 2>&1
+ZIP="$BACKUP_DIR/${DATE}.zip"
+if [ -n "$PHP" ] && [ -s "$ZIP" ]; then
+    "$PHP" -r '
+        $ticked = ["system" => $argv[2], "custom" => $argv[3], "scripts" => $argv[4], "docker" => $argv[5], "vms" => $argv[6]];
+        $prefix = ["custom" => "custom:", "scripts" => "script:"];
+        $za = class_exists("ZipArchive") ? new ZipArchive() : null;
+        if (!$za || $za->open($argv[1]) !== true) exit(1);
+        for ($i = 0; $i < $za->numFiles; $i++) {
+            $entry = (string)$za->getNameIndex($i, ZipArchive::FL_ENC_RAW);
+            if (!preg_match("#^(system|custom|scripts|docker|vms)/([^/]+)\.log$#D", $entry, $m)) continue;
+            $key = $entry === "system/graphql-api.log" ? "graphql-api.log" : ($prefix[$m[1]] ?? "") . $m[2];
+            if (!in_array($key, explode(",", $ticked[$m[1]]), true)) $za->deleteIndex($i);
+        }
+        @$za->close();
+    ' -- "$ZIP" "$SYS_LOGS" "$CUSTOM_LOGS" "$SCRIPT_LOGS" "$DOCKER_CONTAINERS" "$VMS" 2>/dev/null
+fi
+
+cd "$TMPDIR" || exit 1
+(umask 077; zip -r "$ZIP" . -x ".*" > /dev/null 2>&1)
+ZIP_RC=$?
+if [ "$ZIP_RC" -eq 3 ]; then
+    logger -t logsviewer "backup not written: ${DATE}.zip in the backup folder is not a zip archive"
+elif [ "$ZIP_RC" -ne 0 ]; then
+    logger -t logsviewer "backup not written: zip exited $ZIP_RC"
+fi
 
 CUTOFF=$(date -d "-${RETENTION} months" +%Y-%m-%d 2>/dev/null)
 if [ -n "$CUTOFF" ]; then
     for f in "$BACKUP_DIR"/*.zip; do
         [ ! -f "$f" ] && continue
         FDATE=$(basename "$f" .zip)
-        # only touch our own YYYY-MM-DD.zip, the folder may hold unrelated archives
         [[ "$FDATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || continue
-        if [[ "$FDATE" < "$CUTOFF" ]]; then
+        if [[ "$FDATE" < "$CUTOFF" ]] && own_backup "$f"; then
             rm -f "$f"
         fi
     done
 fi
+
+[ "$ZIP_RC" -eq 0 ] || exit 1

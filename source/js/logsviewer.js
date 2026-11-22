@@ -31,36 +31,30 @@ let logsviewer_activeLogTotalLines = 0;
 let logsviewer_lastShown = { category: null, source: null };
 
 const LV_RE_HEADER = /^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:)/gm;
-const LV_RE_LEVELS_COMBINED = /\b(emergency|critical|alert|fatal|panic|error|err|warning|warn|info|notice|trace|debug)\b/gi;
-const LV_RE_LEVELS_KEYWORDS = /\b(emergency|critical|alert|fatal|panic|error|err|warning|warn|info)\b/gi;
+const LV_RE_LEVELS_COMBINED = /\b(emergency|emerg|critical|crit|alert|fatal|panic|error|err|warning|warn|info|notice|trace|debug)\b/gi;
+const LV_RE_LEVELS_KEYWORDS = /\b(emergency|emerg|critical|crit|alert|fatal|panic|error|err|warning|warn|info)\b/gi;
 const LV_LEVEL_CLASS = {
-    emergency: 'logsviewer-lvl-emergency', critical: 'logsviewer-lvl-critical',
+    emergency: 'logsviewer-lvl-emergency', emerg: 'logsviewer-lvl-emergency', critical: 'logsviewer-lvl-critical', crit: 'logsviewer-lvl-critical',
     alert: 'logsviewer-lvl-alert', fatal: 'logsviewer-lvl-fatal', panic: 'logsviewer-lvl-panic',
     error: 'logsviewer-lvl-error', err: 'logsviewer-lvl-error',
     warning: 'logsviewer-lvl-warning', warn: 'logsviewer-lvl-warn',
     info: 'logsviewer-lvl-info', notice: 'logsviewer-lvl-notice',
     trace: 'logsviewer-lvl-trace', debug: 'logsviewer-lvl-debug',
 };
-// precompiled so the render path doesn't rebuild these on every poll
-const LV_RE_COUNT = {
-    critical: /\b(?:emergency|critical|alert|fatal|panic)\b/i,
-    error:    /\b(?:error|err)\b/i,
-    warning:  /\b(?:warning|warn)\b/i,
-    info:     /\b(?:info|notice)\b/i,
-};
-const LV_RE_FILTER = {
-    info:     /\b(?:info|notice)\b/i,
-    errors:   /\b(?:error|err|critical|fatal|panic|emerg(?:ency)?|alert)\b/i,
-    warnings: /\b(?:warning|warn)\b/i,
-    critical: /\b(?:emergency|critical|fatal|panic|alert|emerg(?:ency)?)\b/i,
-    auth:     /\b(?:auth|authentication|login|logout|oidc|token|jwt|sso)\b/i,
-};
+const LV_LEVEL_RULES = [
+    { re: /\b(?:emerg(?:ency)?|crit(?:ical)?|alert|fatal|panic)\b/i, level: 'critical' },
+    { re: /\b(?:error|err)\b/i,                                  level: 'error'    },
+    { re: /\b(?:warning|warn)\b/i,                               level: 'warning'  },
+    { re: /\b(?:info|notice)\b/i,                                level: 'info'     },
+];
+const LV_FILTER_LEVEL = { info: 'info', errors: 'error', warnings: 'warning', critical: 'critical' };
+const LV_RE_AUTH = /\b(?:auth|authentication|login|logout|oidc|token|jwt|sso)\b/i;
 
 let logsviewer_lightThemeCache = null;
 function logsviewer_isLightTheme() {
     if (logsviewer_lightThemeCache !== null) return logsviewer_lightThemeCache;
 
-    var el = document.querySelector('.logsviewer-body, .logsviewer-tool-wrapper');
+    var el = document.querySelector('.logsviewer-body');
     if (el && el.classList.contains('lv-light')) { logsviewer_lightThemeCache = true; return true; }
 
     try {
@@ -76,10 +70,9 @@ function logsviewer_isLightTheme() {
     return false;
 }
 
-// php injects .lv-light when it can, this is the luminance fallback when it can't
 function logsviewer_detectTheme() {
     if (!logsviewer_isLightTheme()) return;
-    document.querySelectorAll('.logsviewer-body, .logsviewer-tool-wrapper').forEach(function(el) {
+    document.querySelectorAll('.logsviewer-body').forEach(function(el) {
         if (!el.classList.contains('lv-light')) el.classList.add('lv-light');
     });
 }
@@ -100,7 +93,6 @@ function logsviewer_findLogData(category, sourceName) {
     return null;
 }
 
-// merge a single-source refresh back into the cached full set
 function logsviewer_mergeSourceData(category, scripts, singleSource) {
     if (singleSource && logsviewer_categoryData[category]) {
         var existing = logsviewer_categoryData[category];
@@ -120,11 +112,54 @@ function logsviewer_mergeSourceData(category, scripts, singleSource) {
     }
 }
 
+function logsviewer_tileShown() {
+    return $(logsviewer_dom.container).is(':visible');
+}
+
+function logsviewer_listSources(category) {
+    return $('#logsviewer-cat-' + category + ' li').map(function() {
+        return { name: $(this).attr('data-value'), label: $(this).text().trim(), status: $(this).find('.lv-drop-dot--running').length ? 'running' : 'idle' };
+    }).get();
+}
+
+function logsviewer_syncDot(category, row) {
+    var on = row.status === 'running' || row.status === 'foreground';
+    $('#logsviewer-cat-' + category + ' li').filter(function() { return $(this).attr('data-value') === row.name; })
+        .find('.lv-drop-dot').toggleClass('lv-drop-dot--running', on).toggleClass('lv-drop-dot--stopped', !on);
+}
+
+function logsviewer_showSourceNote(category, source, text) {
+    if (category !== logsviewer_activeCategory || source !== logsviewer_getActiveSource()) return;
+    if (logsviewer_findLogData(category, source)) return;
+    logsviewer_showLog({ name: source, log: text });
+}
+
+function logsviewer_selectSource(cat, sourceName) {
+    logsviewer_activeCategory = cat;
+    $('.logsviewer-cat-btn').removeClass('logsviewer-cat-btn--active');
+    var $tabBtn = $('.logsviewer-cat-btn[data-category="' + cat + '"]');
+    $tabBtn.attr('data-selected', sourceName).addClass('logsviewer-cat-btn--active');
+
+    logsviewer_markActiveItem(cat, sourceName);
+
+    setTimeout(function() {
+        $('.logsviewer-cat-native').each(function() {
+            var thisCat = $(this).closest('.logsviewer-cat-btn').attr('data-category');
+            try { this.value = (thisCat === cat) ? sourceName : ''; } catch(_) {}
+        });
+    }, 50);
+
+    var entry = logsviewer_findLogData(cat, sourceName);
+    if (entry) logsviewer_showLog(entry);
+    else logsviewer_showSourceNote(cat, sourceName, 'Loading…');
+
+    logsviewer_updateCompactIndicators(logsviewer_listSources(cat));
+}
+
 function logsviewer_showLog(entry) {
     var logDisplay = $(logsviewer_dom.logs);
     if (!entry || !logDisplay.length) return;
 
-    // the api returns a tail, redrawing would shift the line being read
     if (logsviewer_cfg && logsviewer_cfg.pauseOnHover && logsviewer_pauseHoverActive) {
         logsviewer_pendingEntry = entry;
         return;
@@ -132,7 +167,7 @@ function logsviewer_showLog(entry) {
     logsviewer_pendingEntry = null;
 
     logsviewer_activeLogContent = entry.log || '';
-    logsviewer_activeLogTotalLines = entry.total_lines || 0;
+    logsviewer_activeLogTotalLines = (entry.total_lines == null && entry.file_size > 0) ? null : (entry.total_lines || 0);
     logsviewer_lastShown = { category: entry.category || logsviewer_activeCategory || null, source: entry.name || entry.display_name || null };
     logsviewer_renderLog(logDisplay, logsviewer_activeLogContent, logsviewer_activeLogTotalLines);
     logsviewer_updateToastRight(entry, logsviewer_lastBadgeCounts);
@@ -194,10 +229,11 @@ function logsviewer_updateToastRight(entry, badgeCounts) {
     var parts = [];
     var totalLines = Number(entry && entry.total_lines || 0);
     var fileSize = Number(entry && entry.file_size || 0);
+    var totalKnown = !(entry && entry.total_lines == null && fileSize > 0);
     var errCount = Number(badgeCounts && badgeCounts.error || 0);
     var critCount = Number(badgeCounts && badgeCounts.critical || 0);
 
-    if (logsviewer_prevTotalLines !== null && totalLines > logsviewer_prevTotalLines) {
+    if (totalKnown && logsviewer_prevTotalLines !== null && totalLines > logsviewer_prevTotalLines) {
         var diff = totalLines - logsviewer_prevTotalLines;
         parts.push('<span class="lv-toast-newlines">+' + diff + ' new lines</span>');
     }
@@ -219,7 +255,7 @@ function logsviewer_updateToastRight(entry, badgeCounts) {
         parts.push('<span class="lv-toast-size">' + logsviewer_formatFileSize(fileSize) + '</span>');
     }
 
-    logsviewer_prevTotalLines = totalLines;
+    logsviewer_prevTotalLines = totalKnown ? totalLines : null;
     logsviewer_prevErrorCount = errCount;
     logsviewer_prevCriticalCount = critCount;
 
@@ -261,18 +297,14 @@ function logsviewer_showLoginToast(message){
 }
 
 function logsviewer_getSelectedLabel() {
+    var cat = String((logsviewer_lastShown && logsviewer_lastShown.category) || logsviewer_activeCategory || '');
+    var src = String((logsviewer_lastShown && logsviewer_lastShown.source)   || '');
+    if (!src) return '';
 
-    try {
-        var cat  = String((logsviewer_lastShown && logsviewer_lastShown.category) || logsviewer_activeCategory || '');
-        var src  = String((logsviewer_lastShown && logsviewer_lastShown.source)   || '');
-        if (!src) return '';
+    var $btn = $('.logsviewer-cat-btn').filter(function() { return $(this).attr('data-category') === cat; });
+    var $item = $btn.find('.logsviewer-cat-dropdown li').filter(function() { return $(this).attr('data-value') === src; });
 
-        var catLabel = cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
-
-        var srcLabel = src.replace(/[-_]/g, ' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
-
-        return catLabel + ' → ' + srcLabel;
-    } catch(_) { return ''; }
+    return ($btn.find('.logsviewer-cat-btn__label').text().trim() || cat) + ' → ' + ($item.first().text().trim() || src);
 }
 
 function logsviewer_ensureSelectedToast() {
@@ -305,7 +337,6 @@ function logsviewer_restoreLoginToast(){
   }catch(_){ }
 }
 
-// pull the most recent ssh / webgui / pam login line out of the tail
 function logsviewer_extractLoginEvent(text){
     const t = String(text || '');
     if(!t) return null;
@@ -390,8 +421,7 @@ function logsviewer_markActiveItem(cat, sourceName) {
     }
 }
 
-// main poll: fetch a category (or one source), update the view and the badges
-function logsviewer_fetchCategory(category, callback, opts) {
+function logsviewer_fetchCategory(category, callback, opts, retried) {
     opts = opts || {};
     var autoShow = (opts.autoShow !== false);
     var singleSource = opts.source || null;
@@ -415,6 +445,7 @@ function logsviewer_fetchCategory(category, callback, opts) {
             if (data && data.unchanged === true) {
 
                 if (autoShow && category === logsviewer_activeCategory) {
+                    if (singleSource) logsviewer_showSourceNote(category, singleSource, 'No data returned for this source.');
                     var timestampDisplay = $(logsviewer_dom.timestamp);
                     if (timestampDisplay.length && logsviewer_cfg.showTimestamp) {
                         timestampDisplay.text(new Date().toLocaleTimeString([], {hour12: false}));
@@ -426,32 +457,7 @@ function logsviewer_fetchCategory(category, callback, opts) {
 
             var scripts = Array.isArray(data) ? data : [];
             logsviewer_mergeSourceData(category, scripts, singleSource);
-
-            if (!singleSource && category !== 'system' && category !== 'custom' && category !== 'script') {
-                var $drop = $('#logsviewer-cat-' + category);
-                var $tabBtn = $('.logsviewer-cat-btn[data-category="' + category + '"]');
-                var prevVal = $tabBtn.attr('data-selected') || '';
-                $drop.empty();
-                scripts.forEach(function(s) {
-                    var name = s.display_name || s.name;
-                    var $li = $('<li>').attr('data-value', s.name);
-
-                    if (category === 'docker' || category === 'vm') {
-                        var dotClass = (s.status === 'running') ? 'lv-drop-dot--running' : 'lv-drop-dot--stopped';
-                        $li.append($('<span>').addClass('lv-drop-dot ' + dotClass));
-                    }
-                    $li.append(document.createTextNode(name));
-                    $drop.append($li);
-                });
-
-                if (prevVal && $drop.find('li[data-value="' + prevVal + '"]').length) {
-                    $tabBtn.attr('data-selected', prevVal);
-
-                    logsviewer_markActiveItem(category, prevVal);
-                } else {
-                    $tabBtn.attr('data-selected', '');
-                }
-            }
+            scripts.forEach(function(s) { logsviewer_syncDot(category, s); });
 
             var tab = $('.logsviewer-cat-btn[data-category="' + category + '"]');
             if (scripts.length > 0) {
@@ -478,9 +484,11 @@ function logsviewer_fetchCategory(category, callback, opts) {
 
                     var $nativeSelFb = $tabNow.find('.logsviewer-cat-native');
                     try { $nativeSelFb[0].value = scripts[0].name; } catch(_) {}
+                } else if (singleSource) {
+                    logsviewer_showSourceNote(category, singleSource, 'No data returned for this source.');
                 }
 
-                logsviewer_updateCompactIndicators(logsviewer_categoryData[category] || scripts);
+                logsviewer_updateCompactIndicators(logsviewer_listSources(category));
 
                 var timestampDisplay = $(logsviewer_dom.timestamp);
                 if (timestampDisplay.length && logsviewer_cfg.showTimestamp) {
@@ -493,34 +501,21 @@ function logsviewer_fetchCategory(category, callback, opts) {
             if (callback) callback(scripts);
         })
         .fail(function(jqXHR) {
+            var failed = function() {
+                if (autoShow && singleSource) {
+                    logsviewer_showSourceNote(category, singleSource, 'Failed to fetch logs (' + (jqXHR && jqXHR.status ? 'HTTP ' + jqXHR.status : 'network error') + ').');
+                }
+                if (callback) callback([]);
+            };
 
-            if (jqXHR && jqXHR.status === 403) {
+            if (jqXHR && jqXHR.status === 403 && !retried) {
                 logsviewer_refreshNonce(function(ok) {
-                    if (ok) {
-
-                        var retryUrl = logsviewer_apiUrl('get_script_states', params);
-                        $.ajax({ url: retryUrl, dataType: 'json', timeout: 15000 })
-                            .done(function(data, textStatus, jqXHR2) {
-                                var rh = jqXHR2.getResponseHeader('X-LV-Hash') || (data && data._hash) || '';
-                                if (rh) logsviewer_contentHashes[hashKey] = rh;
-                                if (data && data.unchanged === true) {
-                                    if (callback) callback(logsviewer_categoryData[category] || []);
-                                    return;
-                                }
-                                var scripts = Array.isArray(data) ? data : [];
-                                logsviewer_mergeSourceData(category, scripts, singleSource);
-                                if (callback) callback(scripts);
-                            })
-                            .fail(function() {
-                                if (callback) callback([]);
-                            });
-                    } else {
-                        if (callback) callback([]);
-                    }
+                    if (ok) logsviewer_fetchCategory(category, callback, opts, true);
+                    else failed();
                 });
                 return;
             }
-            if (callback) callback([]);
+            failed();
         });
 }
 
@@ -546,29 +541,31 @@ function logsviewer_apiUrl(action, extraParams) {
     return url;
 }
 
-let logsviewer_nonceRefreshing = false;
+let logsviewer_nonceWaiters = null;
 
 function logsviewer_refreshNonce(callback) {
-    if (logsviewer_nonceRefreshing) return;
-    logsviewer_nonceRefreshing = true;
+    if (logsviewer_nonceWaiters) { logsviewer_nonceWaiters.push(callback); return; }
+    logsviewer_nonceWaiters = [callback];
 
     var url = '/plugins/logsviewer/include/logsviewer_api.php?action=refresh_nonce';
     if (logsviewer_cfg.apiContext) {
         url += '&context=' + encodeURIComponent(logsviewer_cfg.apiContext);
     }
 
+    var settle = function(ok) {
+        var waiters = logsviewer_nonceWaiters;
+        logsviewer_nonceWaiters = null;
+        waiters.forEach(function(cb) { if (cb) cb(ok); });
+    };
+
     $.ajax({ url: url, dataType: 'json', timeout: 5000 })
         .done(function(data) {
             if (data && data.token) {
                 logsviewer_cfg.lvToken = data.token;
             }
-            logsviewer_nonceRefreshing = false;
-            if (callback) callback(true);
+            settle(true);
         })
-        .fail(function() {
-            logsviewer_nonceRefreshing = false;
-            if (callback) callback(false);
-        });
+        .fail(function() { settle(false); });
 }
 
 function logsviewer_updateCompactIndicators(scripts) {
@@ -577,30 +574,15 @@ function logsviewer_updateCompactIndicators(scripts) {
 
     compactContainer.empty();
 
-    let runningCount = 0;
-
     if (Array.isArray(scripts) && scripts.length > 0) {
         scripts.forEach(script => {
             const indicator = $('<span>')
                 .addClass('logsviewer-compact-indicator')
                 .toggleClass('logsviewer-compact-indicator--running', script.status === 'running')
-                .text(script.name);
+                .text(script.label);
 
             compactContainer.append(indicator);
-
-            if (script.status === 'running') {
-                runningCount += 1;
-            }
         });
-    }
-
-    const summaryText = $('#logsviewer-head-summary-text');
-    if (summaryText.length) {
-        summaryText.text(
-            runningCount > 0
-                ? `${runningCount} running`
-                : 'No scripts running'
-        );
     }
 }
 
@@ -628,29 +610,30 @@ function logsviewer_getFilterLabel(filter) {
     return labels[filter] || String(filter || 'none');
 }
 
+function logsviewer_lineLevel(line) {
+    for (var i = 0; i < LV_LEVEL_RULES.length; i++) {
+        if (LV_LEVEL_RULES[i].re.test(line)) return LV_LEVEL_RULES[i].level;
+    }
+    return '';
+}
+
 function logsviewer_applyFilterToText(raw) {
     const filter = logsviewer_getFilterValue();
     const text = String(raw || '');
-    if (filter === 'none') return text;
+    const level = LV_FILTER_LEVEL[filter];
+    if (!level && filter !== 'auth') return text;
 
-    const re = LV_RE_FILTER[filter];
-    if (!re) return text;
-
-    const lines = text.split('\n');
-    return lines.filter(function(l) { return re.test(l); }).join('\n');
+    return text.split('\n').filter(function(l) {
+        return level ? logsviewer_lineLevel(l) === level : LV_RE_AUTH.test(l);
+    }).join('\n');
 }
 
 function logsviewer_countLevels(text) {
-    const t = String(text || '');
-    const lines = t.split('\n');
+    const lines = String(text || '').split('\n');
     const counts = { critical: 0, error: 0, warning: 0, info: 0 };
     for (var i = 0, len = lines.length; i < len; i++) {
-        var line = lines[i];
-        if (!line) continue;
-        if (LV_RE_COUNT.critical.test(line)) { counts.critical++; continue; }
-        if (LV_RE_COUNT.error.test(line))    { counts.error++;    continue; }
-        if (LV_RE_COUNT.warning.test(line))  { counts.warning++;  continue; }
-        if (LV_RE_COUNT.info.test(line))     { counts.info++;     }
+        var level = logsviewer_lineLevel(lines[i]);
+        if (level) counts[level]++;
     }
     return counts;
 }
@@ -950,17 +933,13 @@ function logsviewer_ensureSearchUi() {
     if (!logsviewer_cfg.searchEnabled) return;
     if ($('#logsviewer-search-input').length) return;
 
-    let headerRight = $('.logsviewer-header__right');
-    const isLegacy = !headerRight.length;
-    if (isLegacy) {
-        headerRight = $('.logsviewer-legacy-controls');
-    }
+    const headerRight = $('.logsviewer-header__right');
     if (!headerRight.length) return;
 
     let inputsRow = headerRight.find('.logsviewer-header__inputs').first();
     if (!inputsRow.length) {
         inputsRow = $('<div class="logsviewer-header__inputs"></div>');
-        const controls = headerRight.find(isLegacy ? '.logsviewer-legacy-controls__controls' : '.logsviewer-header__controls').first();
+        const controls = headerRight.find('.logsviewer-header__controls').first();
         if (controls.length) {
             inputsRow.insertAfter(controls);
         } else {
@@ -1076,7 +1055,6 @@ function logsviewer_setTotalLinesValue(n) {
 let logsviewer_hljsLoaded = false;
 let logsviewer_currentSyntax = 'plaintext';
 
-// highlight.js is loaded on demand, only when a log actually needs it
 function logsviewer_loadHighlightJs(callback) {
 
     if (logsviewer_hljsLoaded || window.hljs) {
@@ -1240,7 +1218,6 @@ function logsviewer_loadScriptOnce(url, dataAttr, callback) {
     document.head.appendChild(s);
 }
 
-// load prism plus whatever grammars the language depends on, once
 function logsviewer_ensurePrismLanguage(lang, callback) {
     const cb = callback || function () {};
 
@@ -1305,7 +1282,6 @@ function logsviewer_isMobileish() {
     }
 }
 
-// caps on how much text we'll syntax-highlight, lower on mobile and for php (the heavy grammar)
 function logsviewer_getPrismBudgets(lang) {
     const mobile = logsviewer_isMobileish();
     const heavy = (String(lang || '').toLowerCase() === 'php');
@@ -1531,17 +1507,13 @@ function logsviewer_renderLog(logDisplay, rawText, totalLinesFromApi) {
 
     let filtered = logsviewer_applyFilterToText(base);
 
-    // before the syntax step, which trims long logs
-    var badgeCounts = logsviewer_countLevels(filtered);
+    var badgeCounts = logsviewer_countLevels(base);
     logsviewer_lastBadgeCounts = badgeCounts;
 
-    if (filter !== 'none' && String(filtered).trim() === '') {
-        const label = logsviewer_getFilterLabel(filter);
-        filtered = `[info] No matching lines for '${label}' filter.`;
-    }
+    const noMatch = filter !== 'none' && String(filtered).trim() === '';
 
     if (logsviewer_cfg.showTotalLines) {
-        if (filter === 'none' && Number.isFinite(Number(totalLinesFromApi)) && (!logsviewer_cfg.tailLines || logsviewer_cfg.tailLines <= 0)) {
+        if (filter === 'none' && totalLinesFromApi != null && Number.isFinite(Number(totalLinesFromApi)) && (!logsviewer_cfg.tailLines || logsviewer_cfg.tailLines <= 0)) {
             logsviewer_setTotalLinesValue(Number(totalLinesFromApi));
         } else {
             logsviewer_setTotalLinesValue(logsviewer_countLines(filtered));
@@ -1631,9 +1603,12 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     }
 }
 
-    filtered = logsviewer_highlightLevels(filtered);
-
-    filtered = logsviewer_applySearchHighlight(filtered);
+    if (noMatch) {
+        filtered = `[info] No matching lines for '${logsviewer_getFilterLabel(filter)}' filter.`;
+    } else {
+        filtered = logsviewer_highlightLevels(filtered);
+        filtered = logsviewer_applySearchHighlight(filtered);
+    }
 
     if (!logsviewer_perfToastSetThisRender) {
         logsviewer_showPerfToast(null);
@@ -1666,7 +1641,6 @@ if (logsviewer_cfg.syntaxEnabled && logsviewer_currentSyntax !== 'plaintext') {
     });
 }
 
-// hovering can start while the request is in flight
 function logsviewer_autoscrollIfAllowed(scrollTarget) {
     if (!scrollTarget) return;
     if (!$(logsviewer_dom.autoscroll).prop('checked')) return;
@@ -1721,7 +1695,6 @@ function logsviewer_exportCurrentLog() {
     if (!logsviewer_activeLogContent) return;
 
     const scriptName = logsviewer_getSelectedScriptName();
-    // stored content is server-escaped, decode it so the file gets real characters
     const text = logsviewer_decodeHtmlEntities(String(logsviewer_activeLogContent || ''));
     if (!text.trim()) return;
 
@@ -1749,12 +1722,14 @@ function logsviewer_exportCurrentLog() {
         const reIso    = /^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(.*)$/;
 
         const levelMap = [
-            [/\bemergency\b/i, 'emergency'],
+            [/\bemerg(?:ency)?\b/i, 'emergency'],
             [/\bpanic\b/i,     'emergency'],
             [/\bcritical\b/i,  'critical'],
+            [/\bcrit\b/i,      'critical'],
             [/\bfatal\b/i,     'critical'],
             [/\balert\b/i,     'alert'],
             [/\berror\b/i,     'error'],
+            [/\berr\b/i,       'error'],
             [/\bwarning\b/i,   'warning'],
             [/\bwarn\b/i,      'warning'],
             [/\bnotice\b/i,    'notice'],
@@ -2027,22 +2002,27 @@ function logsviewer_manualRefresh() {
 }
 
 function logsviewer_status() {
+    var source = logsviewer_getActiveSource();
+    if (!source) return;
+
     var logContainer = $(logsviewer_dom.container);
     var scrollTarget = logContainer.length ? logContainer.get(0) : null;
 
     logsviewer_fetchCategory(logsviewer_activeCategory, function(scripts) {
 
         logsviewer_autoscrollIfAllowed(scrollTarget);
-    }, { source: logsviewer_getActiveSource() || null });
+    }, { source: source });
+
+    if (logsviewer_cfg.showToast === false) return;
 
     try{
-        if (logsviewer_activeCategory === 'system') {
+        if (logsviewer_activeCategory === 'system' && source === 'syslog') {
 
             var sys = logsviewer_findLogData('system', 'syslog');
             if (sys && typeof sys.log === 'string' && sys.log.length) {
                 logsviewer_checkLoginToast(sys.log);
             }
-        } else {
+        } else if ((logsviewer_cfg.enabledSystemLogs || []).indexOf('syslog') !== -1) {
             logsviewer_systemFetchCounter++;
             if (logsviewer_systemFetchCounter >= 3) {
                 logsviewer_systemFetchCounter = 0;
@@ -2061,12 +2041,6 @@ function logsviewer_status() {
 $(function() {
     logsviewer_cfg = window.logsviewerConfig || {};
     const config = logsviewer_cfg;
-
-    const widgetRoot = $('.logsviewer-body');
-    if (widgetRoot.length) {
-        widgetRoot.toggleClass('logsviewer-body--responsive', !!config.isResponsive);
-        widgetRoot.toggleClass('logsviewer-body--legacy', !config.isResponsive);
-    }
 
     logsviewer_detectTheme();
 
@@ -2102,7 +2076,6 @@ $(function() {
                     paused.remove();
                 }
             }
-            // catch up on whatever arrived while frozen, instead of waiting for the next poll
             if (logsviewer_pendingEntry) {
                 var pending = logsviewer_pendingEntry;
                 logsviewer_pendingEntry = null;
@@ -2134,14 +2107,11 @@ $(function() {
         });
 
         updateCompactVisibility();
-
-        if (window.__logsviewerCompactInterval) { clearInterval(window.__logsviewerCompactInterval); window.__logsviewerCompactInterval = null; }
     }
 
     $(document).on('click', '.logsviewer-badge', function() {
         const filter = $(this).attr('data-filter');
         if (!filter) return;
-        // clicking the active badge again clears the filter, same as the tool page
         const next = logsviewer_getFilterValue() === filter ? 'none' : filter;
         logsviewer_setFilterValue(next);
         logsviewer_syncBadgeSelection(next);
@@ -2273,9 +2243,7 @@ $(function() {
 (function initCategoryTabs() {
 
     function isMobile() {
-        return typeof logsviewer_isMobileish === 'function'
-            ? logsviewer_isMobileish()
-            : window.matchMedia('(max-width:768px)').matches;
+        return window.matchMedia('(max-width:768px), (pointer:coarse)').matches;
     }
 
     function closeAllCatDropdowns() {
@@ -2293,26 +2261,8 @@ $(function() {
     }
 
     function loadSource(cat, sourceName) {
-        logsviewer_activeCategory = cat;
-        $('.logsviewer-cat-btn').removeClass('logsviewer-cat-btn--active');
-        var $tabBtn = $('.logsviewer-cat-btn[data-category="' + cat + '"]');
-        $tabBtn.attr('data-selected', sourceName).addClass('logsviewer-cat-btn--active');
-
-        logsviewer_markActiveItem(cat, sourceName);
-
-        (function(c, sn) {
-            setTimeout(function() {
-                $('.logsviewer-cat-native').each(function() {
-                    var thisCat = $(this).closest('.logsviewer-cat-btn').attr('data-category');
-                    try { this.value = (thisCat === c) ? sn : ''; } catch(_) {}
-                });
-            }, 50);
-        })(cat, sourceName);
-
-        var entry = logsviewer_findLogData(cat, sourceName);
-        if (entry) logsviewer_showLog(entry);
-
-        logsviewer_fetchCategory(cat);
+        logsviewer_selectSource(cat, sourceName);
+        logsviewer_fetchCategory(cat, null, { source: sourceName });
     }
 
     $(document).off('click.lvcattab', '.logsviewer-cat-btn');
@@ -2355,28 +2305,39 @@ $(function() {
 
 })();
 
-    logsviewer_fetchCategory('system', function() {
-        var logContainer = $(logsviewer_dom.container);
-        logsviewer_autoscrollIfAllowed(logContainer.length ? logContainer.get(0) : null);
-    });
-
-    if (config.enabledDockerContainers && config.enabledDockerContainers.length > 0) {
-        logsviewer_fetchCategory('docker');
-    }
-    if (config.enabledVms && config.enabledVms.length > 0) {
-        logsviewer_fetchCategory('vm');
-    }
-    if (config.enabledUserScripts && config.enabledUserScripts.length > 0) {
-        logsviewer_fetchCategory('script');
-    }
-    if (config.enabledCustomLogs && config.enabledCustomLogs.length > 0) {
-        logsviewer_fetchCategory('custom');
+    var firstItem = $('.logsviewer-cat-dropdown li').first();
+    var firstSource = firstItem.attr('data-value');
+    if (firstSource) {
+        var firstCategory = firstItem.closest('.logsviewer-cat-btn').attr('data-category');
+        logsviewer_selectSource(firstCategory, firstSource);
+        if (logsviewer_tileShown()) {
+            logsviewer_fetchCategory(firstCategory, function() {
+                var logContainer = $(logsviewer_dom.container);
+                logsviewer_autoscrollIfAllowed(logContainer.length ? logContainer.get(0) : null);
+            }, { source: firstSource });
+        }
     }
 
-    if (config.refreshEnabled && config.refreshInterval > 0) {
+    var polling = !!config.refreshEnabled && config.refreshInterval > 0;
+    var panel = logsviewer_dom.container;
+
+    if (panel) {
+        var wasShown = logsviewer_tileShown();
+        new ResizeObserver(function() {
+            var shown = logsviewer_tileShown();
+            if (shown && !wasShown && (polling || !logsviewer_findLogData(logsviewer_activeCategory, logsviewer_getActiveSource()))) {
+                logsviewer_status();
+            }
+            wasShown = shown;
+        }).observe(panel);
+    }
+
+    if (polling) {
         var startPolling = function() {
             if (window.__logsviewerStatusInterval) return;
-            window.__logsviewerStatusInterval = setInterval(logsviewer_status, config.refreshInterval);
+            window.__logsviewerStatusInterval = setInterval(function() {
+                if (!document.hidden && logsviewer_tileShown()) logsviewer_status();
+            }, config.refreshInterval);
         };
         var stopPolling = function() {
             if (!window.__logsviewerStatusInterval) return;
@@ -2387,14 +2348,13 @@ $(function() {
         stopPolling();
         startPolling();
 
-        // a hidden dashboard kept hitting docker and virsh every interval for nobody
         document.removeEventListener('visibilitychange', window.__logsviewerVisibility || null);
         window.__logsviewerVisibility = function() {
             if (document.hidden) {
                 stopPolling();
             } else {
                 startPolling();
-                logsviewer_status();  // catch up on what was missed instead of waiting a full interval
+                if (logsviewer_tileShown()) logsviewer_status();
             }
         };
         document.addEventListener('visibilitychange', window.__logsviewerVisibility);

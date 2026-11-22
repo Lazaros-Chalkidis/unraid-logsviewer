@@ -5,13 +5,11 @@
    License: GPLv3
    ========================================================================= */
 
-$enabledSystemLogs       = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_SYSTEM_LOGS'] ?? ''))));
-$enabledDockerContainers = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ''))));
-$enabledVms              = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_VMS'] ?? ''))));
-$enabledUserScripts      = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_USER_SCRIPTS'] ?? ''))));
-$enabledCustomLogs       = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_CUSTOM_LOGS'] ?? ''))));
-
-if (!$enabledSystemLogs) $enabledSystemLogs = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];  // sources come from the TOOL_ keys, with a sane default if none are set
+$enabledSystemLogs       = LogsViewerEndpoint::enabledSystemLogs($cfg, 'TOOL_ENABLED_SYSTEM_LOGS');
+$enabledDockerContainers = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? '')), fn($v) => $v !== ''));
+$enabledVms              = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_VMS'] ?? '')), fn($v) => $v !== ''));
+$enabledUserScripts      = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_USER_SCRIPTS'] ?? '')), fn($v) => $v !== ''));
+$enabledCustomLogs       = array_values(array_filter(array_map('trim', explode(',', $cfg['TOOL_ENABLED_CUSTOM_LOGS'] ?? '')), fn($v) => $v !== ''));
 
 $systemLogPaths = [
     'syslog'          => '/var/log/syslog',
@@ -25,7 +23,7 @@ $systemLogPaths = [
 $enabledSystemLogs = array_values(array_filter($enabledSystemLogs, function ($key) use ($systemLogPaths) {
     if (!isset($systemLogPaths[$key])) return true;
     $p = $systemLogPaths[$key];
-    return @is_file($p) && @is_readable($p) && (int)@filesize($p) > 0;  // hide empty logs server-side so e.g. dmesg (0B on a stock box) doesn't show a not-found error
+    return @is_file($p) && @is_readable($p) && (int)@filesize($p) > 0;
 }));
 
 $systemLogNames = [
@@ -43,8 +41,7 @@ $userScriptStates = [];
 foreach ($enabledUserScripts as $_usKey) {
     if (strpos($_usKey, 'script:') !== 0) continue;
     $_usFolder = substr($_usKey, 7);
-    $_usName   = trim((string)@file_get_contents('/boot/config/plugins/user.scripts/scripts/' . $_usFolder . '/name'));
-    $userScriptLabels[$_usKey] = ($_usName !== '') ? $_usName : $_usFolder;
+    $userScriptLabels[$_usKey] = LogsViewerEndpoint::userScriptLabel($_usFolder);
     $userScriptStates[$_usKey] = LogsViewerEndpoint::userScriptStatus($_usFolder);
 }
 
@@ -70,28 +67,9 @@ if (is_file($_customFile)) {
     }
 }
 
-$dockerStates = [];
-if (!empty($enabledDockerContainers)) {
-    $raw = @shell_exec('docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
-    if ($raw) {
-        foreach (array_filter(explode("\n", trim($raw))) as $line) {
-            $p = explode("\t", $line);
-            if (count($p) >= 2) $dockerStates[trim($p[0])] = trim($p[1]);
-        }
-    }
-}
+$dockerStates = !empty($enabledDockerContainers) ? LogsViewerEndpoint::dockerStates() : [];
 
-$vmStates = [];
-if (!empty($enabledVms)) {
-    $raw = @shell_exec('virsh list --all 2>/dev/null');
-    if ($raw) {
-        foreach (array_filter(explode("\n", trim($raw))) as $line) {
-            if (preg_match('/^\s*\d+\s+(\S+)\s+(.+)$/', $line, $m)) {
-                $vmStates[trim($m[1])] = (stripos(trim($m[2]), 'running') !== false) ? 'running' : 'stopped';
-            }
-        }
-    }
-}
+$vmStates = !empty($enabledVms) ? (LogsViewerEndpoint::vmStates() ?? []) : [];
 
 $renderSource = function(string $category, string $name, string $label, string $stateClass = 'lvt-dot--idle', string $stateTitle = ''): string {
     $nameAttr  = htmlspecialchars($name,  ENT_QUOTES);
@@ -124,6 +102,9 @@ $customCount = count($enabledCustomLogs);
     </div>
     <div class="lvt-header__right">
       <div class="lvt-header__icons">
+        <?php if (($cfg['TOOL_REFRESH_ENABLED'] ?? '1') !== '1'): ?>
+          <a href="#" id="lvtLogsRefresh" title="Refresh now" aria-label="Refresh now"><i class="fa fa-fw fa-refresh" aria-hidden="true"></i></a>
+        <?php endif; ?>
         <a href="#" id="lvtLogsDownload" title="Download current log" aria-label="Download current log"><i class="fa fa-fw fa-arrow-down" aria-hidden="true"></i></a>
         <a href="/Settings/LogsviewerSettings" title="Logs Viewer Settings" aria-label="Logs Viewer Settings"><i class="fa fa-fw fa-cog" aria-hidden="true"></i></a>
       </div>

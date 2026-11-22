@@ -8,6 +8,8 @@
 declare(strict_types=1);
 
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
+require_once __DIR__ . '/logsviewer-datepath.php';
+require_once __DIR__ . '/logsviewer-shell.php';
 
 final class LogsViewerEndpoint
 {
@@ -15,7 +17,8 @@ final class LogsViewerEndpoint
     private const HARD_MAX_LINES          = 5000;
     private const BACKREAD_CAP_BYTES      = 1048576;
     private const FORWARD_FALLBACK_CAP_BYTES = 1048576;
-    private const COUNT_READ_BUF          = 65536;
+    private const COUNT_READ_BUF          = 1048576;
+    private const COUNT_BUDGET_S          = 0.2;
     private const MICRO_CACHE_MIN_MS      = 500;
     private const MICRO_CACHE_MAX_MS      = 2000;
     private const CACHE_DIR               = '/tmp/logsviewer_cache';
@@ -44,6 +47,8 @@ final class LogsViewerEndpoint
         'libvirt'         => 'Libvirt',
     ];
 
+    public const DEFAULT_SYSTEM_LOGS = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];
+
     private const CUSTOM_PATHS_FILE   = '/boot/config/plugins/logsviewer/custom-paths.json';
     private const USER_SCRIPTS_DIR    = '/boot/config/plugins/user.scripts/scripts';
     private const USER_SCRIPTS_TMP    = '/tmp/user.scripts/tmpScripts';
@@ -52,19 +57,12 @@ final class LogsViewerEndpoint
     private const ALERTS_SCAN_LOCK    = '/tmp/logsviewer_cache/alerts-scan.lock';
     private const ALERTS_SCAN_SCRIPT  = '/usr/local/emhttp/plugins/logsviewer/include/logsviewer-alerts-scan.php';
     private const ALLOWED_CUSTOM_PREFIXES = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
-    // docker and virsh can hang on a busy host
-    private const SHELL_TIMEOUT = 'timeout 5 ';
 
     public function __construct()
     {
-        if (!is_dir(self::CACHE_DIR)) {
-            @mkdir(self::CACHE_DIR, 0700, true);
-        } else {
-            @chmod(self::CACHE_DIR, 0700);
-        }
+        if (lv_cache_dir() === null) $this->json(['error' => 'Cache folder not usable'], 503);
     }
 
-    // temp file then rename, a crash mid-write must not truncate the config
     public static function atomicWrite(string $path, string $data, int $newFileMode = 0644): bool
     {
         $dir = dirname($path);
@@ -79,7 +77,12 @@ final class LogsViewerEndpoint
         return true;
     }
 
-    // one place for the cfg serialization, the call sites used to disagree on control-char stripping
+    public static function writeIfChanged(string $path, string $data, ?string $ifMissing = null): bool
+    {
+        $current = is_file($path) ? @file_get_contents($path) : $ifMissing;
+        return $current === $data || self::atomicWrite($path, $data);
+    }
+
     public static function cfgToIni(array $cfg): string
     {
         $ini = '';
@@ -91,7 +94,41 @@ final class LogsViewerEndpoint
         return $ini;
     }
 
-    // fold the pre-split source keys into the DASH_ ones, once, then persist
+    private static function storableName(string $name): bool
+    {
+        return $name !== '' && strlen($name) <= 255 && trim($name) === $name
+            && preg_match('/[\x00-\x1f\x7f,"<>\\\\\/]|\$\{/u', $name) === 0
+            && html_entity_decode($name) === $name;
+    }
+
+    private static function validSource(string $category, string $key): bool
+    {
+        switch ($category) {
+            case 'system': return isset(self::SYSTEM_LOGS[$key]) || self::validSource('custom', $key) || self::validSource('script', $key);
+            case 'docker': return preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/', $key) === 1;
+            case 'vm':     return self::storableName($key);
+            case 'script': return strncmp($key, 'script:', 7) === 0 && strpos($key, '..') === false && self::storableName(substr($key, 7));
+            case 'custom': return preg_match('/^custom:[a-z0-9-]+$/', $key) === 1;
+        }
+        return false;
+    }
+
+    public static function cleanSources(string $category, string $csv): string
+    {
+        $keys = array_map('trim', explode(',', $csv));
+        return implode(',', array_unique(array_filter($keys, fn($key) => self::validSource($category, $key))));
+    }
+
+    public static function backupPath(string $path): ?string
+    {
+        $path = rtrim(trim($path), '/');
+        if (strncmp($path, '/mnt/user/', 10) !== 0 || strlen($path) >= 4096) return null;
+        foreach (explode('/', substr($path, 10)) as $segment) {
+            if ($segment === '.' || $segment === '..' || !self::storableName($segment)) return null;
+        }
+        return $path;
+    }
+
     public static function migrateLegacySources(array &$cfg): bool
     {
         if (($cfg['MIGRATED_DASH_SOURCES'] ?? '0') === '1') return false;
@@ -110,12 +147,10 @@ final class LogsViewerEndpoint
         return self::atomicWrite(self::CFG_FILE, self::cfgToIni($cfg));
     }
 
-    // custom log paths must sit under a known prefix and have no .. in them
     private static function isAllowedCustomPath(string $path): bool
     {
         if ($path === '' || $path[0] !== '/') return false;
         if (strpos($path, '..') !== false) return false;
-        // a symlink could point outside the whitelist, so compare the resolved path when the file exists
         $real = @realpath($path);
         $check = ($real !== false) ? $real : $path;
         foreach (self::ALLOWED_CUSTOM_PREFIXES as $prefix) {
@@ -138,18 +173,14 @@ final class LogsViewerEndpoint
         if ($this->_userScriptsCache !== null) return $this->_userScriptsCache;
 
         $out = [];
-        // user.scripts builds the tmp path from the folder name, so that is the key
         foreach ((array)@glob(self::USER_SCRIPTS_DIR . '/*/script') as $scriptFile) {
             $dir    = dirname($scriptFile);
             $folder = basename($dir);
             if ($folder === '' || strpos($folder, '..') !== false) continue;
 
-            $label = trim((string)@file_get_contents($dir . '/name'));
-            if ($label === '') $label = $folder;
-
             $out[] = [
                 'key'    => 'script:' . $folder,
-                'label'  => $label,
+                'label'  => self::userScriptLabel($folder),
                 'folder' => $folder,
                 'path'   => self::USER_SCRIPTS_TMP . '/' . $folder . '/log.txt',
             ];
@@ -164,7 +195,6 @@ final class LogsViewerEndpoint
         return is_dir(self::USER_SCRIPTS_DIR);
     }
 
-    // a foreground run leaves no marker, so look for the copied script among live processes
     public static function foregroundScripts(): array
     {
         if (self::$_fgScriptsCache !== null) return self::$_fgScriptsCache;
@@ -184,7 +214,12 @@ final class LogsViewerEndpoint
         return self::$_fgScriptsCache = $found;
     }
 
-    // running and finished markers come from user.scripts, foreground has to be inferred
+    public static function userScriptLabel(string $folder): string
+    {
+        $label = trim((string)@file_get_contents(self::USER_SCRIPTS_DIR . '/' . $folder . '/name'));
+        return ($label !== '' && preg_match('//u', $label)) ? $label : $folder;
+    }
+
     public static function userScriptStatus(string $folder): string
     {
         if (is_file('/tmp/user.scripts/running/' . $folder)) return 'running';
@@ -207,13 +242,14 @@ final class LogsViewerEndpoint
         foreach ($entries as $e) {
             if (!is_array($e)) continue;
             $label = (string)($e['label'] ?? '');
-            $path  = (string)($e['path']  ?? '');
+            $raw   = (string)($e['path']  ?? '');
+            $path  = lv_expand_date_path($raw);
             if ($label === '' || $path === '' || !self::isAllowedCustomPath($path)) continue;
             $key = self::customKey($label);
 
             if (isset(self::SYSTEM_LOGS[$key]) || isset($seenKeys[$key])) continue;
             $seenKeys[$key] = true;
-            $out[] = ['key' => $key, 'label' => $label, 'path' => $path];
+            $out[] = ['key' => $key, 'label' => $label, 'path' => $path, 'dated' => $path !== $raw];
         }
         return $out;
     }
@@ -265,38 +301,56 @@ final class LogsViewerEndpoint
         return $this->_cfgCache;
     }
 
-    private function getDockerStates(): array
+    public static function dockerStates(): array
     {
-        if ($this->_dockerStatesCache !== null) return $this->_dockerStatesCache;
-        $this->_dockerStatesCache = [];
-        $raw = @shell_exec(self::SHELL_TIMEOUT . 'docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
+        $states = [];
+        $raw = @shell_exec(lv_cmd('docker', 'ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null'));
         if ($raw) {
             foreach (array_filter(explode("\n", trim($raw))) as $line) {
                 $p = explode("\t", $line);
-                if (count($p) >= 2) $this->_dockerStatesCache[trim($p[0])] = trim($p[1]);
+                if (count($p) >= 2) $states[trim($p[0])] = trim($p[1]);
             }
         }
-        return $this->_dockerStatesCache;
+        return $states;
+    }
+
+    private function getDockerStates(): array
+    {
+        return $this->_dockerStatesCache ??= self::dockerStates();
+    }
+
+    public static function vmStates(): ?array
+    {
+        @exec(lv_cmd('virsh', 'list --all --name 2>/dev/null'), $all, $rc);
+        if ($rc !== 0) return null;
+        @exec(lv_cmd('virsh', 'list --state-running --name 2>/dev/null'), $running);
+        $running = array_flip(array_map('trim', $running));
+
+        $states = [];
+        foreach ($all as $name) {
+            $name = trim($name);
+            if ($name !== '') $states[$name] = isset($running[$name]) ? 'running' : 'stopped';
+        }
+        return $states;
     }
 
     private function getVmStates(): array
     {
-        if ($this->_vmStatesCache !== null) return $this->_vmStatesCache;
-        $this->_vmStatesCache = [];
-        $raw = @shell_exec(self::SHELL_TIMEOUT . 'virsh list --all 2>/dev/null');
-        if ($raw) {
-            foreach (array_filter(explode("\n", trim($raw))) as $line) {
-                if (preg_match('/^\s*[-\d]+\s+(\S+)\s+(.+)$/', $line, $m)) {
-                    $this->_vmStatesCache[trim($m[1])] = (stripos(trim($m[2]), 'running') !== false) ? 'running' : 'stopped';
-                }
-            }
-        }
-        return $this->_vmStatesCache;
+        return $this->_vmStatesCache ??= self::vmStates() ?? [];
+    }
+
+    public static function lightTheme(): bool
+    {
+        $theme = parse_plugin_cfg('dynamix', true)['display']['theme'] ?? '';
+        return is_string($theme) && in_array(strtok($theme, '-'), ['white', 'azure'], true);
     }
 
     public static function generateNonce(): string
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0700, true);
+        if (lv_cache_dir() === null) {
+            @exec(lv_bin('logger') . ' -t logsviewer ' . escapeshellarg('logsviewer_cache in /tmp is not a folder owned by root, not used'));
+            return '';
+        }
         $file = self::NONCE_FILE;
         $now  = time();
 
@@ -314,7 +368,6 @@ final class LogsViewerEndpoint
         return $token;
     }
 
-    // token gate with a sliding ttl, read from the nonce file the widget refreshes
     private function verifyNonce(): void
     {
         $provided = (string)(
@@ -338,7 +391,6 @@ final class LogsViewerEndpoint
         }
     }
 
-    // per-ip cap with a rolling 60s window, file-backed
     private function enforceRateLimit(): void
     {
         $ip   = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
@@ -368,6 +420,9 @@ final class LogsViewerEndpoint
 
     public function run(): void
     {
+        foreach ($_GET as $value) {
+            if (!is_string($value)) $this->json(['error' => 'Invalid request'], 400);
+        }
 
         $action = (string)($_GET['action'] ?? '');
         if ($action === 'download_backup') {
@@ -392,12 +447,9 @@ final class LogsViewerEndpoint
         $routes = [
             'get_script_states'     => fn() => $this->replyStates(),
             'discover_sources'      => fn() => $this->replyDiscoverSources(),
-            'get_docker_containers' => fn() => $this->replyDockerContainers(),
-            'get_docker_log'        => fn() => $this->replyDockerLog(),
-            'get_vm_list'           => fn() => $this->replyVmList(),
-            'get_vm_log'            => fn() => $this->replyVmLog(),
             'list_backups'          => fn() => $this->replyListBackups(),
             'get_alert_rules'       => fn() => $this->replyAlertRules(),
+            'check_alert_regex'     => fn() => $this->replyCheckAlertRegex(),
             'get_alert_history'     => fn() => $this->replyAlertHistory(),
             'clear_alert_history'   => fn() => $this->replyClearAlertHistory(),
             'run_alerts_scan'       => fn() => $this->replyRunAlertsScan(),
@@ -430,7 +482,6 @@ final class LogsViewerEndpoint
         return $this->getContext() === 'tool';
     }
 
-    // old single-context keys get copied into the new DASH_ keys on first run
     private function migrateDashIfNeeded(array &$cfg): void
     {
         if ($this->_migrationDone) return;
@@ -438,18 +489,21 @@ final class LogsViewerEndpoint
         self::migrateLegacySources($cfg);
     }
 
-    private function csvToArray(string $csv): array
+    private static function csvToArray(string $csv): array
     {
         return array_values(array_filter(array_map('trim', explode(',', $csv)), fn($v) => $v !== ''));
     }
 
+    public static function enabledSystemLogs(array $cfg, string $key): array
+    {
+        if (!array_key_exists($key, $cfg)) return self::DEFAULT_SYSTEM_LOGS;
+        return self::csvToArray((string)($cfg[$key] ?? ''));
+    }
+
     private function getEnabledSystem(array &$cfg, string $context): array
     {
-        $default = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];
-        $key = ($context === 'tool') ? 'TOOL_ENABLED_SYSTEM_LOGS' : 'DASH_ENABLED_SYSTEM_LOGS';
         if ($context === 'dash') $this->migrateDashIfNeeded($cfg);
-        if (!array_key_exists($key, $cfg)) return $default;
-        return $this->csvToArray((string)($cfg[$key] ?? ''));
+        return self::enabledSystemLogs($cfg, $context === 'tool' ? 'TOOL_ENABLED_SYSTEM_LOGS' : 'DASH_ENABLED_SYSTEM_LOGS');
     }
 
     private function getEnabledDocker(array &$cfg, string $context): array
@@ -498,13 +552,10 @@ final class LogsViewerEndpoint
         $context = $this->getContext();
         if ($context === 'dash') $this->migrateDashIfNeeded($cfg);
 
-        $sysKey        = ($context === 'tool') ? 'TOOL_ENABLED_SYSTEM_LOGS' : 'DASH_ENABLED_SYSTEM_LOGS';
-        $hasSystemCfg  = array_key_exists($sysKey, $cfg);
         $enabledSystem = $this->getEnabledSystem($cfg, $context);
         $enabledDocker = $this->getEnabledDocker($cfg, $context);
         $enabledVms    = $this->getEnabledVms($cfg, $context);
         $enabledCustom = $this->getEnabledCustom($cfg, $context);
-        $defaultSystem = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];
 
         $systemLogs = [];
         foreach (self::SYSTEM_LOGS as $key => $path) {
@@ -515,9 +566,7 @@ final class LogsViewerEndpoint
                 'path'    => $path,
                 'exists'  => $exists,
                 'size'    => $exists ? (int)@filesize($path) : 0,
-                'enabled' => $hasSystemCfg
-                    ? in_array($key, $enabledSystem, true)
-                    : in_array($key, $defaultSystem, true),
+                'enabled' => in_array($key, $enabledSystem, true),
                 'custom'  => false,
             ];
         }
@@ -529,13 +578,14 @@ final class LogsViewerEndpoint
             foreach ($this->getUserScriptLogs() as $s) {
                 $exists        = is_file($s['path']) && is_readable($s['path']);
                 $userScripts[] = [
-                    'key'     => $s['key'],
-                    'name'    => $s['label'],
-                    'path'    => $s['path'],
-                    'status'  => $this->getUserScriptStatus($s['folder']),
-                    'exists'  => $exists,
-                    'size'    => $exists ? (int)@filesize($s['path']) : 0,
-                    'enabled' => in_array($s['key'], $enabledScripts, true),
+                    'key'       => $s['key'],
+                    'name'      => $s['label'],
+                    'path'      => $s['path'],
+                    'status'    => $this->getUserScriptStatus($s['folder']),
+                    'exists'    => $exists,
+                    'size'      => $exists ? (int)@filesize($s['path']) : 0,
+                    'enabled'   => in_array($s['key'], $enabledScripts, true),
+                    'supported' => self::validSource('script', $s['key']),
                 ];
             }
         }
@@ -554,47 +604,45 @@ final class LogsViewerEndpoint
             ];
         }
 
-        $dockerAvailable  = $this->isDockerAvailable();
+        $dockerList       = $this->getDockerContainerList();
         $dockerContainers = [];
-        if ($dockerAvailable) {
-            foreach ($this->getDockerContainerList() as $c) {
-                $c['enabled']     = in_array($c['name'], $enabledDocker, true);
-                $dockerContainers[] = $c;
-            }
+        foreach ($dockerList ?? [] as $c) {
+            $c['enabled']       = in_array($c['name'], $enabledDocker, true);
+            $c['supported']     = self::validSource('docker', $c['name']);
+            $dockerContainers[] = $c;
         }
 
-        $vmAvailable = $this->isVirshAvailable();
-        $vms = [];
-        if ($vmAvailable) {
-            foreach ($this->getVmList() as $vm) {
-                $vm['enabled'] = in_array($vm['name'], $enabledVms, true);
-                $vms[]         = $vm;
-            }
+        $vmList = $this->getVmList();
+        $vms    = [];
+        foreach ($vmList ?? [] as $vm) {
+            $vm['enabled']   = in_array($vm['name'], $enabledVms, true);
+            $vm['supported'] = self::validSource('vm', $vm['name']);
+            $vms[]           = $vm;
         }
 
         $this->json([
-            'system' => ['available' => true,             'sources' => $systemLogs],
-            'docker' => ['available' => $dockerAvailable, 'sources' => $dockerContainers],
-            'vm'     => ['available' => $vmAvailable,     'sources' => $vms],
-            'script' => ['available' => $scriptsAvailable, 'sources' => $userScripts],
-            'custom' => ['available' => true,             'sources' => $customLogs],
+            'system' => ['available' => true,                 'sources' => $systemLogs],
+            'docker' => ['available' => $dockerList !== null, 'sources' => $dockerContainers],
+            'vm'     => ['available' => $vmList !== null,     'sources' => $vms],
+            'script' => ['available' => $scriptsAvailable,    'sources' => $userScripts],
+            'custom' => ['available' => true,                 'sources' => $customLogs],
         ]);
     }
 
     private function isDockerAvailable(): bool
     {
-        return !empty(trim((string)@shell_exec('which docker 2>/dev/null')));
+        return is_executable(lv_bin('docker'));
     }
 
-    // one docker call for every container's log path, then one stat call for the sizes
-    private function getDockerContainerList(): array
+    private function getDockerContainerList(): ?array
     {
-
-        $output = @shell_exec(self::SHELL_TIMEOUT . 'docker ps -a --format "{{.Names}}|{{.State}}|{{.ID}}" 2>/dev/null');
-        if (empty($output)) return [];
+        @exec(lv_cmd('docker', 'ps -a --format "{{.Names}}|{{.State}}|{{.ID}}" 2>/dev/null'), $lines, $rc);
+        if ($rc !== 0) return null;
+        if (!$lines) return [];
 
         $logPaths = [];
-        $pathsRaw = @shell_exec(self::SHELL_TIMEOUT . 'sh -c \'docker inspect --format="{{.Name}}|{{.LogPath}}" $(docker ps -aq)\' 2>/dev/null');
+        $docker   = lv_bin('docker');
+        $pathsRaw = @shell_exec(lv_cmd('sh', '-c ' . escapeshellarg($docker . ' inspect --format="{{.Name}}|{{.LogPath}}" $(' . $docker . ' ps -aq)') . ' 2>/dev/null'));
         if ($pathsRaw) {
             foreach (array_filter(explode("\n", trim($pathsRaw))) as $pLine) {
                 $pp = explode('|', $pLine, 2);
@@ -612,7 +660,7 @@ final class LogsViewerEndpoint
         if (!empty($logPaths)) {
             $args = implode(' ', array_map('escapeshellarg', array_values($logPaths)));
 
-            $sizesRaw = @shell_exec(self::SHELL_TIMEOUT . 'stat -c "%n|%s" -- ' . $args . ' 2>/dev/null');
+            $sizesRaw = @shell_exec(lv_cmd('stat', '-c "%n|%s" -- ' . $args . ' 2>/dev/null'));
             if ($sizesRaw) {
                 foreach (array_filter(explode("\n", trim($sizesRaw))) as $sLine) {
                     $sp = explode('|', $sLine, 2);
@@ -624,7 +672,7 @@ final class LogsViewerEndpoint
         }
 
         $containers = [];
-        foreach (array_filter(explode("\n", trim($output))) as $line) {
+        foreach ($lines as $line) {
             $parts = explode('|', $line);
             if (count($parts) < 3) continue;
             $name    = trim($parts[0]);
@@ -649,57 +697,23 @@ final class LogsViewerEndpoint
         return $containers;
     }
 
-    private function replyDockerContainers(): void
-    {
-        if (!$this->isDockerAvailable()) {
-            $this->json(['available' => false, 'containers' => []]);
-        }
-        $this->json(['available' => true, 'containers' => $this->getDockerContainerList()]);
-    }
-
-    private function replyDockerLog(): void
-    {
-        $container = (string)($_GET['container'] ?? '');
-        if ($container === '' || !preg_match('/^[a-zA-Z0-9._-]{1,64}$/', $container)) {
-            $this->json(['error' => 'Invalid container name'], 400);
-        }
-        if (empty(trim((string)@shell_exec('docker inspect --format="{{.Name}}" ' . escapeshellarg($container) . ' 2>/dev/null')))) {
-            $this->json(['error' => 'Container not found'], 404);
-        }
-
-        $cfg      = $this->getCfg();
-        $maxLines = $this->getMaxLines($cfg);
-        $rawLog   = $this->forceValidUtf8((string)@shell_exec(
-            'docker logs --tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1'
-        ));
-
-        $cState = $this->getDockerStates()[$container] ?? 'unknown';
-        $this->json([['name' => $container, 'display_name' => $container, 'status' => $cState,
-            'log'         => htmlspecialchars(trim($rawLog), ENT_QUOTES, 'UTF-8'),
-            'total_lines' => $this->countLinesInText($rawLog),
-            'shown_lines' => $this->countLinesInText($rawLog),
-            'max_lines'   => $maxLines, 'source' => 'docker', 'file_size' => strlen($rawLog),
-        ]]);
-    }
-
     private function isVirshAvailable(): bool
     {
-        return !empty(trim((string)@shell_exec('which virsh 2>/dev/null')));
+        return is_executable(lv_bin('virsh'));
     }
 
-    private function getVmList(): array
+    private function getVmList(): ?array
     {
-        $output = @shell_exec(self::SHELL_TIMEOUT . 'virsh list --all --name 2>/dev/null');
-        if (empty($output)) return [];
+        $states = self::vmStates();
+        if ($states === null) return null;
 
-        $states = $this->getVmStates();
         $vms = [];
-        foreach (array_filter(explode("\n", trim($output)), fn($v) => trim($v) !== '') as $name) {
-            $name    = trim($name);
+        foreach ($states as $name => $status) {
+            $name    = (string)$name;
             $logPath = $this->safeVmLogPath($name) ?? '/dev/null';
             $vms[]   = [
                 'name'     => $name,
-                'status'   => $states[$name] ?? 'unknown',
+                'status'   => $status,
                 'log_path' => $logPath,
                 'log_size' => is_file($logPath) ? (int)@filesize($logPath) : 0,
             ];
@@ -709,59 +723,13 @@ final class LogsViewerEndpoint
         return $vms;
     }
 
-    private function replyVmList(): void
-    {
-        if (!$this->isVirshAvailable()) {
-            $this->json(['available' => false, 'vms' => []]);
-        }
-        $this->json(['available' => true, 'vms' => $this->getVmList()]);
-    }
-
-    private function replyVmLog(): void
-    {
-        $vmName = (string)($_GET['vm'] ?? '');
-        if ($vmName === '' || !preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $vmName)) {
-            $this->json(['error' => 'Invalid VM name'], 400);
-        }
-
-        $vState = $this->getVmStates()[$vmName] ?? 'unknown';
-
-        $cfg      = $this->getCfg();
-        $maxLines = $this->getMaxLines($cfg);
-        $logPath  = $this->safeVmLogPath($vmName);
-
-        if ($logPath === null) {
-            $this->json(['error' => 'Invalid VM log path'], 400);
-        }
-
-        if (!is_file($logPath) || !is_readable($logPath)) {
-            $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => $vState,
-                'log' => 'No log file found for this VM.', 'total_lines' => 0, 'shown_lines' => 0, 'max_lines' => 0, 'source' => 'vm', 'file_size' => 0,
-            ]]);
-        }
-
-        [$fh, $snapSize] = $this->openSnapshot($logPath);
-        if ($fh === null) {
-            $text = "VM log not readable: {$logPath}"; $total = null;
-        } elseif ($snapSize === 0) {
-            fclose($fh); $text = "VM log is empty."; $total = 0;
-        } else {
-            $text  = $this->tailFromSnapshot($fh, $snapSize, $maxLines);
-            fclose($fh);
-            $total = $this->fastCountLines($logPath);
-        }
-
-        $text = $this->forceValidUtf8($text);
-        $this->json([['name' => $vmName, 'display_name' => $vmName, 'status' => $vState,
-            'log'         => htmlspecialchars(trim($text), ENT_QUOTES, 'UTF-8'),
-            'total_lines' => $total,
-            'shown_lines' => $this->countLinesInText($text),
-            'max_lines'   => $maxLines, 'source' => 'vm', 'file_size' => $snapSize,
-        ]]);
-    }
-
     private function replyStates(): void
     {
+        $source = $_GET['source'] ?? '';
+        if (!is_string($source)) {
+            $this->json(['error' => 'Invalid source'], 400);
+        }
+
         $cfg     = $this->getCfg();
         $cacheMs = $this->computeMicroCacheMs($cfg);
 
@@ -793,10 +761,6 @@ final class LogsViewerEndpoint
         if ($context === 'dash') $this->migrateDashIfNeeded($cfg);
         $category = (string)($_GET['category'] ?? 'system');
 
-        $source = (string)($_GET['source'] ?? '');
-        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._:-]{1,80}$/', $source)) {
-            $source = '';
-        }
         $singleSource = ($source !== '') ? $source : null;
 
         $normTs = (($_GET['_normts'] ?? '') === '1');
@@ -813,7 +777,7 @@ final class LogsViewerEndpoint
             $rows = $this->fetchSystemLogs($cfg, $context, $singleSource);
         }
 
-        $jsonOut = json_encode($rows);
+        $jsonOut = json_encode($rows, JSON_INVALID_UTF8_SUBSTITUTE);
         if ($cacheMs > 0 && $jsonOut !== false) {
             $this->cachePut($cfg, (string)$jsonOut);
         }
@@ -848,7 +812,7 @@ final class LogsViewerEndpoint
 
             [$fh, $snapSize] = $this->openSnapshot($path);
             if ($fh === null) {
-                $text = "Log file not found or not readable: {$path}"; $total = null;
+                $text = "Log file not found or not readable."; $total = null;
             } elseif ($snapSize === 0) {
                 fclose($fh); $text = "Log is empty."; $total = 0;
             } else {
@@ -893,7 +857,6 @@ final class LogsViewerEndpoint
             [$fh, $snapSize] = $this->openSnapshot($path);
             if ($state === 'foreground') {
                 if ($fh !== null) fclose($fh);
-                // foreground output is streamed to the browser, nothing lands on disk
                 $text  = "Running in the foreground. The output is going to the User Scripts window, not to a file.";
                 $total = null;
             } elseif ($fh === null) {
@@ -939,12 +902,16 @@ final class LogsViewerEndpoint
 
         foreach ($labels as $label) {
             if (strpos($label, 'custom:') !== 0) continue;
-            $path = $this->resolveSystemLogPath($label);
-            if ($path === null) continue;
+            $entry = null;
+            foreach ($this->getCustomLogs() as $c) {
+                if ($c['key'] === $label) { $entry = $c; break; }
+            }
+            if ($entry === null) continue;
+            $path = $entry['path'];
 
             [$fh, $snapSize] = $this->openSnapshot($path);
             if ($fh === null) {
-                $text = "Log file not found or not readable: {$path}"; $total = null;
+                $text = $entry['dated'] ? 'No log for today yet.' : "Log file not found or not readable."; $total = null;
             } elseif ($snapSize === 0) {
                 fclose($fh); $text = "Log is empty."; $total = 0;
             } else {
@@ -987,10 +954,10 @@ final class LogsViewerEndpoint
         $pipes = [];
         $validContainers = [];
         foreach ($enabled as $container) {
-            if (!preg_match('/^[a-zA-Z0-9._-]{1,64}$/', $container)) continue;
+            if (!self::validSource('docker', $container)) continue;
 
             $tsFlag = $normTs ? '--timestamps ' : '';
-            $cmd = 'docker logs ' . $tsFlag . '--tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1';
+            $cmd = lv_cmd('docker', 'logs ' . $tsFlag . '--tail ' . $maxLines . ' ' . escapeshellarg($container) . ' 2>&1');
             $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
             $proc = @proc_open($cmd, $desc, $p);
             if (is_resource($proc)) {
@@ -1005,7 +972,7 @@ final class LogsViewerEndpoint
             $rawLog = (string)@stream_get_contents($pipes[$i][1]);
             @fclose($pipes[$i][1]);
             @fclose($pipes[$i][2]);
-            @proc_close($proc);
+            if (@proc_close($proc) === 124) $rawLog = 'Docker did not answer in time.';
 
             $rawLog = $this->forceValidUtf8($rawLog);
             if ($normTs) $rawLog = $this->normalizeDockerTimestamps($rawLog);
@@ -1026,7 +993,6 @@ final class LogsViewerEndpoint
         return $rows;
     }
 
-    // rewrite docker's UTC timestamps to local time so merge mode sorts correctly
     private function normalizeDockerTimestamps(string $raw): string
     {
         if ($raw === '') return $raw;
@@ -1049,7 +1015,7 @@ final class LogsViewerEndpoint
 
     private function systemTzOffsetSeconds(): int
     {
-        $z = trim((string)@shell_exec('date +%z 2>/dev/null'));
+        $z = trim((string)@shell_exec(lv_bin('date') . ' +%z 2>/dev/null'));
         if (!preg_match('/^([+-])(\d{2})(\d{2})$/', $z, $m)) return 0;
         $sec = ((int)$m[2]) * 3600 + ((int)$m[3]) * 60;
         return ($m[1] === '-') ? -$sec : $sec;
@@ -1070,7 +1036,7 @@ final class LogsViewerEndpoint
         $vmStates = $this->getVmStates();
 
         foreach ($enabled as $vmName) {
-            if (!preg_match('/^[a-zA-Z0-9 ._-]{1,64}$/', $vmName)) continue;
+            if (!self::validSource('vm', $vmName)) continue;
             $logPath = $this->safeVmLogPath($vmName);
             if ($logPath === null) continue;
 
@@ -1118,10 +1084,9 @@ final class LogsViewerEndpoint
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $name)) continue;
 
             $contents = ['system' => 0, 'docker' => 0, 'vms' => 0, 'scripts' => 0, 'custom' => 0];
-            // the per-folder counts are cosmetic, the list must still load if php has no zip extension
             if (class_exists('\ZipArchive')) {
                 $za = new \ZipArchive();
-                if ($za->open($file) === true) {
+                if ($za->open($file, \ZipArchive::RDONLY) === true) {
                     for ($i = 0; $i < $za->numFiles; $i++) {
                         $entry = (string)$za->getNameIndex($i);
                         if (str_starts_with($entry, 'system/') && !str_ends_with($entry, '/')) $contents['system']++;
@@ -1184,17 +1149,38 @@ final class LogsViewerEndpoint
         $this->json(['rules' => is_array($rules) ? $rules : []]);
     }
 
+    private static function loadAlertsLib(): void
+    {
+        defined('LV_SCAN_LIBRARY_ONLY') || define('LV_SCAN_LIBRARY_ONLY', true);
+        require_once self::ALERTS_SCAN_SCRIPT;
+    }
+
+    private function replyCheckAlertRegex(): void
+    {
+        $raw = $_GET['patterns'] ?? null;
+        $patterns = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($patterns)) {
+            $this->json(['error' => 'Invalid request'], 400);
+        }
+
+        self::loadAlertsLib();
+        $invalid = [];
+        foreach (array_values($patterns) as $i => $pattern) {
+            if (!is_string($pattern) || lv_alert_regex($pattern) === null) $invalid[] = $i;
+        }
+        $this->json(['invalid' => $invalid]);
+    }
+
     private function replyAlertHistory(): void
     {
-        $path = '/boot/config/plugins/logsviewer/alerts-history.json';
-        $history = is_file($path) ? @json_decode((string)@file_get_contents($path), true) : [];
-        $this->json(['history' => is_array($history) ? $history : []]);
+        self::loadAlertsLib();
+        $this->json(['history' => lv_alert_load_history()]);
     }
 
     private function replyClearAlertHistory(): void
     {
-        $path = '/boot/config/plugins/logsviewer/alerts-history.json';
-        self::atomicWrite($path, '[]');
+        self::loadAlertsLib();
+        lv_alert_clear_history();
 
         $cdPath = '/tmp/logsviewer_cache/alert_cooldowns.json';
         if (is_file($cdPath)) self::atomicWrite($cdPath, '{}', 0600);
@@ -1231,7 +1217,6 @@ final class LogsViewerEndpoint
 
         $cmd = escapeshellcmd($phpBin) . ' -f ' . escapeshellarg($script) . ' 2>/dev/null';
 
-        // the child takes this same lock, release it first
         @flock($fh, LOCK_UN); @fclose($fh);
 
         $count = (int)trim((string)@shell_exec($cmd));
@@ -1317,7 +1302,6 @@ final class LogsViewerEndpoint
         $this->enforceLocalOrigin();
     }
 
-    // reject cross-origin calls: this endpoint is only meant to be hit from the unraid ui
     private function enforceLocalOrigin(): void
     {
         $host = $_SERVER['HTTP_HOST'] ?? '';
@@ -1353,7 +1337,7 @@ final class LogsViewerEndpoint
         header('Referrer-Policy: same-origin');
         header("Content-Security-Policy: default-src 'none'");
         header('Permissions-Policy: geolocation=(), camera=(), microphone=()');
-        echo json_encode($payload);
+        echo json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
         exit;
     }
 
@@ -1373,7 +1357,6 @@ final class LogsViewerEndpoint
         return ($t === '') ? 0 : substr_count($t, "\n") + 1;
     }
 
-    // read backwards in chunks, the whole file would not fit in memory
     private function tailFromSnapshot($fh, ?int $snapSize, int $lines): string
     {
         if ($snapSize === null) {
@@ -1404,42 +1387,11 @@ final class LogsViewerEndpoint
             if ($readBytes >= self::BACKREAD_CAP_BYTES) break;
         }
 
-        // reaching offset 0 means the carry holds the first line of the file, not a partial one
         if ($pos === 0 && $carry !== '') array_unshift($collected, $carry);
 
         while ($collected && end($collected) === '') array_pop($collected);
         if (!$collected) return "Log is empty.";
         return implode("\n", array_slice($collected, -$lines));
-    }
-
-    private function countLinesFromSnapshot($fh, ?int $snapSize): ?int
-    {
-        if ($snapSize === null) {
-            @rewind($fh);
-            $data = stream_get_contents($fh, self::FORWARD_FALLBACK_CAP_BYTES);
-            if ($data === false) return null;
-            $count   = substr_count($data, "\n");
-            $trimmed = rtrim($data, "\r\n");
-            if ($trimmed !== '' && substr($data, -1) !== "\n") $count++;
-            elseif ($trimmed === '') $count = 0;
-            return $count;
-        }
-        if ($snapSize === 0) return 0;
-
-        $count = 0; $remaining = $snapSize; @rewind($fh);
-        while ($remaining > 0) {
-            $toRead = min(self::COUNT_READ_BUF, $remaining);
-            $chunk  = fread($fh, $toRead);
-            if ($chunk === false) return null;
-            $count     += substr_count($chunk, "\n");
-            $remaining -= strlen($chunk);
-            if ($chunk === '' && $remaining > 0) break;
-        }
-        if (@fseek($fh, $snapSize - 1, SEEK_SET) === 0) {
-            $last = fread($fh, 1);
-            if ($last !== "\n") $count++;
-        }
-        return $count;
     }
 
     private function safeVmLogPath(string $vmName): ?string
@@ -1460,22 +1412,49 @@ final class LogsViewerEndpoint
         return $real;
     }
 
-    // wc -l is much faster than counting in php, fall back to the snapshot if the path isn't readable
-    private function fastCountLines(string $path, $fh = null, ?int $snapSize = null): ?int
+    private function fastCountLines(string $path): ?int
     {
-        if ($path !== '' && is_file($path) && is_readable($path)) {
-            $out = @shell_exec('wc -l < ' . escapeshellarg($path) . ' 2>/dev/null');
-            if ($out !== null && $out !== false) {
-                $n = (int)trim($out);
+        $st = @stat($path);
+        if (!is_array($st) || !is_file($path) || !is_readable($path)) return null;
+        $size  = (int)$st['size'];
+        $inode = (int)$st['ino'];
+        if ($size === 0) return 0;
 
-                $lastByte = @file_get_contents($path, false, null, max(0, filesize($path) - 1), 1);
-                if ($lastByte !== false && $lastByte !== '' && $lastByte !== "\n") $n++;
-                return max(0, $n);
+        $cacheFile = self::CACHE_DIR . '/lines_' . md5($path) . '.json';
+        $c      = @json_decode((string)@file_get_contents($cacheFile), true);
+        $offset = 0;
+        $count  = 0;
+        $tail   = '';
+        if (is_array($c) && (int)($c['i'] ?? -1) === $inode) {
+            $o = (int)($c['o'] ?? 0);
+            if ($o > 0 && $o <= $size) {
+                $seen = (string)@file_get_contents($path, false, null, max(0, $o - 64), min(64, $o));
+                if (md5($seen) === (string)($c['t'] ?? '')) {
+                    $offset = $o;
+                    $count  = (int)($c['n'] ?? 0);
+                    $tail   = $seen;
+                }
             }
         }
 
-        if ($fh !== null) return $this->countLinesFromSnapshot($fh, $snapSize);
-        return null;
+        if ($offset < $size) {
+            $fh = @fopen($path, 'rb');
+            if (!$fh) return null;
+            @fseek($fh, $offset);
+            $deadline = microtime(true) + self::COUNT_BUDGET_S;
+            while ($offset < $size && microtime(true) < $deadline) {
+                $chunk = fread($fh, min(self::COUNT_READ_BUF, $size - $offset));
+                if ($chunk === false || $chunk === '') break;
+                $count  += substr_count($chunk, "\n");
+                $offset += strlen($chunk);
+                $tail    = (strlen($chunk) >= 64) ? substr($chunk, -64) : substr($tail . $chunk, -64);
+            }
+            fclose($fh);
+            self::atomicWrite($cacheFile, (string)json_encode(['i' => $inode, 'o' => $offset, 'n' => $count, 't' => md5($tail)]), 0600);
+        }
+        if ($offset < $size) return null;
+
+        return (substr($tail, -1) === "\n") ? $count : $count + 1;
     }
 
     private static ?bool $_hasMbCheck = null;
@@ -1495,28 +1474,28 @@ final class LogsViewerEndpoint
         return preg_replace('/[^\P{C}\n\t\r]+/u', '', $s) ?? $s;
     }
 
-    // a quarter of the refresh interval, enough to absorb rapid polls
     private function computeMicroCacheMs(array $cfg): int
     {
-        if ((string)($cfg['REFRESH_ENABLED'] ?? '1') !== '1') return 0;
-        $intervalS = (int)($cfg['REFRESH_INTERVAL'] ?? 0);
+        $tool = $this->isToolContext();
+        if ((string)($cfg[$tool ? 'TOOL_REFRESH_ENABLED' : 'REFRESH_ENABLED'] ?? '1') !== '1') return 0;
+        $intervalS = (int)($cfg[$tool ? 'TOOL_REFRESH_SECS' : 'REFRESH_INTERVAL'] ?? 0);
         $ms = ($intervalS <= 0) ? 500 : (int)round($intervalS * 1000 * 0.25);
         return max(self::MICRO_CACHE_MIN_MS, min(self::MICRO_CACHE_MAX_MS, $ms));
     }
 
     private function cacheKey(array $cfg): string
     {
-        // sanitised here too, or any string would mint its own cache file
         $category  = (string)($_GET['category'] ?? 'system');
         if (!in_array($category, ['system', 'docker', 'vm', 'script', 'custom'], true)) $category = 'system';
         $source    = (string)($_GET['source'] ?? '');
-        if ($source !== '' && !preg_match('/^[a-zA-Z0-9 ._:-]{1,80}$/', $source)) $source = '';
         $ctx       = $this->isToolContext() ? 'tool' : 'dash';
         $sysKey    = $this->isToolContext() ? 'TOOL_ENABLED_SYSTEM_LOGS'       : 'DASH_ENABLED_SYSTEM_LOGS';
         $dockerKey = $this->isToolContext() ? 'TOOL_ENABLED_DOCKER_CONTAINERS' : 'DASH_ENABLED_DOCKER_CONTAINERS';
         $vmKey     = $this->isToolContext() ? 'TOOL_ENABLED_VMS'               : 'DASH_ENABLED_VMS';
         $customKey = $this->isToolContext() ? 'TOOL_ENABLED_CUSTOM_LOGS'       : 'DASH_ENABLED_CUSTOM_LOGS';
         $scriptKey = $this->isToolContext() ? 'TOOL_ENABLED_USER_SCRIPTS'      : 'DASH_ENABLED_USER_SCRIPTS';
+        $onKey     = $this->isToolContext() ? 'TOOL_REFRESH_ENABLED'           : 'REFRESH_ENABLED';
+        $secsKey   = $this->isToolContext() ? 'TOOL_REFRESH_SECS'              : 'REFRESH_INTERVAL';
         $normTs    = (($_GET['_normts'] ?? '') === '1') ? '1' : '0';
         return hash('sha256', implode('|', [
             'states', $category, $ctx, $source, $normTs,
@@ -1525,8 +1504,8 @@ final class LogsViewerEndpoint
             (string)($cfg[$vmKey] ?? ''),
             (string)($cfg[$customKey] ?? ''),
             (string)($cfg[$scriptKey] ?? ''),
-            (string)($cfg['REFRESH_ENABLED'] ?? ''),
-            (string)($cfg['REFRESH_INTERVAL'] ?? ''),
+            (string)($cfg[$onKey] ?? ''),
+            (string)($cfg[$secsKey] ?? ''),
         ]));
     }
 
@@ -1535,7 +1514,6 @@ final class LogsViewerEndpoint
     private function cacheGet(array $cfg, int $cacheMs): ?string
     {
         $path = $this->cachePath($this->cacheKey($cfg));
-        if (!is_dir(self::CACHE_DIR)) return null;
         $st = @stat($path);
         if (!is_array($st) || !isset($st['mtime'])) return null;
         if ((int)round((microtime(true) - (float)$st['mtime']) * 1000) > $cacheMs) return null;
@@ -1545,7 +1523,6 @@ final class LogsViewerEndpoint
 
     private function cachePut(array $cfg, string $json): void
     {
-        if (!is_dir(self::CACHE_DIR)) @mkdir(self::CACHE_DIR, 0700, true);
         $path = $this->cachePath($this->cacheKey($cfg));
         $tmp  = $path . '.' . getmypid() . '.tmp';
         if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
@@ -1556,12 +1533,14 @@ final class LogsViewerEndpoint
         }
 
         if (mt_rand(1, 100) !== 1) return;
-        $now   = time();
-        $files = @glob(self::CACHE_DIR . '/resp_*.json');
-        if (!is_array($files)) return;
-        foreach ($files as $f) {
-            $st = @stat($f);
-            if (is_array($st) && isset($st['mtime']) && ($now - (int)$st['mtime']) > 10) @unlink($f);
+        $now = time();
+        foreach (['resp_' => 10, 'lines_' => 172800] as $prefix => $maxAge) {
+            $files = @glob(self::CACHE_DIR . '/' . $prefix . '*.json');
+            if (!is_array($files)) continue;
+            foreach ($files as $f) {
+                $st = @stat($f);
+                if (is_array($st) && isset($st['mtime']) && ($now - (int)$st['mtime']) > $maxAge) @unlink($f);
+            }
         }
     }
 }

@@ -4,7 +4,6 @@
    License: GPLv3
    ========================================================================= */
 
-/* colours and tokens */
 :root {
   --lv-c-text:          rgba(255,255,255,.85);
   --lv-c-text-mid:      rgba(255,255,255,.65);
@@ -18,7 +17,6 @@
   --lv-c-resizer:       rgba(255,255,255,.25);
   --lv-c-panel-bg:      rgba(0,0,0,.20);
 }
-/* light themes (white, azure) */
 .lv-light {
   --lv-c-text:          rgba(0,0,0,.85);
   --lv-c-text-mid:      rgba(0,0,0,.65);
@@ -33,7 +31,6 @@
   --lv-c-panel-bg:      rgba(0,0,0,.03);
 }
 
-/* widget body + layout */
 .logsviewer-body{
   isolation:isolate;
   display:flex;
@@ -42,22 +39,22 @@
   max-width:100%;
   box-sizing:border-box;
 
-  --logsviewer-bg:var(--bg-elevation-2,var(--bg-elevation-1,#1b1b1b));
-  --logsviewer-border:var(--border-secondary,#444);
-  --logsviewer-text-primary:var(--text-primary,#e0e0e0);
-  --logsviewer-text-secondary:var(--text-secondary,#c0c0c0);
-  --logsviewer-text-muted:var(--text-tertiary,#888);
+  --logsviewer-bg:#1b1b1b;
+  --logsviewer-border:#444;
+  --logsviewer-text-primary:#e0e0e0;
+  --logsviewer-text-secondary:#c0c0c0;
+  --logsviewer-text-muted:#888;
   --logsviewer-tab-bg:#2c2c2c;
   --logsviewer-tab-border:#3c3c3c;
   --logsviewer-tab-active-bg:var(--logsviewer-bg);
   --logsviewer-tab-active-border:#4a4a4a;
   --logsviewer-tab-hover-border:#5a5a5a;
-  --logsviewer-tab-focus-ring:var(--focus-ring,#69a0ff);
-  --logsviewer-tab-running-bg:var(--success-bg,#234f1e);
-  --logsviewer-tab-running-border:var(--success-border,#2f6f2a);
-  --logsviewer-accent:var(--success-border,#2f6f2a);
-  --logsviewer-success-bg:var(--success-bg,#234f1e);
-  --logsviewer-success-border:var(--success-border,#2f6f2a);
+  --logsviewer-tab-focus-ring:#69a0ff;
+  --logsviewer-tab-running-bg:#234f1e;
+  --logsviewer-tab-running-border:#2f6f2a;
+  --logsviewer-accent:#2f6f2a;
+  --logsviewer-success-bg:#234f1e;
+  --logsviewer-success-border:#2f6f2a;
   --logsviewer-toggle-off:#6b6b6b;
   --logsviewer-toggle-on:#3b82f6;
   --logsviewer-toggle-knob:#f5f5f5;
@@ -100,9 +97,7 @@
 }
 
 .lv-light.logsviewer-header,
-.lv-light .logsviewer-header,
-.lv-light.logsviewer-legacy-header,
-.lv-light .logsviewer-legacy-header{
+.lv-light .logsviewer-header{
   --logsviewer-bg:#f5f5f5;
   --logsviewer-border:#ccc;
   --logsviewer-text-primary:#1a1a1a;
@@ -115,8 +110,7 @@
   --logsviewer-toggle-on:#486dba;
 }
 
-.logsviewer-header,
-.logsviewer-legacy-header{
+.logsviewer-header{
   --logsviewer-toggle-on:#486dba;
   max-width:100%;
   box-sizing:border-box;
@@ -128,9 +122,6 @@
 .logsviewer-header .tile-header-right,
 .logsviewer-header__right{ min-width:0; flex-shrink:1; }
 
-.logsviewer-body--responsive,
-.logsviewer-body--legacy{ gap:0 !important; }
-
 .logsviewer-header__left{ flex:1; flex-direction:column; gap:0.25rem; }
 .logsviewer-header__top{ display:inline-flex; gap:1rem; }
 .logsviewer-header__icon{ font-size:2rem; flex-shrink:0; color:var(--logsviewer-text-secondary); }
@@ -138,14 +129,6 @@
 .logsviewer-header__right{ flex-direction:column; gap:0.7rem; min-width:0; flex-shrink:1; }
 .logsviewer-header__controls{ display:inline-flex; flex-wrap:nowrap; gap:0.75rem; align-items:center; justify-content:flex-end; width:100%; min-width:0; }
 .logsviewer-header__inputs{ display:flex; align-items:center; gap:0.6rem; justify-content:flex-end; width:100%; }
-
-.logsviewer-legacy-header{ display:flex; gap:0.75rem; align-items:flex-start; justify-content:space-between; margin-bottom:0.75rem; }
-.logsviewer-legacy-header__left{ flex:1; display:flex; flex-direction:column; gap:0.25rem; }
-.logsviewer-legacy-header__top{ display:inline-flex; gap:1rem; align-items:center; }
-.logsviewer-legacy-header__icon{ font-size:2rem; flex-shrink:0; color:var(--logsviewer-text-secondary); }
-.logsviewer-legacy-title{ margin:0; font-size:1.5625rem; font-weight:600; color:var(--logsviewer-text-primary); text-transform:uppercase; }
-.logsviewer-legacy-controls{ display:flex; flex-direction:column; align-items:flex-end; gap:0.28rem; }
-.logsviewer-legacy-controls__controls{ display:inline-flex; align-items:center; }
 
 #logsviewer-settings-icon,
 #logsviewer-export-icon{
@@ -167,8 +150,7 @@
 .logsviewer-autoscroll-state--off{ color:var(--lv-c-text-mid); }
 .logsviewer-autoscroll-state--on{ color:#0088cc; font-size:1.8rem; }
 
-.logsviewer-header__left .logsviewer-autoscroll-container,
-.logsviewer-legacy-header__left .logsviewer-autoscroll-container{
+.logsviewer-header__left .logsviewer-autoscroll-container{
   margin-top:-5px !important;
   margin-left:5rem;
   transform:translateY(-6px) scale(0.46);
@@ -312,7 +294,6 @@
 .logsviewer-cat-dropdown li.lv-item--active:has(.lv-drop-dot)::before{ display:none; }
 .logsviewer-cat-dropdown li.lv-item--active:hover{ background:var(--lv-c-bg-hover); }
 
-/* docker/vm state dots */
 .lv-drop-dot{
   display:inline-block; width:6px; height:6px; min-width:6px; min-height:6px;
   border-radius:50%; margin-right:0.4rem; vertical-align:middle; flex-shrink:0;
@@ -348,7 +329,6 @@
 .logsviewer-tabrow-ctrl__label{ pointer-events:none; font-weight:500; }
 .logsviewer-tabrow-ctrl__caret{ font-size:0.73em; opacity:0.35; pointer-events:none; }
 
-/* !important because unraid sets a min-width on every select, which would size these past the button and scroll the dashboard */
 .logsviewer-tabrow-ctrl .logsviewer-filter-select,
 .logsviewer-tabrow-ctrl .logsviewer-syntax-select{
   position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:1.06rem;
@@ -356,10 +336,6 @@
 }
 .logsviewer-tabrow-ctrl .logsviewer-filter-select option,
 .logsviewer-tabrow-ctrl .logsviewer-syntax-select option{ background:var(--logsviewer-tab-bg,#2c2c2c); color:var(--logsviewer-text-primary,#e0e0e0); font-size:1.06rem; }
-
-.logsviewer-body--legacy .logsviewer-cat-btn{ font-size:1.04rem; padding:0.40rem 0.78rem; }
-.logsviewer-body--legacy .logsviewer-cat-dropdown li{ font-size:1.04rem; }
-.logsviewer-body--legacy .logsviewer-tabrow-ctrl{ font-size:0.95rem; padding:0.37rem 0.68rem; }
 
 .logsviewer-collapsible{ display:block; margin:0 !important; padding:0 !important; }
 .logsviewer-tabs:not(:empty) + .logsviewer-collapsible{ display:block; margin:0 !important; padding:0 !important; }
@@ -383,7 +359,6 @@
   contain:layout style;
 }
 .logsviewer-log.logsviewer-nowarp{ overflow-x:auto; }
-.logsviewer-body--legacy .logsviewer-log{ height:240px; }
 
 #logsviewer-container{ position:relative; overflow-x:hidden; }
 
@@ -466,7 +441,6 @@
   font-family:var(--logsviewer-font-family); font-size:1.05rem;
 }
 .logsviewer-toast-right:empty{ display:none; }
-/* status toasts */
 .lv-toast-sep{ width:1px; height:0.9rem; background:rgba(255,255,255,0.25); }
 .lv-light .lv-toast-sep{ background:rgba(0,0,0,0.20); }
 .lv-toast-size{ color:rgba(255,255,255,0.30); }
@@ -651,10 +625,8 @@
 .logsviewer-compact-indicator--running{ color:#4ade80; border-color:var(--logsviewer-tab-running-border); }
 .logsviewer-compact-indicator--running::before{ background-color:var(--logsviewer-success-border,#2f6f2a); }
 
-/* responsive */
 @media (max-width:1024px){
   .logsviewer-header__title{ font-size:1.3rem; }
-  .logsviewer-legacy-title{ font-size:1.3rem; }
   .logsviewer-cat-btn{ font-size:1.05rem; padding:0.42rem 0.85rem; }
   .logsviewer-cat-btn__dot{ width:9px; height:9px; min-width:9px; min-height:9px; }
 }
@@ -679,15 +651,7 @@
     justify-content:flex-start !important; gap:0.5rem !important;
   }
 
-  .logsviewer-legacy-header{
-    flex-direction:column !important; gap:0.4rem !important;
-  }
-  .logsviewer-legacy-controls{
-    flex-direction:row !important; align-items:center !important; justify-content:flex-start !important;
-  }
-
-  .logsviewer-header__left .logsviewer-autoscroll-container,
-  .logsviewer-legacy-header__left .logsviewer-autoscroll-container{
+  .logsviewer-header__left .logsviewer-autoscroll-container{
     margin-left:3.5rem !important; transform:translateY(-5px) scale(0.42) !important;
   }
 
@@ -721,7 +685,9 @@
     justify-content:center !important;
   }
   .logsviewer-selected-toast{ font-size:1rem !important; white-space:normal !important; }
+}
 
+@media (max-width:768px), (pointer:coarse){
   .logsviewer-cat-dropdown{ display:none !important; pointer-events:none !important; }
   .logsviewer-cat-native{ display:block; }
 }
@@ -729,7 +695,6 @@
 @media (max-width:560px){
 
   .logsviewer-header__title{ font-size:1.1rem !important; }
-  .logsviewer-legacy-title{ font-size:1.1rem !important; }
   .logsviewer-header__icon{ width:24px !important; height:24px !important; }
   .logsviewer-header__top{ gap:0.5rem !important; }
 
@@ -741,8 +706,7 @@
   #logsviewer-manual-refresh,
   #logsviewer-toolpage-icon{ width:1.6rem !important; height:1.6rem !important; }
 
-  .logsviewer-header__left .logsviewer-autoscroll-container,
-  .logsviewer-legacy-header__left .logsviewer-autoscroll-container{
+  .logsviewer-header__left .logsviewer-autoscroll-container{
     margin-left:2.5rem !important; transform:translateY(-4px) scale(0.38) !important;
   }
 
@@ -772,7 +736,6 @@
   .logsviewer-header,
   .tile-header.logsviewer-header{ padding:0.3rem 0.4rem !important; }
   .logsviewer-header__title{ font-size:1rem !important; }
-  .logsviewer-legacy-title{ font-size:1rem !important; }
 
   .logsviewer-body{ gap:0 !important; }
 
@@ -798,7 +761,6 @@
 
 @media (max-width:360px){
   .logsviewer-header__title{ font-size:0.9rem !important; }
-  .logsviewer-legacy-title{ font-size:0.9rem !important; }
   .logsviewer-cat-btn{ font-size:0.72rem !important; padding:0.24rem 0.35rem !important; }
   .logsviewer-tabrow-ctrl{ font-size:0.68rem !important; }
   .logsviewer-log{ height:150px !important; font-size:0.75rem !important; }

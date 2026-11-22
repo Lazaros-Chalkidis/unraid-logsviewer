@@ -15,7 +15,6 @@
 #lvtPanelLogs > .lvt-header { flex-shrink: 0; }
 #lvtPanelLogs > .lvt-logs-layout { flex: 1; min-height: 0; }
 
-/* logs tab: sidebar + main pane */
 .lvt-logs-layout {
   display: flex;
   gap: 0;
@@ -25,7 +24,6 @@
   overflow: hidden;
 }
 
-/* source sidebar */
 .lvt-sidebar {
   width: 250px;
   flex-shrink: 0;
@@ -138,7 +136,6 @@
 .lvt-sidebar__empty .fa { font-size: 1.4rem; margin-bottom: .5rem; display: block; opacity: .5; }
 .lvt-sidebar__empty a { color: #4299e4; text-decoration: underline; }
 
-/* main pane */
 .lvt-main {
   flex: 1;
   display: flex;
@@ -302,12 +299,20 @@
   background: var(--lvt-accent);
   animation: none;
 }
+.lvt-poll-indicator--off {
+  color: var(--lvt-text-dim);
+  background: var(--lvt-bg-subtle);
+  border-color: var(--lvt-border);
+}
+.lvt-poll-indicator--off .lvt-poll-dot {
+  background: var(--lvt-health-idle);
+  animation: none;
+}
 @keyframes lvt-pulse {
   0%, 100% { opacity: .35; }
   50%      { opacity: 1; }
 }
 
-/* the log body itself */
 .lvt-log-content {
   flex: 1;
   overflow-y: auto;
@@ -771,7 +776,6 @@
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--error.is-active    { background: var(--lvt-sev-error)    !important; border-color: var(--lvt-sev-error)    !important; color: #fff !important; }
 #lvtPanelLogs .lvt-sev-bar .lvt-sev-count--critical.is-active { background: var(--lvt-sev-critical) !important; border-color: var(--lvt-sev-critical) !important; color: #fff !important; }
 
-/* unraid styles plain buttons, so the panel rules need the same weight as the badges */
 #lvtPanelLogs .lvt-mode {
   box-sizing: border-box !important;
   display: inline-flex !important;

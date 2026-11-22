@@ -13,18 +13,11 @@ require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
 $cfg = parse_plugin_cfg('logsviewer', true);
 
-$_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
-$_theme_name = $_dyn_cfg['display']['theme'] ?? '';
-$lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';  // white and azure are the light themes
+$lv_light_class = LogsViewerEndpoint::lightTheme() ? ' lv-light' : '';
 
 LogsViewerEndpoint::migrateLegacySources($cfg);
 
-$dashSystemRaw = (string)($cfg['DASH_ENABLED_SYSTEM_LOGS'] ?? '');
-$enabledScripts = array_values(array_filter(array_map('trim', explode(',', $dashSystemRaw)), fn($v) => $v !== ''));
-
-if (!$enabledScripts && !array_key_exists('DASH_ENABLED_SYSTEM_LOGS', $cfg)) {
-    $enabledScripts = ['syslog', 'dmesg', 'graphql-api.log', 'nginx-error'];
-}
+$enabledScripts = LogsViewerEndpoint::enabledSystemLogs($cfg, 'DASH_ENABLED_SYSTEM_LOGS');
 
 $dashDockerRaw = (string)($cfg['DASH_ENABLED_DOCKER_CONTAINERS'] ?? '');
 $enabledDockerContainers = array_values(array_filter(array_map('trim', explode(',', $dashDockerRaw)), fn($v) => $v !== ''));
@@ -40,28 +33,9 @@ $enabledCustomLogs = array_values(array_filter(array_map('trim', explode(',', $d
 
 $enabledSystemLogs = $enabledScripts;
 
-$dockerStates = [];
-if (!empty($enabledDockerContainers)) {
-    $raw = @shell_exec('docker ps -a --format "{{.Names}}\t{{.State}}" 2>/dev/null');
-    if ($raw) {
-        foreach (array_filter(explode("\n", trim($raw))) as $line) {
-            $p = explode("\t", $line);
-            if (count($p) >= 2) $dockerStates[trim($p[0])] = trim($p[1]);
-        }
-    }
-}
+$dockerStates = !empty($enabledDockerContainers) ? LogsViewerEndpoint::dockerStates() : [];
 
-$vmStates = [];
-if (!empty($enabledVms)) {
-    $raw = @shell_exec('virsh list --all 2>/dev/null');
-    if ($raw) {
-        foreach (array_filter(explode("\n", trim($raw))) as $line) {
-            if (preg_match('/^\s*\d+\s+(\S+)\s+(.+)$/', $line, $m)) {
-                $vmStates[trim($m[1])] = (stripos(trim($m[2]), 'running') !== false) ? 'running' : 'stopped';
-            }
-        }
-    }
-}
+$vmStates = !empty($enabledVms) ? (LogsViewerEndpoint::vmStates() ?? []) : [];
 
 $systemLogNames = [
     'syslog' => 'Syslog', 'syslog-previous' => 'Syslog Previous', 'dmesg' => 'Dmesg', 'graphql-api.log' => 'GraphQL API',
@@ -73,8 +47,7 @@ if (!empty($enabledUserScripts)) {
     foreach ($enabledUserScripts as $_lvSk) {
         if (strpos($_lvSk, 'script:') !== 0) continue;
         $_lvFolder = substr($_lvSk, 7);
-        $_lvName   = trim((string)@file_get_contents('/boot/config/plugins/user.scripts/scripts/' . $_lvFolder . '/name'));
-        $systemLogNames[$_lvSk] = ($_lvName !== '') ? $_lvName : $_lvFolder;
+        $systemLogNames[$_lvSk] = LogsViewerEndpoint::userScriptLabel($_lvFolder);
         $scriptStates[$_lvSk]   = LogsViewerEndpoint::userScriptStatus($_lvFolder);
     }
 }
@@ -101,17 +74,6 @@ if (is_file($_lvCustomFile)) {
     }
 }
 
-$version_override = $cfg['VERSION_OVERRIDE'] ?? 'auto';
-if ($version_override === 'legacy') {
-    $isResponsiveWebgui = false;
-} elseif ($version_override === 'responsive') {
-    $isResponsiveWebgui = true;
-} else {
-    $version_data   = @parse_ini_file('/etc/unraid-version');
-    $webgui_version = $version_data['version'] ?? '0.0.0';
-    $isResponsiveWebgui = version_compare($webgui_version, '7.2.0-beta', '>=');  // 7.2 changed the dashboard tile api
-}
-
 $_gf_families = [
     'jetbrains'     => 'JetBrains+Mono',
     'fira'          => 'Fira+Code',
@@ -119,7 +81,6 @@ $_gf_families = [
     'ibmplex'       => 'IBM+Plex+Mono',
 ];
 
-// only the selected family, the old link pulled all four on every render
 $_gf_pick = $_gf_families[$cfg['LOG_FONT_FAMILY'] ?? 'system'] ?? '';
 $googleFontsLink = $_gf_pick !== ''
     ? '<link rel="stylesheet" referrerpolicy="no-referrer" href="https://fonts.googleapis.com/css2?family=' . $_gf_pick . ':wght@400;700&display=swap" media="print" onload="this.media=\'all\'">'
@@ -169,13 +130,11 @@ $tile_config = [
     'enabledUserScripts'     => $enabledUserScripts,
     'enabledCustomLogs'      => $enabledCustomLogs,
     'systemLogNames'         => $systemLogNames,
-
-    'isResponsive'    => $isResponsiveWebgui,
 ];
 
 $toast_hidden_class = ($tile_config['showToast'] ?? true) ? '' : ' lv-toast-hidden';
 
-$tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
+$tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_INVALID_UTF8_SUBSTITUTE);
 
 $tile_title        = htmlspecialchars(_('Logs Viewer'), ENT_QUOTES, 'UTF-8');
 $tabs_aria_label   = htmlspecialchars(_('Logs Viewer tabs'), ENT_QUOTES, 'UTF-8');
@@ -202,11 +161,8 @@ $render_autoscroll = static function(): string {
 HTML;
 };
 
-$render_controls = static function(bool $responsive): string {
-    $wrapOpen  = $responsive ? '<span class="tile-header-right-controls">' : '';
-    $wrapClose = $responsive ? '</span>' : '';
-
-    return $wrapOpen . <<<HTML
+$render_controls = static function(): string {
+    return '<span class="tile-header-right-controls">' . <<<HTML
 <a id="logsviewer-manual-refresh" href="#" title="Refresh logs manually" aria-label="Refresh logs manually">
     <i class="fa fa-fw fa-refresh control" aria-hidden="true"></i>
 </a>
@@ -219,11 +175,12 @@ $render_controls = static function(bool $responsive): string {
 <a id="logsviewer-settings-icon" href="/Settings/LogsviewerSettings#dashboard" title="Logsviewer Settings" aria-label="Logsviewer Settings">
     <i class="fa fa-fw fa-cog control" aria-hidden="true"></i>
 </a>
-HTML . $wrapClose;
+HTML . '</span>';
 };
 
 $render_tabs = static function(string $tabs_aria_label, array $enabledScripts, array $systemLogNames, array $enabledDockerContainers, array $enabledVms, array $enabledCustomLogs, bool $syntaxEnabled, bool $showFilter, array $dockerStates = [], array $vmStates = [], array $enabledUserScripts = [], array $scriptStates = []): string {
 
+    $sysHidden = (!$enabledScripts && ($enabledDockerContainers || $enabledVms || $enabledUserScripts || $enabledCustomLogs)) ? ' logsviewer-cat-btn--hidden' : '';
     $sysOpts = ''; $sysNative = '';
     foreach ($enabledScripts as $key) {
         $name = htmlspecialchars($systemLogNames[$key] ?? $key, ENT_QUOTES, 'UTF-8');
@@ -311,7 +268,6 @@ HTML;
             </div>
 HTML;
     } else {
-        // the badges filter through this select, so it stays in the dom even with the dropdown turned off
         $filterState = <<<HTML
         <select id="logsviewer-filter-select" hidden aria-hidden="true" tabindex="-1" style="display:none">
 {$filterOptions}
@@ -329,7 +285,7 @@ HTML;
     {$filterState}
     <div class="logsviewer-tabs-row">
         <div class="logsviewer-category-tabs" role="tablist" aria-label="{$tabs_aria_label}">
-            <div class="logsviewer-cat-btn logsviewer-cat-btn--active" data-category="system" data-selected="">
+            <div class="logsviewer-cat-btn logsviewer-cat-btn--active{$sysHidden}" data-category="system" data-selected="">
                 <span class="logsviewer-cat-btn__dot logsviewer-cat-btn__dot--system" aria-hidden="true"></span>
                 <span class="logsviewer-cat-btn__label">System</span>
                 <i class="fa fa-caret-down logsviewer-cat-btn__caret" aria-hidden="true"></i>
@@ -439,7 +395,6 @@ HTML;
 };
 
 $render_header = static function(
-    bool $responsive,
     string $tile_title,
     string $compact_html,
     string $autoscroll_html,
@@ -448,8 +403,7 @@ $render_header = static function(
 
     $inputs_row = '<div class="logsviewer-header__inputs"></div>';
 
-    if ($responsive) {
-        return <<<HTML
+    return <<<HTML
 <span class="tile-header logsviewer-header">
     <span class="tile-header-left logsviewer-header__left">
         <div class="logsviewer-header__top">
@@ -466,29 +420,9 @@ $render_header = static function(
     </span>
 </span>
 HTML;
-    }
-
-    return <<<HTML
-<div class="logsviewer-legacy-header">
-    <div class="logsviewer-legacy-header__left">
-        <div class="logsviewer-legacy-header__top">
-            <i class="fa fa-terminal f32 logsviewer-legacy-header__icon" aria-hidden="true"></i>
-            <span class="logsviewer-legacy-title">{$tile_title}</span>
-        </div>
-        {$autoscroll_html}
-        {$compact_html}
-    </div>
-
-    <span class="logsviewer-legacy-controls">
-        <div class="logsviewer-legacy-controls__controls">{$controls_html}</div>
-        {$inputs_row}
-    </span>
-</div>
-HTML;
 };
 
-$render_fallback_tbody = static function(
-    bool $responsive,
+$render_tile = static function(
     string $tile_title,
     string $header_html,
     string $tabs_html,
@@ -527,60 +461,17 @@ HTML;
 
 $compact_html   = $render_compact();
 $autoscroll_html= $render_autoscroll();
+$header_html    = $render_header($tile_title, $compact_html, $autoscroll_html, $render_controls());
 $tabs_html      = $render_tabs($tabs_aria_label, $enabledScripts, $systemLogNames, $enabledDockerContainers, $enabledVms, $enabledCustomLogs, $tile_config['syntaxEnabled'], $tile_config['showFilter'], $dockerStates, $vmStates, $enabledUserScripts, $scriptStates);
 $panel_html     = $render_log_panel($log_placeholder, $last_update_label, $tile_config['showToast'] ?? true);
 $config_html    = $render_config($tile_config_json);
 
 if ($lv_light_class !== '') {
-    $tabs_html  = str_replace('class="logsviewer-body"', 'class="logsviewer-body' . $lv_light_class . '"', $tabs_html);
-    $panel_html = str_replace('class="logsviewer-body logsviewer-collapsible"', 'class="logsviewer-body logsviewer-collapsible' . $lv_light_class . '"', $panel_html);
+    $header_html = str_replace('class="tile-header logsviewer-header"', 'class="tile-header logsviewer-header' . $lv_light_class . '"', $header_html);
+    $tabs_html   = str_replace('class="logsviewer-body"', 'class="logsviewer-body' . $lv_light_class . '"', $tabs_html);
+    $panel_html  = str_replace('class="logsviewer-body logsviewer-collapsible"', 'class="logsviewer-body logsviewer-collapsible' . $lv_light_class . '"', $panel_html);
 }
 
-$controls_responsive = $render_controls(true);
-$controls_legacy     = $render_controls(false);
-
-$header_responsive = $render_header(true,  $tile_title, $compact_html, $autoscroll_html, $controls_responsive);
-$header_legacy     = $render_header(false, $tile_title, $compact_html, $autoscroll_html, $controls_legacy);
-
-if ($lv_light_class !== '') {
-    $header_responsive = str_replace('class="tile-header logsviewer-header"', 'class="tile-header logsviewer-header' . $lv_light_class . '"', $header_responsive);
-    $header_legacy     = str_replace('class="logsviewer-legacy-header"', 'class="logsviewer-legacy-header' . $lv_light_class . '"', $header_legacy);
-}
-
-$tile = [
-    'name'    => 'logsviewer',
-    'title'   => 'Logs Viewer',
-    'icon'    => 'fa-terminal',
-    'content' => '',
-    'small'   => 1,
-    'medium'  => 1,
-    'large'   => 2,
-    'script'  => '/plugins/logsviewer/js/logsviewer.js',
-    'style'   => '/plugins/logsviewer/css/widget.css',
-];
-
-$tile['content'] = $isResponsiveWebgui
-    ? ($header_responsive . $tabs_html . $panel_html . $config_html)
-    : ($header_legacy     . $tabs_html . $panel_html . $config_html);
-
-$fallback_tile_markup = $isResponsiveWebgui
-    ? $render_fallback_tbody(true,  $tile_title, $header_responsive, $tabs_html, $panel_html, $config_html, $googleFontsLink)
-    : $render_fallback_tbody(false, $tile_title, $header_legacy,     $tabs_html, $panel_html, $config_html, $googleFontsLink);
-
-// 7.x tile registration, older builds use the fallback markup
-if (function_exists('register_dashboard_tile')) {
-    $registration_result = @register_dashboard_tile($tile);
-
-    if (is_string($registration_result) && trim($registration_result) !== '') {
-        echo $registration_result;
-        return;
-    }
-
-    if ($registration_result) {
-        return;
-    }
-}
-
-$mytiles['logsviewer']['column1'] = $fallback_tile_markup;
+$mytiles['logsviewer']['column1'] = $render_tile($tile_title, $header_html, $tabs_html, $panel_html, $config_html, $googleFontsLink);
 return;
 ?>

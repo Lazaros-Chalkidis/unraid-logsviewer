@@ -17,10 +17,8 @@ require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
 $cfg = parse_plugin_cfg('logsviewer', true) ?: [];
 
-$dynamix_cfg  = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
-$unraid_theme = $dynamix_cfg['display']['theme'] ?? '';
-$lvt_light    = in_array($unraid_theme, ['white', 'azure'], true);  // light themes get the lighter syntax stylesheet
-$lightClass   = $lvt_light ? ' lvt-light' : '';
+$lvt_light  = LogsViewerEndpoint::lightTheme();
+$lightClass = $lvt_light ? ' lvt-light' : '';
 
 $_lvt_allowed_fs = ['1.125rem', '1.25rem'];
 $lvt_font_size   = $cfg['TOOL_LOG_FONT_SIZE'] ?? '1.125rem';
@@ -42,7 +40,10 @@ $tile_config = [
     'defaultTab'   => 'logs',
     'apiUrl'       => '/plugins/logsviewer/include/logsviewer_api.php',
     'tabLoaderUrl' => '/plugins/logsviewer/include/tool-loader.php',
+    'refreshOn'    => ($cfg['TOOL_REFRESH_ENABLED'] ?? '1') === '1',
     'refreshSecs'  => (int)$lvt_refresh_secs,
+    'autoScroll'   => ($cfg['TOOL_AUTO_SCROLL'] ?? '1') === '1',
+    'pauseOnHover' => ($cfg['TOOL_PAUSE_ON_HOVER'] ?? '1') === '1',
     'exportFormat' => $lvt_export_format,
 ];
 $tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
@@ -70,7 +71,6 @@ $tile_config_json = json_encode($tile_config, JSON_UNESCAPED_SLASHES | JSON_HEX_
 
 (function() {
     'use strict';
-    // free the tool from any narrow max-width ancestor so it can use the full width
     function unlockAncestors() {
         var wrap = document.querySelector('.lvt-wrapper');
         if (!wrap) return;

@@ -25,7 +25,6 @@ $(function () {
     loadTab('logs');
 });
 
-// fetch the tab html over ajax, cache it so re-opening is instant
 function loadTab(tab) {
     if (_loadingTab === tab) return;
     _loadingTab = tab;
@@ -104,7 +103,6 @@ window.LVT_TAB = window.LVT_TAB || {
     }
 };
 
-// tell the tab's own script it's now in the dom and visible
 function notifyTabReady(tab) {
     var h = window.LVT_TAB._handlers[tab];
     if (!h) return;

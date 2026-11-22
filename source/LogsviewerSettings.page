@@ -14,8 +14,8 @@ require_once '/usr/local/emhttp/plugins/logsviewer/include/logsviewer_api.php';
 
 $plugin_name = 'logsviewer';
 $cfg_file = "/boot/config/plugins/{$plugin_name}/{$plugin_name}.cfg";
-
-$available_scripts = ['syslog', 'syslog-previous', 'dmesg', 'graphql-api.log', 'nginx-error', 'phplog', 'libvirt'];
+$lv_tabs = ['dash', 'tool', 'backup', 'alerts'];
+$lv_tab_file = '/tmp/logsviewer_cache/settings-tab';
 
 $script_display_names = [
   'syslog' => 'Syslog',
@@ -31,11 +31,6 @@ $yn = static function($v, $default = '0') {
   $v = (string)($v ?? $default);
   return ($v === '1') ? '1' : '0';
 };
-$clamp_tail = static function($v) {
-  $v = (int)$v;
-  $allowed = [0, 200, 500, 800, 1500];
-  return in_array($v, $allowed, true) ? (string)$v : '0';
-};
 $sanitize_hex = static function($v, $fallback = '') {
   $v = trim((string)$v);
   if ($v === '') return $fallback;
@@ -47,182 +42,124 @@ $sanitize_hex = static function($v, $fallback = '') {
   return strtolower($v);
 };
 
-$sanitize_font_family = static function($v, $fallback = 'system') {
-  $v = strtolower(trim((string)$v));
-  $allowed = ['system','monospace','jetbrains','fira','sourcecodepro','ibmplex'];
-  return in_array($v, $allowed, true) ? $v : $fallback;
+$lv_tail_lines = ['0'=>'Full log - Default','200'=>'200','500'=>'500','800'=>'800','1500'=>'1500'];
+$lv_font_sizes = ['1.125rem'=>'Default','1.25rem'=>'Large'];
+
+$lv_selects = [
+  'REFRESH_INTERVAL'     => ['10', ['3'=>'3s','5'=>'5s','10'=>'10s - Default','20'=>'20s','30'=>'30s','60'=>'60s']],
+  'LOG_FONT_SIZE'        => ['1.125rem', $lv_font_sizes],
+  'LOG_FONT_FAMILY'      => ['system', ['system'=>'System Mono - Default','monospace'=>'Generic Monospace','jetbrains'=>'JetBrains Mono (web font)','fira'=>'Fira Code (web font)','sourcecodepro'=>'Source Code Pro (web font)','ibmplex'=>'IBM Plex Mono (web font)']],
+  'THEME_PRESET'         => ['default', ['default'=>'Default - Current','terminal'=>'Terminal','dim'=>'Dim','contrast'=>'High Contrast','midnight'=>'Midnight','ocean'=>'Ocean','monokai'=>'Monokai']],
+  'SYNTAX_ENGINE'        => ['hljs', ['hljs'=>'Highlight.js - Default','prism'=>'Prism']],
+  'HIGHLIGHT_MODE'       => ['full', ['full'=>'Full - Default','keywords'=>'Keywords only']],
+  'EXPORT_FORMAT'        => ['log', ['log'=>'.log - Default','txt'=>'.txt','json'=>'.json']],
+  'AUTO_SCROLL_DEFAULT'  => ['1', ['1'=>'On - Default','0'=>'Off']],
+  'TAIL_LINES'           => ['0', $lv_tail_lines],
+  'TOOL_TAIL_LINES'      => ['0', $lv_tail_lines],
+  'TOOL_LOG_FONT_SIZE'   => ['1.125rem', $lv_font_sizes],
+  'TOOL_REFRESH_SECS'    => ['5', ['3'=>'3 seconds','5'=>'5 seconds - Default','10'=>'10 seconds','20'=>'20 seconds']],
+  'TOOL_EXPORT_FORMAT'   => ['txt', ['txt'=>'Plain text (.log)','json'=>'JSON (.json)','csv'=>'CSV (.csv)']],
+  'BACKUP_RETENTION'     => ['3', ['1'=>'1 Month','2'=>'2 Months','3'=>'3 Months - Default','4'=>'4 Months','5'=>'5 Months','6'=>'6 Months']],
+  'BACKUP_SCHEDULE'      => ['23', ['23'=>'23:59 - Default','0'=>'00:00','2'=>'02:00','4'=>'04:00','6'=>'06:00']],
+  'BACKUP_INTERVAL_DAYS' => ['1', ['1'=>'Every day - Default','2'=>'Every 2 days','3'=>'Every 3 days','4'=>'Every 4 days']],
+  'ALERTS_INTERVAL'      => ['2', ['1'=>'Every 1 minute','2'=>'Every 2 minutes - Default','5'=>'Every 5 minutes']],
+];
+
+$lv_pick = static function(string $key, $v) use ($lv_selects) {
+  [$default, $options] = $lv_selects[$key];
+  return (is_string($v) && isset($options[$v])) ? $v : $default;
 };
 
-$sanitize_interval = static function($v) {
-  $v = (string)$v;
-  $allowed = ['3','5','10','15','30','60'];
-  return in_array($v, $allowed, true) ? $v : '10';
-};
-$sanitize_version = static function($v) {
-  $v = strtolower(trim((string)$v));
-  $allowed = ['auto','legacy','responsive'];
-  return in_array($v, $allowed, true) ? $v : 'auto';
-};
-$sanitize_theme = static function($v) {
-  $v = strtolower(trim((string)$v));
-  $allowed = ['default','terminal','dim','contrast','midnight','ocean','monokai'];
-  return in_array($v, $allowed, true) ? $v : 'default';
-};
-$sanitize_highlight_mode = static function($v) {
-  $v = strtolower(trim((string)$v));
-  $allowed = ['full','keywords'];
-  return in_array($v, $allowed, true) ? $v : 'full';
-};
-$sanitize_syntax_engine = static function($v) {
-  $v = strtolower(trim((string)$v));
-  $allowed = ['hljs','prism'];
-  return in_array($v, $allowed, true) ? $v : 'hljs';
-};
-$sanitize_export_format = static function($v) {
-  $v = strtolower(trim((string)$v));
-  $allowed = ['log','txt','json'];
-  return in_array($v, $allowed, true) ? $v : 'log';
-};
-$sanitize_font_size = static function($v) {
-  $v = trim((string)$v);
+$lv_default_system = implode(',', LogsViewerEndpoint::DEFAULT_SYSTEM_LOGS);
 
-  $allowed = ['1.125rem','1.25rem'];
-  return in_array($v, $allowed, true) ? $v : '1.125rem';
-};
-
-$sanitize_refresh_secs = static function($v) {
-  $v = trim((string)$v);
-  $allowed = ['3','5','10','20'];
-  return in_array($v, $allowed, true) ? $v : '5';
-};
-
-$sanitize_tool_export_format = static function($v) {
-  $v = strtolower(trim((string)$v));
-  $allowed = ['txt','json','csv'];
-  return in_array($v, $allowed, true) ? $v : 'txt';
-};
-
-// settings apply: rebuild the cfg, write it, then sync the cron schedules
 if (isset($_POST['#apply'])) {
 
+  $lv_post = array_filter($_POST, 'is_string');
   $cfg_existing = parse_plugin_cfg($plugin_name, true);
 
-  $enabled_system_logs_raw = $_POST['ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['ENABLED_SYSTEM_LOGS'] ?? '');
-
-  if (!empty($_POST['ENABLED_SCRIPTS']) && is_array($_POST['ENABLED_SCRIPTS'])) {
-    $selected = array_map('trim', $_POST['ENABLED_SCRIPTS']);
-  } else {
-
-    $selected = array_filter(array_map('trim', explode(',', $enabled_system_logs_raw)));
-  }
-
-  $allow_map = array_flip($available_scripts);
-  $selected = array_values(array_filter($selected, function($v) use ($allow_map) {
-    return isset($allow_map[$v]);
-  }));
-
-  if (empty($selected)) $selected = ['syslog'];
+  $source_list = static function(string $category, string $key, string $default = '') use ($cfg_existing, $lv_post) {
+    return LogsViewerEndpoint::cleanSources($category, $lv_post[$key] ?? (string)($cfg_existing[$key] ?? $default));
+  };
+  $lv_choice = static function(string $key) use ($lv_pick, $cfg_existing, $lv_post) {
+    return $lv_pick($key, $lv_post[$key] ?? ($cfg_existing[$key] ?? null));
+  };
 
   $new_cfg = [
 
-    'REFRESH_ENABLED'   => $yn($_POST['REFRESH_ENABLED'] ?? ($cfg_existing['REFRESH_ENABLED'] ?? '1'), '1'),
-    'REFRESH_INTERVAL'  => $sanitize_interval($_POST['REFRESH_INTERVAL'] ?? ($cfg_existing['REFRESH_INTERVAL'] ?? '10')),
-    'ENABLED_SCRIPTS'   => implode(',', $selected),
-    'SHOW_IDLE_LOGS'    => $yn($_POST['SHOW_IDLE_LOGS'] ?? '0'),
-    'LOG_FONT_SIZE'     => $sanitize_font_size($_POST['LOG_FONT_SIZE'] ?? ($cfg_existing['LOG_FONT_SIZE'] ?? '1.125rem')),
-    'LOG_BG_COLOR'      => $sanitize_hex($_POST['LOG_BG_COLOR'] ?? ($cfg_existing['LOG_BG_COLOR'] ?? ''), ''),
-    'VERSION_OVERRIDE'  => $sanitize_version($_POST['VERSION_OVERRIDE'] ?? ($cfg_existing['VERSION_OVERRIDE'] ?? 'auto')),
+    'REFRESH_ENABLED'   => $yn($lv_post['REFRESH_ENABLED'] ?? ($cfg_existing['REFRESH_ENABLED'] ?? '1'), '1'),
+    'REFRESH_INTERVAL'  => $lv_choice('REFRESH_INTERVAL'),
+    'LOG_FONT_SIZE'     => $lv_choice('LOG_FONT_SIZE'),
+    'LOG_BG_COLOR'      => $sanitize_hex($lv_post['LOG_BG_COLOR'] ?? ($cfg_existing['LOG_BG_COLOR'] ?? ''), ''),
 
-    'TAIL_LINES'                 => $clamp_tail($_POST['TAIL_LINES'] ?? ($cfg_existing['TAIL_LINES'] ?? '0')),
-    'LOG_FONT_FAMILY'            => $sanitize_font_family($_POST['LOG_FONT_FAMILY'] ?? ($cfg_existing['LOG_FONT_FAMILY'] ?? 'system'), 'system'),
-    'THEME_PRESET'               => $sanitize_theme($_POST['THEME_PRESET'] ?? ($cfg_existing['THEME_PRESET'] ?? 'default')),
+    'TAIL_LINES'                 => $lv_choice('TAIL_LINES'),
+    'LOG_FONT_FAMILY'            => $lv_choice('LOG_FONT_FAMILY'),
+    'THEME_PRESET'               => $lv_choice('THEME_PRESET'),
 
-    'HIGHLIGHT_ENABLED'          => $yn($_POST['HIGHLIGHT_ENABLED'] ?? ($cfg_existing['HIGHLIGHT_ENABLED'] ?? '1'), '1'),
-    'HIGHLIGHT_MODE'             => $sanitize_highlight_mode($_POST['HIGHLIGHT_MODE'] ?? ($cfg_existing['HIGHLIGHT_MODE'] ?? 'full')),
+    'HIGHLIGHT_ENABLED'          => $yn($lv_post['HIGHLIGHT_ENABLED'] ?? ($cfg_existing['HIGHLIGHT_ENABLED'] ?? '1'), '1'),
+    'HIGHLIGHT_MODE'             => $lv_choice('HIGHLIGHT_MODE'),
 
-    'SYNTAX_HIGHLIGHTING'        => $yn($_POST['SYNTAX_HIGHLIGHTING'] ?? ($cfg_existing['SYNTAX_HIGHLIGHTING'] ?? '0')),
-    'SYNTAX_ENGINE'              => $sanitize_syntax_engine($_POST['SYNTAX_ENGINE'] ?? ($cfg_existing['SYNTAX_ENGINE'] ?? 'hljs')),
+    'SYNTAX_HIGHLIGHTING'        => $yn($lv_post['SYNTAX_HIGHLIGHTING'] ?? ($cfg_existing['SYNTAX_HIGHLIGHTING'] ?? '0')),
+    'SYNTAX_ENGINE'              => $lv_choice('SYNTAX_ENGINE'),
 
-    'SEARCH_ENABLED'             => $yn($_POST['SEARCH_ENABLED'] ?? '0'),
-    'SEARCH_HIGHLIGHT'           => $yn($_POST['SEARCH_HIGHLIGHT'] ?? '0'),
+    'SEARCH_ENABLED'             => $yn($lv_post['SEARCH_ENABLED'] ?? '0'),
+    'SEARCH_HIGHLIGHT'           => $yn($lv_post['SEARCH_HIGHLIGHT'] ?? '0'),
 
-    'AUTO_SCROLL_DEFAULT'         => $yn($_POST['AUTO_SCROLL_DEFAULT'] ?? ($cfg_existing['AUTO_SCROLL_DEFAULT'] ?? '1'), '1'),
-    'PAUSE_ON_HOVER'              => $yn($_POST['PAUSE_ON_HOVER'] ?? '0'),
+    'AUTO_SCROLL_DEFAULT'         => $lv_choice('AUTO_SCROLL_DEFAULT'),
+    'PAUSE_ON_HOVER'              => $yn($lv_post['PAUSE_ON_HOVER'] ?? '0'),
 
-    'SHOW_BADGES'                 => $yn($_POST['SHOW_BADGES'] ?? ($cfg_existing['SHOW_BADGES'] ?? '1'), '1'),
-    'SHOW_TOTAL_LINES'            => $yn($_POST['SHOW_TOTAL_LINES'] ?? ($cfg_existing['SHOW_TOTAL_LINES'] ?? '1'), '1'),
-    'SHOW_TIMESTAMP'              => $yn($_POST['SHOW_TIMESTAMP'] ?? ($cfg_existing['SHOW_TIMESTAMP'] ?? '1'), '1'),
-    'SHOW_FILTER_DROPDOWN'        => $yn($_POST['SHOW_FILTER_DROPDOWN'] ?? ($cfg_existing['SHOW_FILTER_DROPDOWN'] ?? '1'), '1'),
-    'SHOW_TOAST'                  => $yn($_POST['SHOW_TOAST'] ?? ($cfg_existing['SHOW_TOAST'] ?? '1'), '1'),
+    'SHOW_BADGES'                 => $yn($lv_post['SHOW_BADGES'] ?? ($cfg_existing['SHOW_BADGES'] ?? '1'), '1'),
+    'SHOW_TOTAL_LINES'            => $yn($lv_post['SHOW_TOTAL_LINES'] ?? ($cfg_existing['SHOW_TOTAL_LINES'] ?? '1'), '1'),
+    'SHOW_TIMESTAMP'              => $yn($lv_post['SHOW_TIMESTAMP'] ?? ($cfg_existing['SHOW_TIMESTAMP'] ?? '1'), '1'),
+    'SHOW_FILTER_DROPDOWN'        => $yn($lv_post['SHOW_FILTER_DROPDOWN'] ?? ($cfg_existing['SHOW_FILTER_DROPDOWN'] ?? '1'), '1'),
+    'SHOW_TOAST'                  => $yn($lv_post['SHOW_TOAST'] ?? ($cfg_existing['SHOW_TOAST'] ?? '1'), '1'),
 
-    'EXPORT_FORMAT'               => $sanitize_export_format($_POST['EXPORT_FORMAT'] ?? ($cfg_existing['EXPORT_FORMAT'] ?? 'log')),
-    'EXPORT_INCLUDE_TIMESTAMP'    => $yn($_POST['EXPORT_INCLUDE_TIMESTAMP'] ?? ($cfg_existing['EXPORT_INCLUDE_TIMESTAMP'] ?? '1'), '1'),
+    'EXPORT_FORMAT'               => $lv_choice('EXPORT_FORMAT'),
+    'EXPORT_INCLUDE_TIMESTAMP'    => $yn($lv_post['EXPORT_INCLUDE_TIMESTAMP'] ?? ($cfg_existing['EXPORT_INCLUDE_TIMESTAMP'] ?? '1'), '1'),
 
-    'TOOL_LOG_FONT_SIZE'             => $sanitize_font_size($_POST['TOOL_LOG_FONT_SIZE'] ?? ($cfg_existing['TOOL_LOG_FONT_SIZE'] ?? '1.125rem')),
-    'TOOL_TAIL_LINES'                => $clamp_tail($_POST['TOOL_TAIL_LINES'] ?? ($cfg_existing['TOOL_TAIL_LINES'] ?? '0')),
-    'TOOL_REFRESH_SECS'              => $sanitize_refresh_secs($_POST['TOOL_REFRESH_SECS'] ?? ($cfg_existing['TOOL_REFRESH_SECS'] ?? '5')),
-    'TOOL_EXPORT_FORMAT'             => $sanitize_tool_export_format($_POST['TOOL_EXPORT_FORMAT'] ?? ($cfg_existing['TOOL_EXPORT_FORMAT'] ?? 'txt')),
+    'TOOL_LOG_FONT_SIZE'             => $lv_choice('TOOL_LOG_FONT_SIZE'),
+    'TOOL_TAIL_LINES'                => $lv_choice('TOOL_TAIL_LINES'),
+    'TOOL_REFRESH_ENABLED'           => $yn($lv_post['TOOL_REFRESH_ENABLED'] ?? ($cfg_existing['TOOL_REFRESH_ENABLED'] ?? '1'), '1'),
+    'TOOL_REFRESH_SECS'              => $lv_choice('TOOL_REFRESH_SECS'),
+    'TOOL_EXPORT_FORMAT'             => $lv_choice('TOOL_EXPORT_FORMAT'),
+    'TOOL_AUTO_SCROLL'               => $yn($lv_post['TOOL_AUTO_SCROLL'] ?? ($cfg_existing['TOOL_AUTO_SCROLL'] ?? '1'), '1'),
+    'TOOL_PAUSE_ON_HOVER'            => $yn($lv_post['TOOL_PAUSE_ON_HOVER'] ?? ($cfg_existing['TOOL_PAUSE_ON_HOVER'] ?? '1'), '1'),
 
-    'DASH_ENABLED_SYSTEM_LOGS'       => $_POST['DASH_ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['DASH_ENABLED_SYSTEM_LOGS'] ?? 'syslog,dmesg,graphql-api.log,nginx-error'),
-    'DASH_ENABLED_DOCKER_CONTAINERS' => $_POST['DASH_ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['DASH_ENABLED_DOCKER_CONTAINERS'] ?? ''),
-    'DASH_ENABLED_VMS'               => $_POST['DASH_ENABLED_VMS'] ?? ($cfg_existing['DASH_ENABLED_VMS'] ?? ''),
-    'DASH_ENABLED_USER_SCRIPTS'       => $_POST['DASH_ENABLED_USER_SCRIPTS'] ?? ($cfg_existing['DASH_ENABLED_USER_SCRIPTS'] ?? ''),
-    'DASH_ENABLED_CUSTOM_LOGS'       => $_POST['DASH_ENABLED_CUSTOM_LOGS'] ?? ($cfg_existing['DASH_ENABLED_CUSTOM_LOGS'] ?? ''),
+    'DASH_ENABLED_SYSTEM_LOGS'       => $source_list('system', 'DASH_ENABLED_SYSTEM_LOGS', $lv_default_system),
+    'DASH_ENABLED_DOCKER_CONTAINERS' => $source_list('docker', 'DASH_ENABLED_DOCKER_CONTAINERS'),
+    'DASH_ENABLED_VMS'               => $source_list('vm', 'DASH_ENABLED_VMS'),
+    'DASH_ENABLED_USER_SCRIPTS'      => $source_list('script', 'DASH_ENABLED_USER_SCRIPTS'),
+    'DASH_ENABLED_CUSTOM_LOGS'       => $source_list('custom', 'DASH_ENABLED_CUSTOM_LOGS'),
 
-    'TOOL_ENABLED_SYSTEM_LOGS'       => $_POST['TOOL_ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['TOOL_ENABLED_SYSTEM_LOGS'] ?? 'syslog,dmesg,graphql-api.log,nginx-error'),
-    'TOOL_ENABLED_DOCKER_CONTAINERS' => $_POST['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ''),
-    'TOOL_ENABLED_VMS'               => $_POST['TOOL_ENABLED_VMS'] ?? ($cfg_existing['TOOL_ENABLED_VMS'] ?? ''),
-    'TOOL_ENABLED_USER_SCRIPTS'       => $_POST['TOOL_ENABLED_USER_SCRIPTS'] ?? ($cfg_existing['TOOL_ENABLED_USER_SCRIPTS'] ?? ''),
-    'TOOL_ENABLED_CUSTOM_LOGS'       => $_POST['TOOL_ENABLED_CUSTOM_LOGS'] ?? ($cfg_existing['TOOL_ENABLED_CUSTOM_LOGS'] ?? ''),
+    'TOOL_ENABLED_SYSTEM_LOGS'       => $source_list('system', 'TOOL_ENABLED_SYSTEM_LOGS', $lv_default_system),
+    'TOOL_ENABLED_DOCKER_CONTAINERS' => $source_list('docker', 'TOOL_ENABLED_DOCKER_CONTAINERS'),
+    'TOOL_ENABLED_VMS'               => $source_list('vm', 'TOOL_ENABLED_VMS'),
+    'TOOL_ENABLED_USER_SCRIPTS'      => $source_list('script', 'TOOL_ENABLED_USER_SCRIPTS'),
+    'TOOL_ENABLED_CUSTOM_LOGS'       => $source_list('custom', 'TOOL_ENABLED_CUSTOM_LOGS'),
 
-    'ENABLED_SYSTEM_LOGS'        => $_POST['ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['ENABLED_SYSTEM_LOGS'] ?? ''),
-    'ENABLED_DOCKER_CONTAINERS'  => $_POST['ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['ENABLED_DOCKER_CONTAINERS'] ?? ''),
-    'ENABLED_VMS'                => $_POST['ENABLED_VMS'] ?? ($cfg_existing['ENABLED_VMS'] ?? ''),
+    'BACKUP_ENABLED'                  => $yn($lv_post['BACKUP_ENABLED'] ?? ($cfg_existing['BACKUP_ENABLED'] ?? '0')),
+    'BACKUP_RETENTION'                => $lv_choice('BACKUP_RETENTION'),
+    'BACKUP_STORAGE'                  => LogsViewerEndpoint::backupPath($lv_post['BACKUP_STORAGE'] ?? '') ?? ($cfg_existing['BACKUP_STORAGE'] ?? '/mnt/user/appdata/Logs-Viewer-Backup'),
+    'BACKUP_SCHEDULE'                 => $lv_choice('BACKUP_SCHEDULE'),
+    'BACKUP_INTERVAL_DAYS'            => $lv_choice('BACKUP_INTERVAL_DAYS'),
+    'BACKUP_ENABLED_SYSTEM_LOGS'      => $source_list('system', 'BACKUP_ENABLED_SYSTEM_LOGS'),
+    'BACKUP_ENABLED_DOCKER_CONTAINERS'=> $source_list('docker', 'BACKUP_ENABLED_DOCKER_CONTAINERS'),
+    'BACKUP_ENABLED_VMS'              => $source_list('vm', 'BACKUP_ENABLED_VMS'),
+    'BACKUP_ENABLED_USER_SCRIPTS'     => $source_list('script', 'BACKUP_ENABLED_USER_SCRIPTS'),
+    'BACKUP_ENABLED_CUSTOM_LOGS'      => $source_list('custom', 'BACKUP_ENABLED_CUSTOM_LOGS'),
 
-    'BACKUP_ENABLED'                  => $yn($_POST['BACKUP_ENABLED'] ?? ($cfg_existing['BACKUP_ENABLED'] ?? '0')),
-    'BACKUP_RETENTION'                => in_array($_POST['BACKUP_RETENTION'] ?? '', ['1','2','3','4','5','6'], true) ? $_POST['BACKUP_RETENTION'] : ($cfg_existing['BACKUP_RETENTION'] ?? '3'),
-    'BACKUP_STORAGE'                  => (strncmp($_POST['BACKUP_STORAGE'] ?? '', '/mnt/user/', 10) === 0 && !preg_match('/\.\./', $_POST['BACKUP_STORAGE'])) ? rtrim($_POST['BACKUP_STORAGE'], '/') : ($cfg_existing['BACKUP_STORAGE'] ?? '/mnt/user/appdata/Logs-Viewer-Backup'),
-    'BACKUP_SCHEDULE'                 => in_array($_POST['BACKUP_SCHEDULE'] ?? '', ['0','2','4','6','23'], true) ? $_POST['BACKUP_SCHEDULE'] : ($cfg_existing['BACKUP_SCHEDULE'] ?? '23'),
-    'BACKUP_INTERVAL_DAYS'            => in_array($_POST['BACKUP_INTERVAL_DAYS'] ?? '', ['1','2','3','4'], true) ? $_POST['BACKUP_INTERVAL_DAYS'] : ($cfg_existing['BACKUP_INTERVAL_DAYS'] ?? '1'),
-    'BACKUP_ENABLED_SYSTEM_LOGS'      => $_POST['BACKUP_ENABLED_SYSTEM_LOGS'] ?? ($cfg_existing['BACKUP_ENABLED_SYSTEM_LOGS'] ?? ''),
-    'BACKUP_ENABLED_DOCKER_CONTAINERS'=> $_POST['BACKUP_ENABLED_DOCKER_CONTAINERS'] ?? ($cfg_existing['BACKUP_ENABLED_DOCKER_CONTAINERS'] ?? ''),
-    'BACKUP_ENABLED_VMS'              => $_POST['BACKUP_ENABLED_VMS'] ?? ($cfg_existing['BACKUP_ENABLED_VMS'] ?? ''),
-    'BACKUP_ENABLED_USER_SCRIPTS'     => $_POST['BACKUP_ENABLED_USER_SCRIPTS'] ?? ($cfg_existing['BACKUP_ENABLED_USER_SCRIPTS'] ?? ''),
-    'BACKUP_ENABLED_CUSTOM_LOGS'      => $_POST['BACKUP_ENABLED_CUSTOM_LOGS'] ?? ($cfg_existing['BACKUP_ENABLED_CUSTOM_LOGS'] ?? ''),
-
-    'ALERTS_ENABLED'                  => $yn($_POST['ALERTS_ENABLED'] ?? ($cfg_existing['ALERTS_ENABLED'] ?? '0')),
-    'ALERTS_INTERVAL'                 => in_array($_POST['ALERTS_INTERVAL'] ?? '', ['1','2','5'], true) ? $_POST['ALERTS_INTERVAL'] : ($cfg_existing['ALERTS_INTERVAL'] ?? '2'),
-
-    'LV_ACTIVE_TAB'              => in_array($_POST['lv_active_tab'] ?? '', ['dash','tool','backup','alerts'], true) ? $_POST['lv_active_tab'] : ($cfg_existing['LV_ACTIVE_TAB'] ?? 'dash'),
+    'ALERTS_ENABLED'                  => $yn($lv_post['ALERTS_ENABLED'] ?? ($cfg_existing['ALERTS_ENABLED'] ?? '0')),
+    'ALERTS_INTERVAL'                 => $lv_choice('ALERTS_INTERVAL'),
   ];
-
-  $allowed_fonts = ['system','monospace','jetbrains','fira','sourcecodepro','ibmplex'];
-  if (!in_array($new_cfg['LOG_FONT_FAMILY'], $allowed_fonts, true)) $new_cfg['LOG_FONT_FAMILY'] = 'system';
-
-  $allowed_presets = ['default','terminal','dim','contrast','midnight','ocean','monokai'];
-  if (!in_array($new_cfg['THEME_PRESET'], $allowed_presets, true)) $new_cfg['THEME_PRESET'] = 'default';
-
-  $allowed_hm = ['full','keywords'];
-  if (!in_array($new_cfg['HIGHLIGHT_MODE'], $allowed_hm, true)) $new_cfg['HIGHLIGHT_MODE'] = 'full';
-
-  $allowed_export = ['log','txt','json'];
-  if (!in_array($new_cfg['EXPORT_FORMAT'], $allowed_export, true)) $new_cfg['EXPORT_FORMAT'] = 'log';
-
-  $allowed_version = ['auto','legacy','responsive'];
-  if (!in_array($new_cfg['VERSION_OVERRIDE'], $allowed_version, true)) $new_cfg['VERSION_OVERRIDE'] = 'auto';
-
-  $allowed_engine = ['hljs','prism'];
-  if (!in_array($new_cfg['SYNTAX_ENGINE'] ?? 'hljs', $allowed_engine, true)) $new_cfg['SYNTAX_ENGINE'] = 'hljs';
-
-  $new_cfg['REFRESH_INTERVAL']      = max(1, min(3600, (int)$new_cfg['REFRESH_INTERVAL']));
 
   foreach (['REFRESH_ENABLED','SYNTAX_HIGHLIGHTING'] as $_bf) {
     $new_cfg[$_bf] = ($new_cfg[$_bf] === '1') ? '1' : '0';
   }
 
-  LogsViewerEndpoint::atomicWrite($cfg_file, LogsViewerEndpoint::cfgToIni($new_cfg));
+  LogsViewerEndpoint::writeIfChanged($cfg_file, LogsViewerEndpoint::cfgToIni($new_cfg));
+  if (in_array($lv_post['lv_active_tab'] ?? '', $lv_tabs, true) && lv_cache_dir() !== null) {
+    LogsViewerEndpoint::writeIfChanged($lv_tab_file, $lv_post['lv_active_tab']);
+  }
 
-  // update_cron builds the crontab from /boot/config/plugins/*/*.cron and nowhere else
   $cronFlash = '/boot/config/plugins/logsviewer/logsviewer.cron';
   $flashLines = '';
 
@@ -230,12 +167,6 @@ if (isset($_POST['#apply'])) {
     $schedHour = (int)($new_cfg['BACKUP_SCHEDULE'] ?? 23);
     $schedMin  = ($schedHour === 23) ? 59 : 0;
     $flashLines .= "# LogsViewer backup schedule:\n{$schedMin} {$schedHour} * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-backup.sh >/dev/null 2>&1\n";
-
-    $backupPath = (string)($new_cfg['BACKUP_STORAGE'] ?? '');
-    if ($backupPath !== '' && strncmp($backupPath, '/mnt/user/', 10) === 0) {
-      @mkdir($backupPath, 0700, true);
-      if (is_dir($backupPath)) @chmod($backupPath, 0700);
-    }
   }
 
   if (($new_cfg['ALERTS_ENABLED'] ?? '0') === '1') {
@@ -244,35 +175,32 @@ if (isset($_POST['#apply'])) {
     $flashLines .= "# LogsViewer alerts schedule:\n*/{$alertInterval} * * * * /usr/local/emhttp/plugins/logsviewer/logsviewer-alerts.sh >/dev/null 2>&1\n";
   }
 
-  // leftovers from older versions, gone before update_cron can pick them up
   foreach (['/etc/cron.d/logsviewer-backup','/etc/cron.d/logsviewer-alerts','/boot/config/plugins/logsviewer/logsviewer-cron.conf','/boot/config/plugins/logsviewer/logsviewer-backup.cron','/boot/config/plugins/logsviewer/logsviewer-alerts.cron'] as $_old) {
     if (is_file($_old)) @unlink($_old);
   }
 
-  if ($flashLines !== (is_file($cronFlash) ? (string)@file_get_contents($cronFlash) : '')) {  // flash write only when the schedule really changed
+  if ($flashLines !== (is_file($cronFlash) ? (string)@file_get_contents($cronFlash) : '')) {
     if ($flashLines !== '') LogsViewerEndpoint::atomicWrite($cronFlash, $flashLines);
     elseif (is_file($cronFlash)) @unlink($cronFlash);
   }
 
-  // on every save, so Apply also repairs a crontab someone rewrote by hand
   if (is_executable('/usr/local/sbin/update_cron')) {
     @exec('/usr/local/sbin/update_cron 2>/dev/null', $_cronOut, $_cronRc);
-    if ($_cronRc !== 0) @exec('logger -t logsviewer ' . escapeshellarg("update_cron exited {$_cronRc}, schedule not refreshed"));
+    if ($_cronRc !== 0) @exec(lv_bin('logger') . ' -t logsviewer ' . escapeshellarg("update_cron exited {$_cronRc}, schedule not refreshed"));
   } else {
-    @exec('logger -t logsviewer ' . escapeshellarg('update_cron missing, schedule not refreshed'));
+    @exec(lv_bin('logger') . ' -t logsviewer ' . escapeshellarg('update_cron missing, schedule not refreshed'));
   }
 
-  $activeTab = $_POST['lv_active_tab'] ?? 'dash';
-  $alertRulesRaw = (string)($_POST['ALERT_RULES_JSON'] ?? '');
-  if ($activeTab === 'alerts' && $alertRulesRaw !== '') {
+  $alertRulesRaw = (string)($lv_post['ALERT_RULES_JSON'] ?? '');
+  if ($alertRulesRaw !== '') {
     $alertRules = @json_decode($alertRulesRaw, true);
     if (is_array($alertRules)) {
       $_json = json_encode($alertRules, JSON_PRETTY_PRINT);
-      if ($_json !== false) LogsViewerEndpoint::atomicWrite('/boot/config/plugins/logsviewer/alerts-rules.json', $_json);
+      if ($_json !== false) LogsViewerEndpoint::writeIfChanged('/boot/config/plugins/logsviewer/alerts-rules.json', $_json, '[]');
     }
   }
 
-  $customPathsRaw = (string)($_POST['CUSTOM_PATHS_JSON'] ?? '');
+  $customPathsRaw = (string)($lv_post['CUSTOM_PATHS_JSON'] ?? '');
   if ($customPathsRaw !== '') {
     $allowedPrefixes = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
     $rawArr = @json_decode($customPathsRaw, true);
@@ -284,7 +212,7 @@ if (isset($_POST['#apply'])) {
         $label = trim((string)($e['label'] ?? ''));
         $path  = trim((string)($e['path']  ?? ''));
         if ($label === '' || $path === '') continue;
-        if ($path[0] !== '/') $path = '/' . $path;  // same leading-slash fixup the form does
+        if ($path[0] !== '/') $path = '/' . $path;
         if (strpos($path, '..') !== false) continue;
         $okPrefix = false;
         foreach ($allowedPrefixes as $p) { if (strpos($path, $p) === 0) { $okPrefix = true; break; } }
@@ -296,7 +224,7 @@ if (isset($_POST['#apply'])) {
         $valid[] = ['label' => $label, 'path' => $path];
       }
       $_json = json_encode($valid, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-      if ($_json !== false) LogsViewerEndpoint::atomicWrite('/boot/config/plugins/logsviewer/custom-paths.json', $_json);
+      if ($_json !== false) LogsViewerEndpoint::writeIfChanged('/boot/config/plugins/logsviewer/custom-paths.json', $_json, '[]');
     }
   }
 
@@ -307,24 +235,12 @@ if (isset($_POST['#apply'])) {
 
 LogsViewerEndpoint::migrateLegacySources($cfg);
 
-$branch_meta_file = '/usr/local/emhttp/plugins/logsviewer/branch.meta';
-$is_main_branch = true;
-if (file_exists($branch_meta_file)) {
-    $branch_meta = parse_ini_file($branch_meta_file);
-    $is_main_branch = ($branch_meta['IS_MAIN_BRANCH'] ?? '1') === '1';
-}
-
-$enabled_scripts_array = isset($cfg['ENABLED_SCRIPTS']) ? array_filter(array_map('trim', explode(',', $cfg['ENABLED_SCRIPTS']))) : ['syslog'];
-if (empty($enabled_scripts_array)) $enabled_scripts_array = ['syslog'];
-
 $bg_default = $cfg['LOG_BG_COLOR'] ?? '';
 
-$_dyn_cfg = @parse_ini_file('/boot/config/plugins/dynamix/dynamix.cfg', true);
-$_theme_name = $_dyn_cfg['display']['theme'] ?? '';
-$lv_light_class = in_array($_theme_name, ['white', 'azure']) ? ' lv-light' : '';
+$lv_light_class = LogsViewerEndpoint::lightTheme() ? ' lv-light' : '';
 
-$active_tab = $_POST['lv_active_tab'] ?? ($cfg['LV_ACTIVE_TAB'] ?? 'dash');
-if (!in_array($active_tab, ['dash', 'tool', 'backup', 'alerts'], true)) $active_tab = 'dash';
+$active_tab = $_POST['lv_active_tab'] ?? (lv_cache_dir() !== null && is_file($lv_tab_file) ? @file_get_contents($lv_tab_file) : 'dash');
+if (!in_array($active_tab, $lv_tabs, true)) $active_tab = 'dash';
 
 $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = 'Disabled') {
   $v = ($cfg[$name] ?? $default) === '1';
@@ -333,7 +249,15 @@ $lv_tog = static function($name, $cfg, $default = '0', $on = 'Enabled', $off = '
   return '<label class="lv-toggle"><input type="hidden" name="' . htmlspecialchars($name) . '" value="0"><input type="checkbox" name="' . htmlspecialchars($name) . '" value="1"' . ($v ? ' checked' : '') . '><span class="lv-toggle-track"></span></label><span class="lv-toggle-txt ' . $cls . '">' . $txt . '</span>';
 };
 
-// build.sh writes VERSION into the package, nothing else can disagree
+$lv_options = static function(string $key, $cfg) use ($lv_selects, $lv_pick) {
+  $cur = $lv_pick($key, $cfg[$key] ?? null);
+  $html = '';
+  foreach ($lv_selects[$key][1] as $v => $label) {
+    $html .= '<option value="' . htmlspecialchars((string)$v) . '"' . ((string)$v === $cur ? ' selected' : '') . '>' . htmlspecialchars($label) . '</option>';
+  }
+  return $html;
+};
+
 $plugin_version = 'dev';
 $_lvVersionFile = '/usr/local/emhttp/plugins/logsviewer/VERSION';
 if (is_readable($_lvVersionFile)) {
@@ -346,7 +270,7 @@ if (is_readable($_lvVersionFile)) {
 <style>.logsviewer-settings{visibility:hidden;}</style>
 <link rel="stylesheet" type="text/css" href="/plugins/logsviewer/css/settings.css?v=<?php echo @filemtime('/usr/local/emhttp/plugins/logsviewer/css/settings.css') ?: time(); ?>">
 
-<form name="scriptlogs_settings" method="post" class="logsviewer-settings<?php echo $lv_light_class; ?>">
+<form name="scriptlogs_settings" method="post" autocomplete="off" class="logsviewer-settings<?php echo $lv_light_class; ?>">
 
   <div class="lv-tabs" id="lvTopTabs">
     <div class="lv-tab<?php echo ($active_tab === 'dash') ? ' active' : ''; ?>" id="lvTabDashboard" role="button" tabindex="0">
@@ -369,19 +293,25 @@ if (is_readable($_lvVersionFile)) {
 
     <div class="lv-sec">
       <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
-        <span>Performance</span>
-        <span class="lv-pill">Optional</span>
+        <span>Behavior</span>
+        <span class="lv-pill">Safe defaults</span>
         <span class="lv-sec-arrow">&#9650;</span>
       </div>
       <div class="lv-sec-bd">
         <div class="lv-r">
-          <div class="lv-r-label">Show only last N lines</div>
+          <div class="lv-r-label">Automatic refresh</div>
           <div class="lv-r-field">
-            <select name="TOOL_TAIL_LINES" class="lv-select">
-              <?php $tl = $cfg['TOOL_TAIL_LINES'] ?? '0';
-                foreach(['0'=>'Full log - Default','200'=>'200','500'=>'500','800'=>'800','1500'=>'1500'] as $v=>$l) echo '<option value="'.$v.'"'.($tl===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+            <?php echo $lv_tog('TOOL_REFRESH_ENABLED', $cfg, '1'); ?>
+            <span class="lv-r-desc">Auto-refresh the live log without reloading</span>
+          </div>
+        </div>
+        <div class="lv-r">
+          <div class="lv-r-label">Refresh interval</div>
+          <div class="lv-r-field">
+            <select name="TOOL_REFRESH_SECS" class="lv-select">
+              <?php echo $lv_options('TOOL_REFRESH_SECS', $cfg); ?>
             </select>
-            <span class="lv-r-desc">Caps every refresh to the last N lines. Full log still stops at 5000.</span>
+            <span class="lv-r-desc">How often the live log view refreshes. The footer badge dot pulses at this rate.</span>
           </div>
         </div>
       </div>
@@ -398,30 +328,61 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Log font size</div>
           <div class="lv-r-field">
             <select name="TOOL_LOG_FONT_SIZE" class="lv-select">
-              <?php $tfs = $cfg['TOOL_LOG_FONT_SIZE'] ?? '1.125rem';
-                foreach(['1.125rem'=>'Default','1.25rem'=>'Large'] as $v=>$l) echo '<option value="'.$v.'"'.($tfs===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('TOOL_LOG_FONT_SIZE', $cfg); ?>
             </select>
             <span class="lv-r-desc">Applies to log content and the sidebar source list</span>
-          </div>
-        </div>
-        <div class="lv-r">
-          <div class="lv-r-label">Auto-refresh interval</div>
-          <div class="lv-r-field">
-            <select name="TOOL_REFRESH_SECS" class="lv-select">
-              <?php $trs = $cfg['TOOL_REFRESH_SECS'] ?? '5';
-                foreach(['3'=>'3 seconds','5'=>'5 seconds','10'=>'10 seconds','20'=>'20 seconds'] as $v=>$l) echo '<option value="'.$v.'"'.($trs===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
-            </select>
-            <span class="lv-r-desc">How often the live log view refreshes. The footer badge dot pulses at this rate.</span>
           </div>
         </div>
         <div class="lv-r">
           <div class="lv-r-label">Export format</div>
           <div class="lv-r-field">
             <select name="TOOL_EXPORT_FORMAT" class="lv-select">
-              <?php $tef = $cfg['TOOL_EXPORT_FORMAT'] ?? 'txt';
-                foreach(['txt'=>'Plain text (.log)','json'=>'JSON (.json)','csv'=>'CSV (.csv)'] as $v=>$l) echo '<option value="'.$v.'"'.($tef===$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('TOOL_EXPORT_FORMAT', $cfg); ?>
             </select>
             <span class="lv-r-desc">Format used by the download button. JSON and CSV include the per-line severity.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lv-sec closed">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>Autoscroll</span>
+        <span class="lv-pill">Behavior</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-r">
+          <div class="lv-r-label">Autoscroll</div>
+          <div class="lv-r-field">
+            <?php echo $lv_tog('TOOL_AUTO_SCROLL', $cfg, '1'); ?>
+            <span class="lv-r-desc">Goes back to the newest line when the pointer leaves the log</span>
+          </div>
+        </div>
+        <div class="lv-r">
+          <div class="lv-r-label">Pause on hover</div>
+          <div class="lv-r-field">
+            <?php echo $lv_tog('TOOL_PAUSE_ON_HOVER', $cfg, '1'); ?>
+            <span class="lv-r-desc">Holds the view still while the pointer is over the log</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lv-sec closed">
+      <div class="lv-sec-hd" onclick="this.parentElement.classList.toggle('closed')">
+        <span>Performance</span>
+        <span class="lv-pill">Optional</span>
+        <span class="lv-sec-arrow">&#9650;</span>
+      </div>
+      <div class="lv-sec-bd">
+        <div class="lv-r">
+          <div class="lv-r-label">Show only last N lines</div>
+          <div class="lv-r-field">
+            <select name="TOOL_TAIL_LINES" class="lv-select">
+              <?php echo $lv_options('TOOL_TAIL_LINES', $cfg); ?>
+            </select>
+            <span class="lv-r-desc">Caps every refresh to the last N lines. Full log still stops at 5000.</span>
           </div>
         </div>
       </div>
@@ -542,6 +503,9 @@ if (is_readable($_lvVersionFile)) {
               <p class="lv-sources-note">
                 Allowed prefixes: <code>/var/log/</code>, <code>/mnt/user/</code>, <code>/mnt/cache/</code>.
               </p>
+              <p class="lv-sources-note">
+                <span>Date placeholders: <code>{YYYY}</code>, <code>{MM}</code> and <code>{DD}</code> are replaced with today's date, e.g. <code>/var/log/hosts/{YYYY}/{MM}/{DD}/nginx/access.log</code>.</span>
+              </p>
               <div class="lv-custom-paths-list">
 
               </div>
@@ -551,7 +515,7 @@ if (is_readable($_lvVersionFile)) {
             </div>
           </div>
 
-          <input type="hidden" name="TOOL_ENABLED_SYSTEM_LOGS" id="lvToolEnabledSystemLogs" value="<?php echo htmlspecialchars($cfg['TOOL_ENABLED_SYSTEM_LOGS'] ?? 'syslog,dmesg,graphql-api.log,nginx-error'); ?>">
+          <input type="hidden" name="TOOL_ENABLED_SYSTEM_LOGS" id="lvToolEnabledSystemLogs" value="<?php echo htmlspecialchars($cfg['TOOL_ENABLED_SYSTEM_LOGS'] ?? $lv_default_system); ?>">
           <input type="hidden" name="TOOL_ENABLED_DOCKER_CONTAINERS" id="lvToolEnabledDockerContainers" value="<?php echo htmlspecialchars($cfg['TOOL_ENABLED_DOCKER_CONTAINERS'] ?? ''); ?>">
           <input type="hidden" name="TOOL_ENABLED_VMS" id="lvToolEnabledVms" value="<?php echo htmlspecialchars($cfg['TOOL_ENABLED_VMS'] ?? ''); ?>">
           <input type="hidden" name="TOOL_ENABLED_USER_SCRIPTS" id="lvToolEnabledUserScripts" value="<?php echo htmlspecialchars($cfg['TOOL_ENABLED_USER_SCRIPTS'] ?? ''); ?>">
@@ -583,8 +547,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Retention period</div>
           <div class="lv-r-field">
             <select name="BACKUP_RETENTION" class="lv-select">
-              <?php $br = $cfg['BACKUP_RETENTION'] ?? '3';
-                foreach(['1'=>'1 Month','2'=>'2 Months','3'=>'3 Months - Default','4'=>'4 Months','5'=>'5 Months','6'=>'6 Months'] as $v=>$l) echo '<option value="'.$v.'"'.($br===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('BACKUP_RETENTION', $cfg); ?>
             </select>
             <span class="lv-r-desc">Auto-delete backups older than this</span>
           </div>
@@ -602,8 +565,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Backup schedule</div>
           <div class="lv-r-field">
             <select name="BACKUP_SCHEDULE" class="lv-select">
-              <?php $bs = $cfg['BACKUP_SCHEDULE'] ?? '23';
-                foreach(['23'=>'23:59 - Default','0'=>'00:00','2'=>'02:00','4'=>'04:00','6'=>'06:00'] as $v=>$l) echo '<option value="'.$v.'"'.($bs===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('BACKUP_SCHEDULE', $cfg); ?>
             </select>
             <span class="lv-r-desc">Time of day the backup runs</span>
           </div>
@@ -612,8 +574,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Backup frequency</div>
           <div class="lv-r-field">
             <select name="BACKUP_INTERVAL_DAYS" class="lv-select">
-              <?php $bi = $cfg['BACKUP_INTERVAL_DAYS'] ?? '1';
-                foreach(['1'=>'Every day - Default','2'=>'Every 2 days','3'=>'Every 3 days','4'=>'Every 4 days'] as $v=>$l) echo '<option value="'.$v.'"'.($bi===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('BACKUP_INTERVAL_DAYS', $cfg); ?>
             </select>
             <span class="lv-r-desc">Counted from the last backup in the folder, not from a fixed calendar day</span>
           </div>
@@ -785,8 +746,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Scan interval</div>
           <div class="lv-r-field">
             <select name="ALERTS_INTERVAL" class="lv-select">
-              <?php $ai = $cfg['ALERTS_INTERVAL'] ?? '2';
-                foreach(['1'=>'Every 1 minute','2'=>'Every 2 minutes - Default','5'=>'Every 5 minutes'] as $v=>$l) echo '<option value="'.$v.'"'.($ai===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('ALERTS_INTERVAL', $cfg); ?>
             </select>
             <span class="lv-r-desc">How often to check for matches</span>
           </div>
@@ -899,8 +859,23 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-reset-msg">This will permanently delete all alert history entries. This action cannot be undone.</div>
         </div>
         <div class="lv-reset-footer" style="display:flex; gap:10px; justify-content:center;">
-          <button type="button" id="lvClearHistoryCancelBtn" class="lv-reset-ok-btn" style="background:transparent; border:1px solid var(--lv-c-border-row); color:var(--lv-c-text-mid);">Cancel</button>
-          <button type="button" id="lvClearHistoryConfirmBtn" class="lv-reset-ok-btn" style="background:#dc2626;">Clear</button>
+          <button type="button" id="lvClearHistoryCancelBtn" class="lv-reset-ok-btn lv-reset-ok-btn--cancel">Cancel</button>
+          <button type="button" id="lvClearHistoryConfirmBtn" class="lv-reset-ok-btn lv-reset-ok-btn--danger">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="lvNoticeModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.72); align-items:center; justify-content:center;">
+      <div class="lv-reset-modal-box" role="alertdialog" aria-modal="true" aria-labelledby="lvNoticeTitle" aria-describedby="lvNoticeMsg">
+        <div class="lv-reset-body">
+          <div class="lv-reset-icon lv-notice-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--lv-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="6" x2="12" y2="13"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          </div>
+          <div class="lv-reset-title" id="lvNoticeTitle"></div>
+          <div class="lv-reset-msg lv-notice-msg" id="lvNoticeMsg"></div>
+        </div>
+        <div class="lv-reset-footer">
+          <button type="button" id="lvNoticeOkBtn" class="lv-reset-ok-btn">OK</button>
         </div>
       </div>
     </div>
@@ -925,8 +900,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Refresh interval</div>
           <div class="lv-r-field">
             <select name="REFRESH_INTERVAL" class="lv-select">
-              <?php $ri = $cfg['REFRESH_INTERVAL'] ?? '10';
-                foreach([3=>'3s',5=>'5s',10=>'10s - Default',20=>'20s',30=>'30s',60=>'60s'] as $v=>$l) echo '<option value="'.$v.'"'.($ri==(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('REFRESH_INTERVAL', $cfg); ?>
             </select>
             <span class="lv-r-desc">How often to poll</span>
           </div>
@@ -945,8 +919,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Log font size</div>
           <div class="lv-r-field">
             <select name="LOG_FONT_SIZE" class="lv-select">
-              <?php $fs = $cfg['LOG_FONT_SIZE'] ?? '1.125rem';
-                foreach(['1.125rem'=>'Default','1.25rem'=>'Large'] as $v=>$l) echo '<option value="'.$v.'"'.($fs===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('LOG_FONT_SIZE', $cfg); ?>
             </select>
             <span class="lv-r-desc">Readability adjustment</span>
           </div>
@@ -955,8 +928,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Log font family</div>
           <div class="lv-r-field">
             <select name="LOG_FONT_FAMILY" class="lv-select">
-              <?php $ff = $cfg['LOG_FONT_FAMILY'] ?? 'system';
-                foreach(['system'=>'System Mono - Default','monospace'=>'Generic Monospace','jetbrains'=>'JetBrains Mono (web font)','fira'=>'Fira Code (web font)','sourcecodepro'=>'Source Code Pro (web font)','ibmplex'=>'IBM Plex Mono (web font)'] as $v=>$l) echo '<option value="'.$v.'"'.($ff===$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('LOG_FONT_FAMILY', $cfg); ?>
             </select>
             <span class="lv-r-desc">Web fonts load from Google Fonts. Without internet access the widget falls back to your system monospace.</span>
           </div>
@@ -977,8 +949,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Theme preset</div>
           <div class="lv-r-field">
             <select name="THEME_PRESET" class="lv-select">
-              <?php $tp = $cfg['THEME_PRESET'] ?? 'default';
-                foreach(['default'=>'Default - Current','terminal'=>'Terminal','dim'=>'Dim','contrast'=>'High Contrast','midnight'=>'Midnight','ocean'=>'Ocean','monokai'=>'Monokai'] as $v=>$l) echo '<option value="'.$v.'"'.($tp===$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('THEME_PRESET', $cfg); ?>
             </select>
             <span class="lv-r-desc">Overall look and feel</span>
           </div>
@@ -994,8 +965,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Syntax engine</div>
           <div class="lv-r-field">
             <select name="SYNTAX_ENGINE" class="lv-select">
-              <?php $se = $cfg['SYNTAX_ENGINE'] ?? 'hljs';
-                foreach(['hljs'=>'Highlight.js - Default','prism'=>'Prism'] as $v=>$l) echo '<option value="'.$v.'"'.($se===$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('SYNTAX_ENGINE', $cfg); ?>
             </select>
             <span class="lv-r-desc">Prism is experimental</span>
           </div>
@@ -1011,8 +981,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Highlight mode</div>
           <div class="lv-r-field">
             <select name="HIGHLIGHT_MODE" class="lv-select">
-              <?php $hm = $cfg['HIGHLIGHT_MODE'] ?? 'full';
-                foreach(['full'=>'Full - Default','keywords'=>'Keywords only'] as $v=>$l) echo '<option value="'.$v.'"'.($hm===$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('HIGHLIGHT_MODE', $cfg); ?>
             </select>
             <span class="lv-r-desc">Full or important levels only</span>
           </div>
@@ -1045,8 +1014,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Export format</div>
           <div class="lv-r-field">
             <select name="EXPORT_FORMAT" class="lv-select">
-              <?php $ef = $cfg['EXPORT_FORMAT'] ?? 'log';
-                foreach(['log'=>'.log - Default','txt'=>'.txt','json'=>'.json'] as $v=>$l) echo '<option value="'.$v.'"'.($ef===$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('EXPORT_FORMAT', $cfg); ?>
             </select>
             <span class="lv-r-desc">Export current log as file</span>
           </div>
@@ -1117,8 +1085,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Autoscroll default</div>
           <div class="lv-r-field">
             <select name="AUTO_SCROLL_DEFAULT" class="lv-select">
-              <?php $asd = $cfg['AUTO_SCROLL_DEFAULT'] ?? '1';
-                foreach(['1'=>'On - Default','0'=>'Off'] as $v=>$l) echo '<option value="'.$v.'"'.($asd===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('AUTO_SCROLL_DEFAULT', $cfg); ?>
             </select>
             <span class="lv-r-desc">Initial state if no saved preference</span>
           </div>
@@ -1144,8 +1111,7 @@ if (is_readable($_lvVersionFile)) {
           <div class="lv-r-label">Show only last N lines</div>
           <div class="lv-r-field">
             <select name="TAIL_LINES" class="lv-select">
-              <?php $tl = $cfg['TAIL_LINES'] ?? '0';
-                foreach(['0'=>'Full log - Default','200'=>'200','500'=>'500','800'=>'800','1500'=>'1500'] as $v=>$l) echo '<option value="'.$v.'"'.($tl===(string)$v?' selected':'').'>'.$l.'</option>'; ?>
+              <?php echo $lv_options('TAIL_LINES', $cfg); ?>
             </select>
             <span class="lv-r-warn">With Syntax, logs over 1000 lines may cause delays</span>
           </div>
@@ -1268,6 +1234,9 @@ if (is_readable($_lvVersionFile)) {
               <p class="lv-sources-note">
                 Allowed prefixes: <code>/var/log/</code>, <code>/mnt/user/</code>, <code>/mnt/cache/</code>.
               </p>
+              <p class="lv-sources-note">
+                <span>Date placeholders: <code>{YYYY}</code>, <code>{MM}</code> and <code>{DD}</code> are replaced with today's date, e.g. <code>/var/log/hosts/{YYYY}/{MM}/{DD}/nginx/access.log</code>.</span>
+              </p>
               <div class="lv-custom-paths-list">
 
               </div>
@@ -1277,7 +1246,7 @@ if (is_readable($_lvVersionFile)) {
             </div>
           </div>
 
-          <input type="hidden" name="DASH_ENABLED_SYSTEM_LOGS" id="lvDashEnabledSystemLogs" value="<?php echo htmlspecialchars($cfg['DASH_ENABLED_SYSTEM_LOGS'] ?? 'syslog,dmesg,graphql-api.log,nginx-error'); ?>">
+          <input type="hidden" name="DASH_ENABLED_SYSTEM_LOGS" id="lvDashEnabledSystemLogs" value="<?php echo htmlspecialchars($cfg['DASH_ENABLED_SYSTEM_LOGS'] ?? $lv_default_system); ?>">
           <input type="hidden" name="DASH_ENABLED_DOCKER_CONTAINERS" id="lvDashEnabledDockerContainers" value="<?php echo htmlspecialchars($cfg['DASH_ENABLED_DOCKER_CONTAINERS'] ?? ''); ?>">
           <input type="hidden" name="DASH_ENABLED_VMS" id="lvDashEnabledVms" value="<?php echo htmlspecialchars($cfg['DASH_ENABLED_VMS'] ?? ''); ?>">
           <input type="hidden" name="DASH_ENABLED_USER_SCRIPTS" id="lvDashEnabledUserScripts" value="<?php echo htmlspecialchars($cfg['DASH_ENABLED_USER_SCRIPTS'] ?? ''); ?>">
@@ -1304,49 +1273,34 @@ if (is_readable($_lvVersionFile)) {
       <input type="button" id="lvResetDefaults" value="<?php echo _('Reset to Defaults'); ?>">
       <input type="button" value="<?php echo _('Done'); ?>" onclick="done()">
     </div>
+</form>
 
-    <?php if (!$is_main_branch): ?>
-    <div class="lv-dev-section">
-      <div class="lv-r">
-        <div class="lv-r-label">Version override</div>
-        <div class="lv-r-field">
-          <select name="VERSION_OVERRIDE" class="lv-select">
-            <?php echo mk_option($cfg['VERSION_OVERRIDE'] ?? 'auto', "auto", "Auto (Detect)");?>
-            <?php echo mk_option($cfg['VERSION_OVERRIDE'] ?? 'auto', "legacy", "Force Legacy");?>
-            <?php echo mk_option($cfg['VERSION_OVERRIDE'] ?? 'auto', "responsive", "Force Responsive");?>
-          </select>
-          <span class="lv-r-desc">Developer setting. Leave on Auto unless debugging.</span>
-        </div>
-      </div>
-    </div>
-    <?php endif; ?>
-
-  </div>
-
-  <div class="lv-footer-row">
+  <div class="lv-footer-row<?php echo $lv_light_class; ?>">
     <div class="lv-footer-links">
       <a href="https://github.com/Lazaros-Chalkidis/unraid-logsviewer/issues"
          id="lvGithubIssuesLink" class="lv-footer-link"
          target="_blank" rel="noopener noreferrer">Support</a>
+      <span class="lv-footer-sep" aria-hidden="true"></span>
+      <a href="https://github.com/Lazaros-Chalkidis/unraid-logsviewer/blob/main/GUIDE.md"
+         id="lvGuideLink" class="lv-footer-link"
+         target="_blank" rel="noopener noreferrer">Guide</a>
       <span class="lv-footer-sep" aria-hidden="true"></span>
       <a href="#" id="lvCreditsLink" class="lv-footer-link">Credits</a>
     </div>
     <div class="lv-version-badge">v<?= htmlspecialchars($plugin_version) ?></div>
   </div>
 
-  </div>
-
   <script>
     window.lvToken = <?php echo json_encode(LogsViewerEndpoint::generateNonce()); ?>;
+    window.lvDefaultSystemLogs = <?php echo json_encode($lv_default_system); ?>;
     window.lvUserScripts = <?php
       $_lvUs = [];
       foreach ((array)@glob('/boot/config/plugins/user.scripts/scripts/*/script') as $_lvSf) {
         $_lvD = dirname($_lvSf); $_lvFo = basename($_lvD);
-        if ($_lvFo === '' || strpos($_lvFo, '..') !== false) continue;
-        $_lvNm = trim((string)@file_get_contents($_lvD . '/name'));
-        $_lvUs[] = ['key' => 'script:' . $_lvFo, 'label' => ($_lvNm !== '') ? $_lvNm : $_lvFo];
+        if ($_lvFo === '' || strpos($_lvFo, '..') !== false || !preg_match('//u', $_lvFo)) continue;
+        $_lvUs[] = ['key' => 'script:' . $_lvFo, 'label' => LogsViewerEndpoint::userScriptLabel($_lvFo)];
       }
-      echo json_encode($_lvUs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+      echo json_encode($_lvUs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE);
     ?>;
   </script>
   <script>
@@ -1397,14 +1351,6 @@ if (is_readable($_lvVersionFile)) {
       const preview = document.getElementById('lvBgPreview');
 
       if (picker && hex && hidden && preview){
-        const form = picker.closest('form') || document.forms['scriptlogs_settings'];
-
-        function forceEnableApply(){
-          const applyBtn = document.querySelector('[name="#apply"]');
-          if (applyBtn) { applyBtn.disabled = false; applyBtn.removeAttribute('disabled'); applyBtn.classList.remove('disabled'); }
-          if (form) try { form.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
-          if (typeof window.checkChanges === 'function') try { window.checkChanges(); } catch (_) {}
-        }
         function applyColor(val, userInitiated){
           const normalized = normalizeHex(val);
           const _light = _lv_isLight();
@@ -1418,7 +1364,6 @@ if (is_readable($_lvVersionFile)) {
             var presetSel = document.querySelector('select[name="THEME_PRESET"]');
             if (presetSel && presetSel.value !== 'default') { presetSel.value = 'default'; try { presetSel.dispatchEvent(new Event('change', {bubbles:true})); } catch(e){} }
             try { hidden.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-            forceEnableApply();
           } else { if (!hidden.value) hidden.value = ''; }
         }
         picker.addEventListener('input', () => applyColor(picker.value, true));
@@ -1432,12 +1377,41 @@ if (is_readable($_lvVersionFile)) {
       const resetBtn = document.getElementById('lvResetDefaults');
       if (!resetBtn) return;
 
+      var lvForm     = document.forms['scriptlogs_settings'];
+      var lvApplyBtn = document.getElementById('lvApplyBtn');
+      var _lvApplyTimer = null;
+
+      function lvFormState() {
+        var state = {};
+        $(lvForm).serializeArray().forEach(function(field) {
+          if (field.name === 'csrf_token' || field.name === 'lv_active_tab') return;
+          var value = field.value;
+          if (field.name === 'ALERT_RULES_JSON' || field.name === 'CUSTOM_PATHS_JSON') { try { value = JSON.stringify(JSON.parse(value)); } catch (_) {} }
+          state[field.name] = (field.name in state ? state[field.name] + '\n' : '') + value;
+        });
+        return state;
+      }
+      function lvApplyState() {
+        if (lvApplyBtn.classList.contains('disabled')) return;
+        var now = lvFormState();
+        lvApplyBtn.disabled = !Object.keys(now).concat(Object.keys(_lvSaved)).some(function(name) { return now[name] !== _lvSaved[name]; });
+      }
+      function lvUnchanged(prefix) {
+        var now = lvFormState();
+        return Object.keys(_lvSaved).filter(function(name) { return name.indexOf(prefix) === 0 && now[name] === _lvSaved[name]; });
+      }
+      function lvAdopt(names) {
+        var now = lvFormState();
+        names.forEach(function(name) { _lvSaved[name] = now[name]; });
+        lvApplyState();
+      }
+      var _lvSaved = lvFormState();
+      $(lvForm).on('input change', function() { clearTimeout(_lvApplyTimer); _lvApplyTimer = setTimeout(lvApplyState, 0); });
+      lvApplyState();
+
       function enableApplyAndMarkDirty(form){
-        const applyBtn = document.querySelector('[name="#apply"]');
-        if (applyBtn) { applyBtn.disabled = false; applyBtn.removeAttribute('disabled'); applyBtn.classList.remove('disabled'); if (window.jQuery) try { window.jQuery(applyBtn).prop('disabled', false).removeClass('disabled'); } catch(_){} }
         var fields = form.querySelectorAll('input, select, textarea');
         fields.forEach(function(el) { if (el.type === 'submit' || el.type === 'button' || !el.getAttribute('name')) return; try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {} });
-        if (typeof window.checkChanges === 'function') try { window.checkChanges(); } catch (_) {}
       }
 
       const dashDefaults = {
@@ -1445,14 +1419,17 @@ if (is_readable($_lvVersionFile)) {
         THEME_PRESET:'default', HIGHLIGHT_ENABLED:'1', HIGHLIGHT_MODE:'full', SYNTAX_HIGHLIGHTING:'0', SYNTAX_ENGINE:'hljs',
         SEARCH_ENABLED:'0', SEARCH_HIGHLIGHT:'0', AUTO_SCROLL_DEFAULT:'1', PAUSE_ON_HOVER:'0', TAIL_LINES:'0',
         SHOW_BADGES:'1', SHOW_TOTAL_LINES:'1', SHOW_TIMESTAMP:'1', SHOW_FILTER_DROPDOWN:'1', SHOW_TOAST:'1',
-        EXPORT_FORMAT:'log', EXPORT_INCLUDE_TIMESTAMP:'1', VERSION_OVERRIDE:'auto'
+        EXPORT_FORMAT:'log', EXPORT_INCLUDE_TIMESTAMP:'1'
       };
       const toolDefaults = {
 
         TOOL_TAIL_LINES: '0',
         TOOL_LOG_FONT_SIZE: '1.125rem',
+        TOOL_REFRESH_ENABLED: '1',
         TOOL_REFRESH_SECS: '5',
-        TOOL_EXPORT_FORMAT: 'txt'
+        TOOL_EXPORT_FORMAT: 'txt',
+        TOOL_AUTO_SCROLL: '1',
+        TOOL_PAUSE_ON_HOVER: '1'
       };
 
       function resetFieldsFromDefaults(form, defs, colorIds) {
@@ -1530,15 +1507,15 @@ if (is_readable($_lvVersionFile)) {
           var st = form.querySelector('input[name="BACKUP_STORAGE"]'); if (st) st.value = '/mnt/user/appdata/Logs-Viewer-Backup';
           var sc = form.querySelector('select[name="BACKUP_SCHEDULE"]'); if (sc) sc.value = '23';
           var bi = form.querySelector('select[name="BACKUP_INTERVAL_DAYS"]'); if (bi) bi.value = '1';
-          try { $('#lvBackupEnabledSystemLogs').val(''); $('#lvBackupEnabledDockerContainers').val(''); $('#lvBackupEnabledVms').val(''); if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Backup'); } catch(_){}
+          try { $('#lvBackupEnabledSystemLogs').val(''); $('#lvBackupEnabledDockerContainers').val(''); $('#lvBackupEnabledVms').val(''); $('#lvBackupEnabledUserScripts').val(''); $('#lvBackupEnabledCustomLogs').val(''); if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Backup'); } catch(_){}
         } else if (isToolTabActive()) {
 
           resetFieldsFromDefaults(form, toolDefaults);
-          try { $('#lvToolEnabledSystemLogs').val('syslog,dmesg,graphql-api.log,nginx-error'); $('#lvToolEnabledDockerContainers').val(''); $('#lvToolEnabledVms').val(''); } catch(_){}
+          try { $('#lvToolEnabledSystemLogs').val(window.lvDefaultSystemLogs); $('#lvToolEnabledDockerContainers').val(''); $('#lvToolEnabledVms').val(''); $('#lvToolEnabledUserScripts').val(''); $('#lvToolEnabledCustomLogs').val(''); } catch(_){}
           if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Tool', function(){ enableApplyAndMarkDirty(form); });
         } else {
           resetFieldsFromDefaults(form, dashDefaults, { picker:'lvBgColorPicker', hex:'lvBgColorHex', hidden:'lvBgColorHidden', preview:'lvBgPreview' });
-          try { $('#lvDashEnabledSystemLogs').val('syslog,dmesg,graphql-api.log,nginx-error'); $('#lvDashEnabledDockerContainers').val(''); $('#lvDashEnabledVms').val(''); } catch(_){}
+          try { $('#lvDashEnabledSystemLogs').val(window.lvDefaultSystemLogs); $('#lvDashEnabledDockerContainers').val(''); $('#lvDashEnabledVms').val(''); $('#lvDashEnabledUserScripts').val(''); $('#lvDashEnabledCustomLogs').val(''); } catch(_){}
           if (typeof lvLoadSourcesScoped === 'function') lvLoadSourcesScoped('Dash', function(){ enableApplyAndMarkDirty(form); });
         }
         try {
@@ -1622,22 +1599,55 @@ if (is_readable($_lvVersionFile)) {
         var applyBtn = document.getElementById('lvApplyBtn');
         if (!form || !applyBtn) return;
 
-        // save over ajax so the page doesn't reload, then refresh the dirty state
+        function validBackupPath(path) {
+          path = path.trim().replace(/\/+$/, '');
+          if (path.indexOf('/mnt/user/') !== 0 || /[\x00-\x1f\x7f,"<>\\]|\$\{|&#?\w+;/.test(path)) return false;
+          return path.slice(10).split('/').every(function(name) {
+            return name !== '' && name !== '.' && name !== '..' && name === name.trim();
+          });
+        }
+
         function ajaxSubmitForm(e) {
           if (e) e.preventDefault();
 
-          // the server drops rows it can't accept, so stop here rather than losing one without saying so
-          var bad = document.querySelector('.lv-custom-paths-row.is-invalid .lv-custom-paths-path');
+          var bad = lvFindBadCustomPath();
           if (bad) {
-            alert('A custom log path is not valid. It must start with /var/log/, /mnt/user/ or /mnt/cache/ and cannot contain "..".');
-            bad.focus();
+            lvNotice('Not saved', bad.message, function() { lvFocusCustomPath(bad.index, bad.field); });
             return;
           }
 
-          applyBtn.disabled = true;
-          applyBtn.classList.add('disabled');
-          applyBtn.innerHTML = '<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> Saving\u2026';
+          var storage = document.getElementById('lvBackupStorage');
+          if (storage.value !== storage.defaultValue && !validBackupPath(storage.value)) {
+            lvNotice('Not saved', 'The backup storage location is not valid. It must be a folder under /mnt/user/. Folder names cannot be "." or "..", start or end with a space, or contain a comma, a double quote, <, >, a backslash, ${ or an HTML entity such as &amp;.', function() {
+              if (!isBackupTabActive()) document.getElementById('lvTabBackup').click();
+              storage.closest('.lv-sec').classList.remove('closed');
+              storage.focus();
+            });
+            return;
+          }
 
+          setBusy(true);
+          lvFindBadRegex(function(row) {
+            if (!row) return sendForm();
+            setBusy(false);
+            lvNotice('Not saved', 'The regex in alert rule "' + lvShort(row.querySelector('.lv-alert-rule-name').value.trim() || 'Unnamed') +
+                     '" is not valid or is longer than 500 characters. Fix the pattern or untick Regex.', function() {
+              if (!isAlertsTabActive()) document.getElementById('lvTabAlerts').click();
+              row.querySelector('.lv-alert-rule-pattern').focus();
+            });
+          });
+        }
+
+        function setBusy(busy) {
+          applyBtn.disabled = busy;
+          applyBtn.classList.toggle('disabled', busy);
+          applyBtn.innerHTML = busy
+            ? '<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> Saving\u2026'
+            : '<i class="fa fa-check" aria-hidden="true"></i> Apply';
+          if (!busy) lvApplyState();
+        }
+
+        function sendForm() {
           var params = (window.jQuery ? window.jQuery(form).serialize() : '');
           if (!params) {
 
@@ -1685,15 +1695,45 @@ if (is_readable($_lvVersionFile)) {
         }
 
         function onError(status) {
-          alert('Save failed' + (status ? ' (HTTP ' + status + ')' : '') + '. Please try again.');
-          applyBtn.disabled = false;
-          applyBtn.classList.remove('disabled');
-          applyBtn.innerHTML = '<i class="fa fa-check" aria-hidden="true"></i> Apply';
+          setBusy(false);
+          lvNotice('Not saved', 'Save failed' + (status ? ' (HTTP ' + status + ')' : '') + '. Please try again.');
         }
 
         applyBtn.addEventListener('click', ajaxSubmitForm);
         form.addEventListener('submit', ajaxSubmitForm);
       })();
+
+      var _lvTokenRefresh = null;
+      function lvRefreshToken() {
+        if (!_lvTokenRefresh) {
+          _lvTokenRefresh = $.ajax({
+            url: '/plugins/logsviewer/include/logsviewer_api.php',
+            data: { action: 'refresh_nonce' },
+            dataType: 'json', timeout: 8000,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+          }).done(function(r) { if (r && r.token) window.lvToken = r.token; })
+            .always(function() { _lvTokenRefresh = null; });
+        }
+        return _lvTokenRefresh;
+      }
+      function lvApi(opts, retried) {
+        return $.ajax($.extend({}, opts, {
+          url: '/plugins/logsviewer/include/logsviewer_api.php',
+          data: $.extend({ _lvt: window.lvToken || '' }, opts.data),
+          dataType: 'json',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          error: function(xhr) {
+            var ctx = this, args = arguments;
+            var fail = function() { if (opts.error) opts.error.apply(ctx, args); };
+            if (xhr.status !== 403 || retried) return fail();
+            lvRefreshToken().done(function() { lvApi(opts, true); }).fail(fail);
+          }
+        }));
+      }
+
+      function lvFailReason(xhr, textStatus) {
+        return (textStatus === 'timeout') ? 'timed out' : (xhr && xhr.status ? 'HTTP ' + xhr.status : 'no response');
+      }
 
       function lvFormatSize(bytes) {
         if (!bytes || bytes <= 0) return '0 B';
@@ -1701,17 +1741,20 @@ if (is_readable($_lvVersionFile)) {
         if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
         return (bytes / 1048576).toFixed(1) + ' MB';
       }
+      var _lvUnsupportedHtml = '<span class="lv-source-status" title="Logs Viewer cannot save this name. Rename it to tick it."><span class="lv-status-dot stopped"></span>unsupported name</span>';
+
       function lvRenderSourceRow(key, name, extraInfo, size, checked, disabled, statusHtml) {
-        var dis = disabled ? ' lv-source-disabled' : '';
-        var chk = (checked && !disabled) ? ' checked' : '';
-        var disAttr = disabled ? ' disabled' : '';
+        var off = disabled && !checked;
+        var dis = off ? ' lv-source-disabled' : '';
+        var chk = checked ? ' checked' : '';
+        var disAttr = off ? ' disabled' : '';
         return '<div class="lv-source-row' + dis + '">' +
           '<div class="lv-source-label">' +
-            '<input type="checkbox" class="lv-source-check" data-key="' + key + '"' + chk + disAttr + '>' +
-            '<span class="lv-source-name">' + name + '</span>' +
+            '<input type="checkbox" class="lv-source-check" data-key="' + lvEscAttr(key) + '"' + chk + disAttr + '>' +
+            '<span class="lv-source-name">' + lvEscAttr(name) + '</span>' +
           '</div>' +
           '<div class="lv-source-field">' +
-            (extraInfo ? '<span class="lv-source-path">' + extraInfo + '</span>' : '') +
+            (extraInfo ? '<span class="lv-source-path">' + lvEscAttr(extraInfo) + '</span>' : '') +
             (statusHtml || '') +
             '<span class="lv-source-size">' + lvFormatSize(size) + '</span>' +
           '</div>' +
@@ -1724,34 +1767,23 @@ if (is_readable($_lvVersionFile)) {
         return set;
       }
       function lvSyncScopedInputs(scope) {
-        var sys = [], docker = [], vms = [], scripts = [], custom = [];
-        $('#lv' + scope + 'SystemLogsList .lv-source-check:checked').each(function(){ sys.push($(this).data('key')); });
-        $('#lv' + scope + 'DockerLogsList .lv-source-check:checked').each(function(){ docker.push($(this).data('key')); });
-        $('#lv' + scope + 'VmLogsList .lv-source-check:checked').each(function(){ vms.push($(this).data('key')); });
-        $('#lv' + scope + 'ScriptLogsList .lv-source-check:checked').each(function(){ scripts.push($(this).data('key')); });
-        $('#lv' + scope + 'CustomLogsList .lv-source-check:checked').each(function(){ custom.push($(this).data('key')); });
-        $('#lv' + scope + 'EnabledSystemLogs').val(sys.join(','));
-        $('#lv' + scope + 'EnabledDockerContainers').val(docker.join(','));
-        $('#lv' + scope + 'EnabledVms').val(vms.join(','));
-        if ($('#lv' + scope + 'EnabledUserScripts').length) {
-          $('#lv' + scope + 'EnabledUserScripts').val(scripts.join(','));
-        }
-        if ($('#lv' + scope + 'EnabledCustomLogs').length) {
-          $('#lv' + scope + 'EnabledCustomLogs').val(custom.join(','));
-        }
+        [['System', 'SystemLogs'], ['Docker', 'DockerContainers'], ['Vm', 'Vms'], ['Script', 'UserScripts'], ['Custom', 'CustomLogs']].forEach(function(c) {
+          var $list = $('#lv' + scope + c[0] + 'LogsList');
+          if (c[0] !== 'Custom' && !$list.data('lvListed')) return;
+          var keys = [];
+          $list.find('.lv-source-check:checked').each(function(){ keys.push(this.getAttribute('data-key')); });
+          $('#lv' + scope + 'Enabled' + c[1]).val(keys.join(','));
+        });
       }
-      // discover the available log sources for one scope (dash vs tool) and render the checkboxes
       function lvLoadSourcesScoped(scope, doneCb, panel) {
         var sysSet    = lvCsvToSet($('#lv' + scope + 'EnabledSystemLogs').val());
         var dkSet     = lvCsvToSet($('#lv' + scope + 'EnabledDockerContainers').val());
         var vmSet     = lvCsvToSet($('#lv' + scope + 'EnabledVms').val());
         var scriptSet = lvCsvToSet($('#lv' + scope + 'EnabledUserScripts').val());
         var customSet = lvCsvToSet($('#lv' + scope + 'EnabledCustomLogs').val());
-        $.ajax({
-          url: '/plugins/logsviewer/include/logsviewer_api.php',
-          data: { action: 'discover_sources', _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 30000,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        lvApi({
+          data: { action: 'discover_sources' },
+          timeout: 30000,
           success: function(data) {
             var sysHtml = '';
             if (data.system && data.system.sources) {
@@ -1762,7 +1794,7 @@ if (is_readable($_lvVersionFile)) {
                 sysHtml += lvRenderSourceRow(s.key, s.name, s.path, s.size, checked, (!s.exists || isZero), '');
               });
             }
-            $('#lv' + scope + 'SystemLogsList').html(sysHtml || '<div class="lv-sources-loading">No system logs found.</div>');
+            $('#lv' + scope + 'SystemLogsList').html(sysHtml || '<div class="lv-sources-loading">No system logs found.</div>').data('lvListed', !!sysHtml);
             if (sysHtml) $('#lv' + scope + 'SystemActions').css('display','flex');
 
             if (data.docker && data.docker.available) {
@@ -1770,17 +1802,18 @@ if (is_readable($_lvVersionFile)) {
               if (data.docker.sources.length > 0) {
                 data.docker.sources.forEach(function(c){
                   var dotClass = (c.status === 'running') ? 'running' : (c.status === 'exited' ? 'exited' : 'stopped');
-                  var statusHtml = '<span class="lv-source-status"><span class="lv-status-dot ' + dotClass + '"></span>' + c.status + '</span>';
+                  var statusHtml = '<span class="lv-source-status"><span class="lv-status-dot ' + dotClass + '"></span>' + lvEscAttr(c.status) + '</span>';
                   var checked = !!dkSet[c.name];
                   var isZero = (parseInt(c.log_size, 10) || 0) === 0;
-                  dkHtml += lvRenderSourceRow(c.name, c.name, '', c.log_size, checked, isZero, statusHtml);
+                  var ok = c.supported !== false;
+                  dkHtml += lvRenderSourceRow(c.name, c.name, '', c.log_size, checked && ok, isZero || !ok, ok ? statusHtml : _lvUnsupportedHtml);
                 });
               } else { dkHtml = '<div class="lv-sources-loading">No Docker containers found.</div>'; }
               $('#lv' + scope + 'DockerActions').css('display','flex');
-              $('#lv' + scope + 'DockerLogsList').html(dkHtml);
+              $('#lv' + scope + 'DockerLogsList').html(dkHtml).data('lvListed', true);
               $('#lv' + scope + 'DockerUnavailable').hide();
             } else {
-              $('#lv' + scope + 'DockerLogsList').empty();
+              $('#lv' + scope + 'DockerLogsList').empty().data('lvListed', false);
               $('#lv' + scope + 'DockerUnavailable').show();
               $('#lv' + scope + 'DockerActions').hide();
             }
@@ -1788,19 +1821,21 @@ if (is_readable($_lvVersionFile)) {
             if (data.vm && data.vm.available) {
               var vmHtml = '';
               if (data.vm.sources.length > 0) {
+                $('#lv' + scope + 'VmUnavailable').hide();
                 data.vm.sources.forEach(function(v) {
                   var dotClass = (v.status === 'running') ? 'running' : 'shut';
-                  var statusHtml = '<span class="lv-source-status"><span class="lv-status-dot ' + dotClass + '"></span>' + v.status + '</span>';
+                  var statusHtml = '<span class="lv-source-status"><span class="lv-status-dot ' + dotClass + '"></span>' + lvEscAttr(v.status) + '</span>';
                   var checked = !!vmSet[v.name];
                   var isZero = (parseInt(v.log_size, 10) || 0) === 0;
-                  vmHtml += lvRenderSourceRow(v.name, v.name, v.log_path, v.log_size, checked, isZero, statusHtml);
+                  var ok = v.supported !== false;
+                  vmHtml += lvRenderSourceRow(v.name, v.name, v.log_path, v.log_size, checked && ok, isZero || !ok, ok ? statusHtml : _lvUnsupportedHtml);
                 });
-              } else { $('#lv' + scope + 'VmUnavailable').show(); }
-              $('#lv' + scope + 'VmLogsList').html(vmHtml);
+              } else { $('#lv' + scope + 'VmUnavailable').html('<i class="fa fa-info-circle" aria-hidden="true"></i> No VMs found on this system.').show(); }
+              $('#lv' + scope + 'VmLogsList').html(vmHtml).data('lvListed', true);
               $('#lv' + scope + 'VmActions').css('display','flex');
             } else {
-              $('#lv' + scope + 'VmLogsList').empty();
-              $('#lv' + scope + 'VmUnavailable').show();
+              $('#lv' + scope + 'VmLogsList').empty().data('lvListed', false);
+              $('#lv' + scope + 'VmUnavailable').html('<i class="fa fa-info-circle" aria-hidden="true"></i> The VM service is not running.').show();
             }
 
             if (data.script && data.script.available) {
@@ -1810,20 +1845,20 @@ if (is_readable($_lvVersionFile)) {
                 data.script.sources.forEach(function(sc) {
                   var live = (sc.status === 'running' || sc.status === 'foreground');
                   var label = (sc.status === 'foreground') ? 'running (foreground)' : sc.status;
-                  var statusHtml = '<span class="lv-source-status"><span class="lv-status-dot ' + (live ? 'running' : 'shut') + '"></span>' + label + '</span>';
+                  var statusHtml = '<span class="lv-source-status"><span class="lv-status-dot ' + (live ? 'running' : 'shut') + '"></span>' + lvEscAttr(label) + '</span>';
                   if (!live && !sc.exists) statusHtml = '<span class="lv-source-status"><span class="lv-status-dot stopped"></span>no log yet</span>';
                   var checked = !!scriptSet[sc.key];
-                  // a script with no log yet must still be selectable
-                  scriptHtml += lvRenderSourceRow(sc.key, sc.name, sc.path, sc.size, checked, false, statusHtml);
+                  var ok = sc.supported !== false;
+                  scriptHtml += lvRenderSourceRow(sc.key, sc.name, sc.path, sc.size, checked && ok, !ok, ok ? statusHtml : _lvUnsupportedHtml);
                 });
                 $('#lv' + scope + 'ScriptActions').css('display','flex');
               } else {
                 $('#lv' + scope + 'ScriptUnavailable').html('<i class="fa fa-info-circle" aria-hidden="true"></i> No user scripts found.').show();
                 $('#lv' + scope + 'ScriptActions').hide();
               }
-              $('#lv' + scope + 'ScriptLogsList').html(scriptHtml);
+              $('#lv' + scope + 'ScriptLogsList').html(scriptHtml).data('lvListed', true);
             } else {
-              $('#lv' + scope + 'ScriptLogsList').empty();
+              $('#lv' + scope + 'ScriptLogsList').empty().data('lvListed', false);
               $('#lv' + scope + 'ScriptUnavailable').html('<i class="fa fa-info-circle" aria-hidden="true"></i> The User Scripts plugin is not installed.').show();
               $('#lv' + scope + 'ScriptActions').hide();
             }
@@ -1836,21 +1871,20 @@ if (is_readable($_lvVersionFile)) {
             if (typeof lvRenderCustomLogCheckboxes === 'function') {
               lvRenderCustomLogCheckboxes(scope);
             }
+            var same = lvUnchanged(scope.toUpperCase() + '_ENABLED_');
             lvSyncScopedInputs(scope);
+            lvAdopt(same);
             if (panel) panel._sourcesLoaded = true;
             if (typeof doneCb === 'function') doneCb();
           },
           error: function(xhr, textStatus) {
-            // the panel stays retryable: a timeout on a busy host used to leave it stuck until a full reload
             if (panel) panel._sourcesLoaded = false;
-            var why = (textStatus === 'timeout') ? 'timed out' :
-                      (xhr && xhr.status ? 'HTTP ' + xhr.status : 'no response');
-            var msg = '<div class="lv-sources-loading" style="color:#e74c3c;">Could not load sources (' + why +
+            var msg = '<div class="lv-sources-loading" style="color:#e74c3c;">Could not load sources (' + lvFailReason(xhr, textStatus) +
                       '). <a href="#" class="lv-sources-retry" data-scope="' + scope + '">Retry</a></div>';
-            $('#lv' + scope + 'SystemLogsList').html(msg);
-            $('#lv' + scope + 'DockerLogsList').empty();
-            $('#lv' + scope + 'VmLogsList').empty();
-            $('#lv' + scope + 'ScriptLogsList').empty();
+            $('#lv' + scope + 'SystemLogsList').html(msg).data('lvListed', false);
+            $('#lv' + scope + 'DockerLogsList').empty().data('lvListed', false);
+            $('#lv' + scope + 'VmLogsList').empty().data('lvListed', false);
+            $('#lv' + scope + 'ScriptLogsList').empty().data('lvListed', false);
             if (typeof doneCb === 'function') doneCb();
           }
         });
@@ -1915,13 +1949,10 @@ if (is_readable($_lvVersionFile)) {
 
       var _lvCalYear, _lvCalMonth, _lvCalBackups = [];
 
-      // list the backup zips and paint the ones that exist onto the calendar
       function lvLoadBackupCalendar() {
-        $.ajax({
-          url: '/plugins/logsviewer/include/logsviewer_api.php',
-          data: { action: 'list_backups', _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 10000,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        lvApi({
+          data: { action: 'list_backups' },
+          timeout: 10000,
           success: function(data) {
             _lvCalBackups = (data.backups || []);
             var now = new Date();
@@ -2012,6 +2043,16 @@ if (is_readable($_lvVersionFile)) {
         dlPanel.style.display = 'flex';
       }
 
+      $('#lvCalDlBtn').on('click', function(e) {
+        if (!e.originalEvent || !e.originalEvent.isTrusted) return;
+        e.preventDefault();
+        var a = this;
+        lvRefreshToken().always(function() {
+          a.href = a.href.replace(/_lvt=[^&]*/, '_lvt=' + encodeURIComponent(window.lvToken || ''));
+          a.click();
+        });
+      });
+
       $('#lvCalPrev').on('click', function() {
         _lvCalMonth--;
         if (_lvCalMonth < 0) { _lvCalMonth = 11; _lvCalYear--; }
@@ -2026,18 +2067,16 @@ if (is_readable($_lvVersionFile)) {
       });
 
       var _lvCustomPaths = [];
-      var _lvCustomSourceInfo = {};  // key -> {size, exists}, filled by discover_sources
+      var _lvCustomSourceInfo = {};
       var _lvCustomPathsLoaded = false;
       var LV_ALLOWED_PREFIXES = ['/var/log/', '/mnt/user/', '/mnt/cache/'];
 
-      // a missing leading slash is a typo, not a different path
       function lvNormalizeCustomPath(path) {
         var p = String(path || '').trim();
         if (p !== '' && p[0] !== '/') p = '/' + p;
         return p;
       }
 
-      // mirror the server-side path check so the user gets feedback before saving
       function lvValidateCustomPath(path) {
         if (!path || typeof path !== 'string') return false;
         if (path[0] !== '/') return false;
@@ -2048,16 +2087,78 @@ if (is_readable($_lvVersionFile)) {
         return false;
       }
 
+      function lvCustomSlug(label) {
+        return String(label || '').replace(/[A-Z]+/g, function(m) { return m.toLowerCase(); }).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      }
+
+      var LV_CUSTOM_PATH_ERRORS = {
+        path:      'Path must start with /var/log/, /mnt/user/, or /mnt/cache/',
+        latin:     'The label needs at least one Latin letter or digit.',
+        duplicate: 'Another custom log already has this label. Labels are compared by their Latin letters and digits only, ignoring capitals.',
+        nolabel:   'Add a label, or remove the row.',
+        nopath:    'Add a path, or remove the row.'
+      };
+
+      function lvCustomPathProblem(index) {
+        var entry = _lvCustomPaths[index] || {};
+        var label = String(entry.label || '').trim();
+        var path  = lvNormalizeCustomPath(entry.path);
+        if (label === '' && path === '') return '';
+        if (path !== '' && !lvValidateCustomPath(path)) return 'path';
+        if (label === '') return 'nolabel';
+        if (path === '') return 'nopath';
+        var slug = lvCustomSlug(label);
+        if (slug === '') return 'latin';
+        for (var i = 0; i < index; i++) {
+          var other = _lvCustomPaths[i] || {};
+          if (other.label && other.path && lvCustomSlug(other.label) === slug) return 'duplicate';
+        }
+        return '';
+      }
+
+      function lvFindBadCustomPath() {
+        for (var i = 0; i < _lvCustomPaths.length; i++) {
+          var problem = lvCustomPathProblem(i);
+          if (!problem) continue;
+          var name = String(_lvCustomPaths[i].label || '').trim() || lvNormalizeCustomPath(_lvCustomPaths[i].path);
+          return {
+            index:   i,
+            field:   (problem === 'path' || problem === 'nopath') ? 'path' : 'label',
+            message: (problem === 'path')
+              ? 'A custom log path is not valid. It must start with /var/log/, /mnt/user/ or /mnt/cache/ and cannot contain "..".'
+              : 'Custom log "' + lvShort(name) + '": ' + LV_CUSTOM_PATH_ERRORS[problem]
+          };
+        }
+        return null;
+      }
+
+      function lvFocusCustomPath(index, field) {
+        var onTool = isToolTabActive();
+        if (!onTool && (isBackupTabActive() || isAlertsTabActive())) document.getElementById('lvTabDashboard').click();
+        var row = document.querySelector((onTool ? '#lvToolPanel' : '#lvDashboardPanel') + ' .lv-custom-paths-row[data-index="' + index + '"]');
+        if (!row) return;
+        row.closest('.lv-sub-card').classList.remove('collapsed');
+        row.closest('.lv-sec').classList.remove('closed');
+        row.querySelector('.lv-custom-paths-' + field).focus();
+      }
+
+      function lvMarkCustomPathRows() {
+        $('.lv-custom-paths-row').each(function() {
+          var $row    = $(this);
+          var problem = lvCustomPathProblem(parseInt($row.data('index'), 10));
+          var marked  = problem !== '' && problem !== 'nolabel' && problem !== 'nopath';
+          $row.toggleClass('is-invalid', marked).find('.lv-custom-paths-err').remove();
+          if (marked) $row.append($('<div class="lv-custom-paths-err"></div>').text(LV_CUSTOM_PATH_ERRORS[problem]));
+        });
+      }
+
       function lvRenderCustomPathRow(entry, index) {
-        var label   = (entry && entry.label) ? entry.label : '';
-        var path    = lvNormalizeCustomPath(entry && entry.path ? entry.path : '');
-        var invalid = path !== '' && !lvValidateCustomPath(path);
-        var rowCls  = 'lv-custom-paths-row' + (invalid ? ' is-invalid' : '');
-        return '<div class="' + rowCls + '" data-index="' + index + '">' +
+        var label = (entry && entry.label) ? entry.label : '';
+        var path  = lvNormalizeCustomPath(entry && entry.path ? entry.path : '');
+        return '<div class="lv-custom-paths-row" data-index="' + index + '">' +
           '<input type="text" class="lv-custom-paths-label" placeholder="Label (e.g. Audit Log)" value="' + lvEscAttr(label) + '">' +
           '<input type="text" class="lv-custom-paths-path"  placeholder="/var/log/your-file.log"  value="' + lvEscAttr(path)  + '">' +
           '<button type="button" class="lv-action-btn lv-custom-paths-remove" title="Remove"><i class="fa fa-trash"></i></button>' +
-          (invalid ? '<div class="lv-custom-paths-err">Path must start with /var/log/, /mnt/user/, or /mnt/cache/</div>' : '') +
         '</div>';
       }
 
@@ -2069,6 +2170,7 @@ if (is_readable($_lvVersionFile)) {
           _lvCustomPaths.forEach(function(e, i) { html += lvRenderCustomPathRow(e, i); });
         }
         $('.lv-custom-paths-list').html(html);
+        lvMarkCustomPathRows();
 
         ['Tool','Dash','Backup'].forEach(function(scope) {
           if ($('#lv' + scope + 'CustomLogsList').length) lvRenderCustomLogCheckboxes(scope);
@@ -2087,7 +2189,7 @@ if (is_readable($_lvVersionFile)) {
         var defs = [];
         _lvCustomPaths.forEach(function(e) {
           if (!e || !e.label || !e.path) return;
-          var slug = String(e.label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          var slug = lvCustomSlug(e.label);
           if (!slug) return;
           defs.push({ key: 'custom:' + slug, name: e.label, path: e.path });
         });
@@ -2105,7 +2207,6 @@ if (is_readable($_lvVersionFile)) {
           var checked = !!enabledSet[d.key];
           var info    = (_lvCustomSourceInfo && _lvCustomSourceInfo[d.key]) || null;
           var size    = info ? (parseInt(info.size, 10) || 0) : 0;
-          // a path saved but not yet scanned has no info, don't claim it is missing
           var missing = info && !info.exists;
           var status  = missing ? '<span class="lv-source-status"><span class="lv-status-dot stopped"></span>not found</span>' : '';
 
@@ -2115,7 +2216,6 @@ if (is_readable($_lvVersionFile)) {
         $actions.css('display', 'flex');
       }
 
-      // pack the custom path rows into the hidden field as json for the POST
       function lvSerializeCustomPaths() {
 
         if (_lvCustomPathsLoaded) {
@@ -2162,7 +2262,6 @@ if (is_readable($_lvVersionFile)) {
         if (!isNaN(idx)) {
           var $path = $row.find('.lv-custom-paths-path');
 
-          // only on blur, rewriting mid-keystroke would move the caret
           if (e.type === 'change' && $(this).is($path)) {
             var fixed = lvNormalizeCustomPath($path.val());
             if (fixed !== String($path.val() || '')) $path.val(fixed);
@@ -2172,14 +2271,7 @@ if (is_readable($_lvVersionFile)) {
             label: String($row.find('.lv-custom-paths-label').val() || '').trim(),
             path:  String($path.val() || '').trim()
           };
-
-          var pathVal = _lvCustomPaths[idx].path;
-          var invalid = pathVal !== '' && !lvValidateCustomPath(lvNormalizeCustomPath(pathVal));
-          $row.toggleClass('is-invalid', invalid);
-          $row.find('.lv-custom-paths-err').remove();
-          if (invalid) {
-            $row.append('<div class="lv-custom-paths-err">Path must start with /var/log/, /mnt/user/, or /mnt/cache/</div>');
-          }
+          lvMarkCustomPathRows();
         }
         lvSerializeCustomPaths();
         var f = document.forms['scriptlogs_settings'];
@@ -2208,12 +2300,12 @@ if (is_readable($_lvVersionFile)) {
       var _lvAlertRulesLoaded = false;
 
       var _lvAlertPresets = [
-        { name: 'Failed Login', pattern: 'Failed password|authentication failure|Unsuccessful login', is_regex: true, severity: 'warning', sources: ['syslog'], cooldown: '0' },
+        { name: 'Failed Login', pattern: 'Failed password|authentication failure|Unsuccessful login', is_regex: true, severity: 'warning', sources: ['syslog'], cooldown: '300' },
         { name: 'Disk Error', pattern: 'disk error|I/O error|sector error|SMART error', is_regex: true, severity: 'critical', sources: ['syslog', 'dmesg'], cooldown: '300' },
         { name: 'Out of Memory', pattern: 'Out of memory|oom-killer|OOM', is_regex: true, severity: 'critical', sources: ['syslog', 'dmesg'], cooldown: '900' },
-        { name: 'Kernel Panic', pattern: 'kernel panic|BUG:|Oops:', is_regex: true, severity: 'critical', sources: ['syslog', 'dmesg'], cooldown: '0' },
+        { name: 'Kernel Panic', pattern: 'kernel panic|BUG:|Oops:', is_regex: true, severity: 'critical', sources: ['syslog', 'dmesg'], cooldown: '300' },
         { name: 'Array Error', pattern: 'md/unraid.*error|array.*error|parity.*error', is_regex: true, severity: 'critical', sources: ['syslog'], cooldown: '300' },
-        { name: 'Docker Crash', pattern: 'container died|OOMKilled|exit code', is_regex: true, severity: 'warning', sources: ['docker'], cooldown: '300' }
+        { name: 'Docker Crash', pattern: 'panic|fatal error|segmentation fault|core dumped|unhandled exception|out ?of ?memory|exit(ed with)? (code|status) [1-9]', is_regex: true, severity: 'warning', sources: ['docker'], cooldown: '300' }
       ];
 
       var _lvMitreTechniques = [
@@ -2265,7 +2357,6 @@ if (is_readable($_lvVersionFile)) {
         ]}
       ];
 
-      // build the att&ck technique picker for alert rule tagging
       function lvBuildMitrePickerOptions() {
         var html = '<option value="">+ Add MITRE technique...</option>';
         _lvMitreTechniques.forEach(function(group) {
@@ -2356,7 +2447,7 @@ if (is_readable($_lvVersionFile)) {
           if (Array.isArray(arr)) {
             arr.forEach(function(c) {
               if (!c || !c.label || !c.path) return;
-              var slug = String(c.label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+              var slug = lvCustomSlug(c.label);
               if (!slug) return;
               var key = 'custom:' + slug;
               var chk = (selected.indexOf(key) !== -1) ? ' checked' : '';
@@ -2400,28 +2491,48 @@ if (is_readable($_lvVersionFile)) {
         }
       }
 
+      function lvFindBadRegex(done) {
+        var rows = [], patterns = [];
+        if (_lvAlertRulesLoaded) {
+          $('#lvAlertRulesList .lv-alert-rule').each(function() {
+            var pattern = String($(this).find('.lv-alert-rule-pattern').val() || '');
+            if (pattern !== '' && $(this).find('.lv-alert-rule-is-regex').is(':checked')) { rows.push(this); patterns.push(pattern); }
+          });
+        }
+        if (!patterns.length) return done(null);
+        lvApi({
+          data: { action: 'check_alert_regex', patterns: JSON.stringify(patterns) },
+          timeout: 8000,
+          success: function(r) { done(r && Array.isArray(r.invalid) && r.invalid.length ? rows[r.invalid[0]] : null); },
+          error: function() { done(null); }
+        });
+      }
+
       function lvLoadAlertRules() {
         _lvAlertRulesLoaded = false;
         $('#lvAlertAddRule, #lvAlertAddPresets').prop('disabled', true).addClass('disabled');
-        $.ajax({
-          url: '/plugins/logsviewer/include/logsviewer_api.php',
-          data: { action: 'get_alert_rules', _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 10000,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        lvApi({
+          data: { action: 'get_alert_rules' },
+          timeout: 10000,
           success: function(data) {
+            var same = lvUnchanged('ALERT_RULES_JSON');
             _lvAlertRules = data.rules || [];
             _lvAlertRulesLoaded = true;
             lvRenderAllRules();
-            $('#lvAlertAddRule, #lvAlertAddPresets').prop('disabled', false).removeClass('disabled');
+            lvAdopt(same);
           },
-          error: function() {
-            _lvAlertRulesLoaded = true;
-            _lvAlertRules = [];
-            $('#lvAlertRulesList').html('<div class="lv-sources-loading" style="color:#e74c3c;">Failed to load rules. You can still add new rules below.</div>');
-            $('#lvAlertAddRule, #lvAlertAddPresets').prop('disabled', false).removeClass('disabled');
+          error: function(xhr, textStatus) {
+            $('#lvAlertRulesList').html('<div class="lv-sources-loading" style="color:#e74c3c;">Could not load rules (' + lvFailReason(xhr, textStatus) +
+                      '). <a href="#" class="lv-rules-retry">Retry</a></div>');
           }
         });
       }
+
+      $(document).on('click', '.lv-rules-retry', function(e) {
+        e.preventDefault();
+        $(this).closest('.lv-sources-loading').text('Loading\u2026').css('color', '');
+        lvLoadAlertRules();
+      });
 
       function lvRenderAllRules() {
         var html = '';
@@ -2433,6 +2544,7 @@ if (is_readable($_lvVersionFile)) {
           });
         }
         $('#lvAlertRulesList').html(html);
+        $('#lvAlertAddRule, #lvAlertAddPresets').prop('disabled', false).removeClass('disabled');
 
         $('#lvAlertRulesList .lv-alert-rule').each(function(i) {
           $(this).data('rule-id', _lvAlertRules[i].id || lvGenRuleId());
@@ -2548,11 +2660,9 @@ if (is_readable($_lvVersionFile)) {
       }
 
       function lvLoadAlertMutes(cb) {
-        $.ajax({
-          url: '/plugins/logsviewer/include/logsviewer_api.php',
-          data: { action: 'get_alert_mutes', _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 10000,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        lvApi({
+          data: { action: 'get_alert_mutes' },
+          timeout: 10000,
           success: function(data) {
             _lvAlertMutes = (data && data.mutes && typeof data.mutes === 'object') ? data.mutes : {};
             if (typeof cb === 'function') cb();
@@ -2564,11 +2674,9 @@ if (is_readable($_lvVersionFile)) {
       function lvLoadAlertHistory() {
 
         lvLoadAlertMutes(function() {
-          $.ajax({
-            url: '/plugins/logsviewer/include/logsviewer_api.php',
-            data: { action: 'get_alert_history', _lvt: window.lvToken || '' },
-            dataType: 'json', timeout: 10000,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          lvApi({
+            data: { action: 'get_alert_history' },
+            timeout: 10000,
             success: function(data) {
               var items = data.history || [];
               if (items.length === 0) {
@@ -2577,14 +2685,14 @@ if (is_readable($_lvVersionFile)) {
               }
               var html = '';
               items.slice(0, 100).forEach(function(a) {
-                var sevClass = 'lv-alert-sev--' + (a.severity || 'info');
+                var sev      = ['info','warning','critical'].indexOf(a.severity) !== -1 ? a.severity : 'info';
                 var ruleId   = a.rule_id || '';
                 var isMuted  = ruleId && _lvAlertMutes[ruleId];
                 var menuId   = 'lvAlertMenu_' + Math.random().toString(36).slice(2, 10);
                 var mutedHint = isMuted ? '<span class="lv-alert-muted-pill" title="Rule is currently muted"><i class="fa fa-volume-off"></i> muted</span>' : '';
                 html += '<div class="lv-alert-history-row' + (isMuted ? ' is-muted' : '') + '" data-rule-id="' + lvEscAttr(ruleId) + '">' +
                   '<span class="lv-alert-history-time">' + lvEscAttr(a.timestamp || '') + '</span>' +
-                  '<span class="lv-alert-history-badge ' + sevClass + '">' + lvEscAttr(a.severity || 'info') + '</span>' +
+                  '<span class="lv-alert-history-badge lv-alert-sev--' + sev + '">' + sev + '</span>' +
                   '<span class="lv-alert-history-name">' + lvEscAttr(a.rule || '') + lvRenderTagBadges(a.tags || []) + mutedHint + '</span>' +
                   '<span class="lv-alert-history-src">' + lvEscAttr(lvRenderSourceLabel(a.source || '')) + '</span>' +
                   (ruleId ? lvRenderAlertActionMenu(ruleId, !!isMuted, menuId) : '<span class="lv-alert-history-actions-cell"></span>') +
@@ -2725,13 +2833,11 @@ if (is_readable($_lvVersionFile)) {
         var duration = $(this).data('duration');
         if (!ruleId || !duration) return;
         lvCloseAllAlertMenus();
-        $.ajax({
-          url: '/plugins/logsviewer/include/logsviewer_api.php',
-          data: { action: 'set_alert_mute', rule_id: ruleId, duration: duration, _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 10000,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        lvApi({
+          data: { action: 'set_alert_mute', rule_id: ruleId, duration: duration },
+          timeout: 10000,
           success: function() { lvLoadAlertHistory(); },
-          error: function() { alert('Failed to mute rule.'); }
+          error: function() { lvNotice('Not muted', 'Failed to mute rule.'); }
         });
       });
 
@@ -2740,13 +2846,11 @@ if (is_readable($_lvVersionFile)) {
         var ruleId = $(this).data('rule-id');
         if (!ruleId) return;
         lvCloseAllAlertMenus();
-        $.ajax({
-          url: '/plugins/logsviewer/include/logsviewer_api.php',
-          data: { action: 'unset_alert_mute', rule_id: ruleId, _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 10000,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        lvApi({
+          data: { action: 'unset_alert_mute', rule_id: ruleId },
+          timeout: 10000,
           success: function() { lvLoadAlertHistory(); },
-          error: function() { alert('Failed to unmute rule.'); }
+          error: function() { lvNotice('Still muted', 'Failed to unmute rule.'); }
         });
       });
 
@@ -2755,11 +2859,9 @@ if (is_readable($_lvVersionFile)) {
         if ($btn.prop('disabled')) return;
         var origHtml = $btn.html();
         $btn.prop('disabled', true).addClass('disabled').html('<i class="fa fa-spinner fa-spin"></i> Scanning...');
-        $.ajax({
-          url: '/plugins/logsviewer/include/logsviewer_api.php',
-          data: { action: 'run_alerts_scan', _lvt: window.lvToken || '' },
-          dataType: 'json', timeout: 60000,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        lvApi({
+          data: { action: 'run_alerts_scan' },
+          timeout: 60000,
           success: function(data) {
             var n = (data && typeof data.new_alerts === 'number') ? data.new_alerts : 0;
             var msg = (n === 0) ? 'Scan complete. No new alerts.'
@@ -2781,7 +2883,7 @@ if (is_readable($_lvVersionFile)) {
             } catch (e) {}
             $btn.html('<i class="fa fa-exclamation-triangle"></i> Error');
             setTimeout(function() { $btn.html(origHtml).prop('disabled', false).removeClass('disabled'); }, 2500);
-            var $toast = $('<div class="lv-toast-inline lv-toast-inline--error">' + msg + '</div>');
+            var $toast = $('<div class="lv-toast-inline lv-toast-inline--error">').text(msg);
             $btn.closest('.lv-alert-history-actions').append($toast);
             setTimeout(function() { $toast.fadeOut(400, function() { $toast.remove(); }); }, 2500);
           }
@@ -2802,11 +2904,9 @@ if (is_readable($_lvVersionFile)) {
         document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
         document.getElementById('lvClearHistoryConfirmBtn').addEventListener('click', function(){
           closeModal();
-          $.ajax({
-            url: '/plugins/logsviewer/include/logsviewer_api.php',
-            data: { action: 'clear_alert_history', _lvt: window.lvToken || '' },
-            dataType: 'json', timeout: 10000,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          lvApi({
+            data: { action: 'clear_alert_history' },
+            timeout: 10000,
             success: function() { lvLoadAlertHistory(); }
           });
         });
@@ -2833,6 +2933,38 @@ if (is_readable($_lvVersionFile)) {
         document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.style.display === 'flex') close(); });
       })();
 
+      function lvShort(text) {
+        var chars = Array.from(text);
+        return chars.length > 60 ? chars.slice(0, 40).join('') + '\u2026' + chars.slice(-16).join('') : text;
+      }
+
+      var _lvNoticeAfter = null;
+      function lvNotice(title, message, after) {
+        var back = document.activeElement;
+        document.getElementById('lvNoticeTitle').textContent = title;
+        document.getElementById('lvNoticeMsg').textContent = message;
+        _lvNoticeAfter = after || function() { back.focus(); };
+        document.getElementById('lvNoticeModal').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        document.getElementById('lvNoticeOkBtn').focus();
+      }
+      (function(){
+        var modal = document.getElementById('lvNoticeModal');
+        var okBtn = document.getElementById('lvNoticeOkBtn');
+        function close() {
+          modal.style.display = 'none';
+          document.body.style.overflow = '';
+          _lvNoticeAfter();
+        }
+        okBtn.addEventListener('click', close);
+        modal.addEventListener('click', function(e){ if (e.target === modal) close(); });
+        document.addEventListener('keydown', function(e){
+          if (modal.style.display !== 'flex') return;
+          if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) close(); }
+          else if (e.key === 'Tab') { e.preventDefault(); okBtn.focus(); }
+        });
+      })();
+
       (function(){
         var modal = document.getElementById('lvCreditsModal');
         var link  = document.getElementById('lvCreditsLink');
@@ -2847,7 +2979,6 @@ if (is_readable($_lvVersionFile)) {
       })();
     })();
   </script>
-</form>
 
 <script>
 
